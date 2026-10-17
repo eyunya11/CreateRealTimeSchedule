@@ -1,5 +1,9 @@
 {
   "itemGroup.createrealtimeschedule": "Example Mod Tab",
   "block.createrealtimeschedule.example_block": "Example Block",
-  "item.createrealtimeschedule.example_item": "Example Item"
+  "item.createrealtimeschedule.example_item": "Example Item",
+  "commands.createrealtimeschedule.rtclock.get": "Real-time clock: %2$s on day %1$s",
+  "commands.createrealtimeschedule.rtclock.set": "Real-time clock set to %2$s on day %1$s",
+  "commands.createrealtimeschedule.rtclock.align": "Real-time clock aligned to the server's time: %2$s on day %1$s",
+  "commands.createrealtimeschedule.rtclock.invalid": "'%1$s' is not a time. Use H:MM or H:MM:SS."
 }

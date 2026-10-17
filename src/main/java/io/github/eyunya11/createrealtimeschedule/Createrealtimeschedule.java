@@ -1,6 +1,7 @@
 package io.github.eyunya11.createrealtimeschedule;
 
 import com.mojang.logging.LogUtils;
+import io.github.eyunya11.createrealtimeschedule.clock.RealClockConfig;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
@@ -82,6 +83,8 @@ public class Createrealtimeschedule {
 
         // Register our mod's ModConfigSpec so that FML can create and load the config file for us
         modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
+        // The clock's settings belong to the world, so they live in the world's serverconfig folder
+        modContainer.registerConfig(ModConfig.Type.SERVER, RealClockConfig.SPEC);
     }
 
     private void commonSetup(final FMLCommonSetupEvent event) {

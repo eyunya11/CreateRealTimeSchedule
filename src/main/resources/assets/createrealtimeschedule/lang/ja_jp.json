@@ -1,0 +1,6 @@
+{
+  "commands.createrealtimeschedule.rtclock.get": "リアルタイム時計: 日数 %1$s、時刻 %2$s",
+  "commands.createrealtimeschedule.rtclock.set": "リアルタイム時計を設定しました: 日数 %1$s、時刻 %2$s",
+  "commands.createrealtimeschedule.rtclock.align": "リアルタイム時計をサーバーの時刻に合わせました: 日数 %1$s、時刻 %2$s",
+  "commands.createrealtimeschedule.rtclock.invalid": "「%1$s」は時刻として読めません。H:MM または H:MM:SS で指定してください。"
+}
