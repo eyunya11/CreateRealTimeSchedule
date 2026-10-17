@@ -152,4 +152,93 @@ class RealClockTest {
         assertEquals(18_000L - 1, RealClock.skyDayTime(-RealClock.SKY_SCALE));
         assertEquals(18_000L - 2, RealClock.skyDayTime(-RealClock.SKY_SCALE - 1));
     }
+
+    // ------------------------------------------------------------------ rotations and slots
+
+    @Test
+    void everyRotationIsAsLongAsItsLabelAndDividesADay() {
+        long[] expected = {
+            24 * RealClock.TICKS_PER_HOUR, 12 * RealClock.TICKS_PER_HOUR, 6 * RealClock.TICKS_PER_HOUR,
+            4 * RealClock.TICKS_PER_HOUR, 3 * RealClock.TICKS_PER_HOUR, 2 * RealClock.TICKS_PER_HOUR,
+            RealClock.TICKS_PER_HOUR, 45 * RealClock.TICKS_PER_MINUTE, 30 * RealClock.TICKS_PER_MINUTE,
+            15 * RealClock.TICKS_PER_MINUTE
+        };
+        assertEquals(expected.length, RealClock.ROTATION_CHOICES);
+        for (int i = 0; i < expected.length; i++) {
+            assertEquals(expected[i], RealClock.rotationTicks(i), "rotation " + i);
+            assertEquals(0L, RealClock.TICKS_PER_DAY % RealClock.rotationTicks(i), "rotation " + i + " divides a day");
+        }
+    }
+
+    @Test
+    void theRotationsAreCreatesChoicesStretchedToRealTime() {
+        // Create's condition counts these many vanilla ticks for its ten choices, in the same order.
+        long[] vanilla = {24_000, 12_000, 6_000, 4_000, 3_000, 2_000, 1_000, 750, 500, 250};
+        for (int i = 0; i < vanilla.length; i++)
+            assertEquals(vanilla[i] * RealClock.SKY_SCALE, RealClock.rotationTicks(i), "rotation " + i);
+    }
+
+    @Test
+    void aRotationOutOfRangeReadsAsDaily() {
+        assertEquals(RealClock.TICKS_PER_DAY, RealClock.rotationTicks(-1));
+        assertEquals(RealClock.TICKS_PER_DAY, RealClock.rotationTicks(RealClock.ROTATION_CHOICES));
+        assertEquals(RealClock.TICKS_PER_DAY, RealClock.rotationTicks(99));
+    }
+
+    private static final long DAILY = RealClock.TICKS_PER_DAY;
+    private static final long QUARTER_HOUR = 15 * RealClock.TICKS_PER_MINUTE;
+
+    private static long at(long day, int hour, int minute, int second) {
+        return day * RealClock.TICKS_PER_DAY + RealClock.ticksOf(hour, minute, second);
+    }
+
+    @Test
+    void theNextSlotIsTheFirstOneStrictlyAfter() {
+        long eightTen = RealClock.ticksOf(8, 10, 0);
+        assertEquals(at(0, 8, 10, 0), RealClock.nextSlotAfter(at(0, 7, 0, 0), eightTen, DAILY));
+        assertEquals(at(0, 8, 10, 0), RealClock.nextSlotAfter(at(0, 8, 10, 0) - 1, eightTen, DAILY));
+        // Strictly after: a slot is not after itself, so the next one is a day on.
+        assertEquals(at(1, 8, 10, 0), RealClock.nextSlotAfter(at(0, 8, 10, 0), eightTen, DAILY));
+        assertEquals(at(1, 8, 10, 0), RealClock.nextSlotAfter(at(0, 8, 10, 0) + 1, eightTen, DAILY));
+        assertEquals(at(6, 8, 10, 0), RealClock.nextSlotAfter(at(5, 23, 59, 59), eightTen, DAILY));
+    }
+
+    @Test
+    void theNextSlotOfARepeatingTimeFollowsTheRotation() {
+        long eightThirteen = RealClock.ticksOf(8, 13, 0);
+        assertEquals(at(0, 8, 13, 0), RealClock.nextSlotAfter(at(0, 8, 0, 0), eightThirteen, QUARTER_HOUR));
+        assertEquals(at(0, 8, 28, 0), RealClock.nextSlotAfter(at(0, 8, 13, 0), eightThirteen, QUARTER_HOUR));
+        assertEquals(at(0, 9, 13, 0), RealClock.nextSlotAfter(at(0, 8, 58, 0), eightThirteen, QUARTER_HOUR));
+        // The hour the time was set in does not matter, only its place in the rotation.
+        assertEquals(at(0, 3, 28, 0), RealClock.nextSlotAfter(at(0, 3, 14, 0), eightThirteen, QUARTER_HOUR));
+    }
+
+    @Test
+    void slotsKeepWorkingBeforeDayZero() {
+        long eightTen = RealClock.ticksOf(8, 10, 0);
+        assertEquals(at(0, 8, 10, 0), RealClock.nextSlotAfter(-1L, eightTen, DAILY));
+        assertEquals(at(-1, 8, 10, 0), RealClock.nextSlotAfter(at(-2, 9, 0, 0), eightTen, DAILY));
+        assertEquals(at(-1, 8, 10, 0), RealClock.nearestSlot(at(-1, 8, 20, 0), eightTen, DAILY));
+    }
+
+    @Test
+    void theNearestSlotIsTheCloserOneOnEitherSide() {
+        long eightTen = RealClock.ticksOf(8, 10, 0);
+        assertEquals(at(0, 8, 10, 0), RealClock.nearestSlot(at(0, 8, 0, 0), eightTen, DAILY));
+        assertEquals(at(0, 8, 10, 0), RealClock.nearestSlot(at(0, 8, 20, 0), eightTen, DAILY));
+        assertEquals(at(0, 8, 10, 0), RealClock.nearestSlot(at(0, 8, 10, 0), eightTen, DAILY));
+        assertEquals(at(1, 8, 10, 0), RealClock.nearestSlot(at(0, 23, 0, 0), eightTen, DAILY));
+        long eightThirteen = RealClock.ticksOf(8, 13, 0);
+        // 8:05 is 7 minutes after the 7:58 slot and 8 before the 8:13 one.
+        assertEquals(at(0, 7, 58, 0), RealClock.nearestSlot(at(0, 8, 5, 0), eightThirteen, QUARTER_HOUR));
+    }
+
+    @Test
+    void halfwayBetweenTwoSlotsTakesTheLater() {
+        long eightTen = RealClock.ticksOf(8, 10, 0);
+        assertEquals(at(1, 8, 10, 0), RealClock.nearestSlot(at(0, 20, 10, 0), eightTen, DAILY));
+        assertEquals(at(0, 8, 10, 0), RealClock.nearestSlot(at(0, 20, 10, 0) - 1, eightTen, DAILY));
+        long eightThirteen = RealClock.ticksOf(8, 13, 0);
+        assertEquals(at(0, 8, 28, 0), RealClock.nearestSlot(at(0, 8, 20, 30), eightThirteen, QUARTER_HOUR));
+    }
 }

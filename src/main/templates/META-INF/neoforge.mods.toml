@@ -72,6 +72,16 @@ versionRange = "${minecraft_version_range}"
 ordering = "NONE"
 side = "BOTH"
 
+# Create runs the trains and owns the schedule this mod adds a wait condition to. A condition is
+# saved in schedules and sent to clients, so both sides need Create, and need it loaded first.
+[[dependencies."${mod_id}"]]
+modId = "create"
+type = "required"
+reason = "The real_time_of_day wait condition is added to Create's train schedules"
+versionRange = "${create_version_range}"
+ordering = "AFTER"
+side = "BOTH"
+
 # Features are specific properties of the game environment, that you may want to declare you require. This example declares
 # that your mod requires GL version 3.2 or higher. Other features will be added. They are side aware so declaring this won't
 # stop your mod loading on the server for example.

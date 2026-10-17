@@ -5,5 +5,21 @@
   "commands.createrealtimeschedule.rtclock.get": "Real-time clock: %2$s on day %1$s",
   "commands.createrealtimeschedule.rtclock.set": "Real-time clock set to %2$s on day %1$s",
   "commands.createrealtimeschedule.rtclock.align": "Real-time clock aligned to the server's time: %2$s on day %1$s",
-  "commands.createrealtimeschedule.rtclock.invalid": "'%1$s' is not a time. Use H:MM or H:MM:SS."
+  "commands.createrealtimeschedule.rtclock.invalid": "'%1$s' is not a time. Use H:MM or H:MM:SS.",
+  "createrealtimeschedule.schedule.condition.real_time_of_day": "Real Time of Day",
+  "createrealtimeschedule.schedule.condition.real_time_of_day.status": "Departs at %1$s",
+  "createrealtimeschedule.schedule.condition.real_time_of_day.minimum_stop": "Minimum stop: %1$s",
+  "createrealtimeschedule.schedule.condition.real_time_of_day.minimum_stop.title": "Minimum Stop",
+  "createrealtimeschedule.schedule.condition.real_time_of_day.minimum_stop.hint": "A late train still stops this long",
+  "createrealtimeschedule.schedule.condition.real_time_of_day.rotation": "Repeat",
+  "createrealtimeschedule.schedule.condition.real_time_of_day.rotation.every_24": "Daily",
+  "createrealtimeschedule.schedule.condition.real_time_of_day.rotation.every_12": "12 h",
+  "createrealtimeschedule.schedule.condition.real_time_of_day.rotation.every_6": "6 h",
+  "createrealtimeschedule.schedule.condition.real_time_of_day.rotation.every_4": "4 h",
+  "createrealtimeschedule.schedule.condition.real_time_of_day.rotation.every_3": "3 h",
+  "createrealtimeschedule.schedule.condition.real_time_of_day.rotation.every_2": "2 h",
+  "createrealtimeschedule.schedule.condition.real_time_of_day.rotation.every_1": "1 h",
+  "createrealtimeschedule.schedule.condition.real_time_of_day.rotation.every_0_45": "45 min",
+  "createrealtimeschedule.schedule.condition.real_time_of_day.rotation.every_0_30": "30 min",
+  "createrealtimeschedule.schedule.condition.real_time_of_day.rotation.every_0_15": "15 min"
 }

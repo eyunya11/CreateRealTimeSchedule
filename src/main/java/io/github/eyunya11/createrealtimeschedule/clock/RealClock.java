@@ -106,4 +106,43 @@ public final class RealClock {
     public static long skyDayTime(long clockTicks) {
         return Math.floorDiv(clockTicks, SKY_SCALE) + SKY_OFFSET;
     }
+
+    /**
+     * The "repeat every" choices of the time-of-day condition, in the order its screen lists them:
+     * daily, then every 12, 6, 4, 3, 2 and 1 hour, then every 45, 30 and 15 minutes. Create's own
+     * condition counts the same choices in vanilla day time; here they are real time. Every one
+     * divides a day, so a slot falls on the same time of day every day.
+     */
+    private static final long[] ROTATIONS = {
+        TICKS_PER_DAY, 12 * TICKS_PER_HOUR, 6 * TICKS_PER_HOUR, 4 * TICKS_PER_HOUR, 3 * TICKS_PER_HOUR,
+        2 * TICKS_PER_HOUR, TICKS_PER_HOUR, 45 * TICKS_PER_MINUTE, 30 * TICKS_PER_MINUTE, 15 * TICKS_PER_MINUTE
+    };
+
+    /** How many "repeat every" choices there are. */
+    public static final int ROTATION_CHOICES = ROTATIONS.length;
+
+    /** The length of a "repeat every" choice in ticks; a stored value out of range reads as daily. */
+    public static long rotationTicks(int index) {
+        return index >= 0 && index < ROTATIONS.length ? ROTATIONS[index] : ROTATIONS[0];
+    }
+
+    /**
+     * The first slot strictly after {@code after}. A slot is a clock value whose time of day is
+     * {@code timeOfDay}, repeating every {@code rotation} ticks, so with a rotation of a day and a
+     * time of 08:10 the slots are every day's 08:10.
+     *
+     * <p>Strictly after is what keeps a stop that asks for the time the train has just left on from
+     * reading its own departure as "already past": it books the next slot instead.
+     */
+    public static long nextSlotAfter(long after, long timeOfDay, long rotation) {
+        long next = after + 1;
+        return next + Math.floorMod(timeOfDay - next, rotation);
+    }
+
+    /** The slot nearest to {@code moment}; one exactly halfway between two is the later of them. */
+    public static long nearestSlot(long moment, long timeOfDay, long rotation) {
+        long earlier = moment - Math.floorMod(moment - timeOfDay, rotation);
+        long later = earlier + rotation;
+        return moment - earlier < later - moment ? earlier : later;
+    }
 }
