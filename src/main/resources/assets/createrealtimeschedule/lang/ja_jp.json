@@ -2,5 +2,21 @@
   "commands.createrealtimeschedule.rtclock.get": "リアルタイム時計: 日数 %1$s、時刻 %2$s",
   "commands.createrealtimeschedule.rtclock.set": "リアルタイム時計を設定しました: 日数 %1$s、時刻 %2$s",
   "commands.createrealtimeschedule.rtclock.align": "リアルタイム時計をサーバーの時刻に合わせました: 日数 %1$s、時刻 %2$s",
-  "commands.createrealtimeschedule.rtclock.invalid": "「%1$s」は時刻として読めません。H:MM または H:MM:SS で指定してください。"
+  "commands.createrealtimeschedule.rtclock.invalid": "「%1$s」は時刻として読めません。H:MM または H:MM:SS で指定してください。",
+  "createrealtimeschedule.schedule.condition.real_time_of_day": "現実の時刻",
+  "createrealtimeschedule.schedule.condition.real_time_of_day.status": "発車時刻: %1$s",
+  "createrealtimeschedule.schedule.condition.real_time_of_day.minimum_stop": "最短停車時間: %1$s",
+  "createrealtimeschedule.schedule.condition.real_time_of_day.minimum_stop.title": "最短停車時間",
+  "createrealtimeschedule.schedule.condition.real_time_of_day.minimum_stop.hint": "遅れた列車でも、これだけは停車します",
+  "createrealtimeschedule.schedule.condition.real_time_of_day.rotation": "繰り返し",
+  "createrealtimeschedule.schedule.condition.real_time_of_day.rotation.every_24": "毎日",
+  "createrealtimeschedule.schedule.condition.real_time_of_day.rotation.every_12": "12時間",
+  "createrealtimeschedule.schedule.condition.real_time_of_day.rotation.every_6": "6時間",
+  "createrealtimeschedule.schedule.condition.real_time_of_day.rotation.every_4": "4時間",
+  "createrealtimeschedule.schedule.condition.real_time_of_day.rotation.every_3": "3時間",
+  "createrealtimeschedule.schedule.condition.real_time_of_day.rotation.every_2": "2時間",
+  "createrealtimeschedule.schedule.condition.real_time_of_day.rotation.every_1": "1時間",
+  "createrealtimeschedule.schedule.condition.real_time_of_day.rotation.every_0_45": "45分",
+  "createrealtimeschedule.schedule.condition.real_time_of_day.rotation.every_0_30": "30分",
+  "createrealtimeschedule.schedule.condition.real_time_of_day.rotation.every_0_15": "15分"
 }

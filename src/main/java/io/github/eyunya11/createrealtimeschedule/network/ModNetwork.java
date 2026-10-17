@@ -15,10 +15,10 @@ public final class ModNetwork {
 
     @SubscribeEvent
     public static void registerPayloads(RegisterPayloadHandlersEvent event) {
-        // Optional, so a client without this mod can still join a server that has it: such a client
-        // simply never learns the offset, which only matters for drawing the clock.
+        // Not optional: the real_time_of_day condition is saved in schedules and sent to clients, and a
+        // client that does not know it cannot read the schedules that hold it. Leaving the channel
+        // required keeps a client without this mod off a server that has it, with a message saying why.
         event.registrar(PROTOCOL_VERSION)
-            .optional()
             .playToClient(ClockSyncPayload.TYPE, ClockSyncPayload.STREAM_CODEC, ClientClock::onSync);
     }
 }
