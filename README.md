@@ -93,6 +93,8 @@ Java 21. `./gradlew build` makes the jar in `build/libs`. The first run download
 ./gradlew runServer           # a development server; accept the EULA in run/eula.txt on the first start
 ```
 
+GitHub Actions runs `./gradlew build` and `./gradlew runGameTestServer` for every pull request into `main` and for every push to `main` ([.github/workflows/build.yml](.github/workflows/build.yml)).
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
