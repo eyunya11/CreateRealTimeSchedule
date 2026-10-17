@@ -1,16 +1,25 @@
-package io.github.eyunya11.createrealtimeschedule.clock;
+package io.github.eyunya11.createrealtimeschedule;
 
+import java.util.function.Supplier;
+
+import io.github.eyunya11.createrealtimeschedule.clock.RealClock;
 import net.neoforged.neoforge.common.ModConfigSpec;
 
 /**
- * Per-world settings of the mod (the clock, the sky and the wait condition), in
- * {@code serverconfig/} of the world. A client gets the server's values while it is connected.
+ * The mod's per-world settings (the clock, the sky and the wait condition), in
+ * {@code serverconfig/createrealtimeschedule-server.toml} of the world.
  *
- * <p>The getters answer with the default while the config has not loaded, which is the case in
- * unit tests, on a client that is not connected to a world, and for the instant before a server has
- * read its files.
+ * <p>NeoForge sends the server's config files to a client when it joins, so a client reads the
+ * server's values while it is connected. This has been read in NeoForge's code but not tried with a
+ * real client.
+ *
+ * <p>The getters answer with the default while the config is not loaded, which is the case in unit
+ * tests, on a client that is not connected to a world, and for the instant before a server has read
+ * its files. They can be called from any thread (Create builds conditions while it decodes packets),
+ * and the config can unload between the check and the read, so a read that finds the config gone
+ * answers with the default as well.
  */
-public final class RealClockConfig {
+public final class ModSettings {
 
     public static final String DEFAULT_START_TIME = "06:00";
     /** The minimum stop a new real_time_of_day condition starts with, until the config says otherwise. */
@@ -44,24 +53,39 @@ public final class RealClockConfig {
 
     public static final ModConfigSpec SPEC = BUILDER.build();
 
-    private RealClockConfig() {}
+    private ModSettings() {}
 
     public static boolean syncSky() {
-        return SPEC.isLoaded() ? SYNC_SKY.get() : true;
+        return read(SPEC.isLoaded(), SYNC_SKY, true);
     }
 
     /** The configured start time as ticks since 00:00. */
     public static long startTimeTicks() {
-        String text = SPEC.isLoaded() ? START_TIME.get() : DEFAULT_START_TIME;
+        String text = read(SPEC.isLoaded(), START_TIME, DEFAULT_START_TIME);
         return RealClock.parseTimeOfDay(text).orElseGet(() -> RealClock.parseTimeOfDay(DEFAULT_START_TIME).getAsLong());
     }
 
     public static boolean alignOnStart() {
-        return SPEC.isLoaded() && ALIGN_ON_START.get();
+        return read(SPEC.isLoaded(), ALIGN_ON_START, false);
     }
 
     /** The minimum stop, in seconds, that a new real_time_of_day condition starts with. */
     public static int defaultMinimumStopSeconds() {
-        return SPEC.isLoaded() ? DEFAULT_MINIMUM_STOP.get() : DEFAULT_MINIMUM_STOP_SECONDS;
+        return read(SPEC.isLoaded(), DEFAULT_MINIMUM_STOP, DEFAULT_MINIMUM_STOP_SECONDS);
+    }
+
+    /**
+     * The value, or {@code fallback} if the config is not loaded or is unloaded while it is read.
+     * NeoForge's {@code get()} throws {@link IllegalStateException} for a config that is gone when
+     * it has no cached value yet, and the config unloads on another thread when a client leaves.
+     */
+    static <T> T read(boolean loaded, Supplier<? extends T> value, T fallback) {
+        if (!loaded)
+            return fallback;
+        try {
+            return value.get();
+        } catch (IllegalStateException unloadedMeanwhile) {
+            return fallback;
+        }
     }
 }

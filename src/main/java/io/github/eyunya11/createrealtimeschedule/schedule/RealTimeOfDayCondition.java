@@ -19,7 +19,7 @@ import com.simibubi.create.foundation.utility.CreateLang;
 import io.github.eyunya11.createrealtimeschedule.Createrealtimeschedule;
 import io.github.eyunya11.createrealtimeschedule.clock.ClockService;
 import io.github.eyunya11.createrealtimeschedule.clock.RealClock;
-import io.github.eyunya11.createrealtimeschedule.clock.RealClockConfig;
+import io.github.eyunya11.createrealtimeschedule.ModSettings;
 import net.createmod.catnip.data.Pair;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.GuiGraphics;
@@ -75,7 +75,7 @@ public class RealTimeOfDayCondition extends ScheduleWaitCondition {
 
     /** A new condition: 08:00 every day, with the minimum stop the config starts new conditions with. */
     public RealTimeOfDayCondition() {
-        this(DEFAULT_HOUR, 0, 0, RealClockConfig.defaultMinimumStopSeconds());
+        this(DEFAULT_HOUR, 0, 0, ModSettings.defaultMinimumStopSeconds());
     }
 
     /**
@@ -252,7 +252,7 @@ public class RealTimeOfDayCondition extends ScheduleWaitCondition {
         }, MINUTE);
 
         builder.addScrollInput(40, 36, (i, l) -> {
-            i.withRange(0, RealClockConfig.MAX_MINIMUM_STOP_SECONDS + 1)
+            i.withRange(0, ModSettings.MAX_MINIMUM_STOP_SECONDS + 1)
                 .withStepFunction(context -> context.shift ? 30 : 5)
                 .withShiftStep(30)
                 .format(seconds -> Component.literal(formatSeconds(seconds)))

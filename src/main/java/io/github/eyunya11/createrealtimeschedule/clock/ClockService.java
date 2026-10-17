@@ -3,6 +3,7 @@ package io.github.eyunya11.createrealtimeschedule.clock;
 import java.time.Clock;
 import java.time.LocalTime;
 
+import io.github.eyunya11.createrealtimeschedule.ModSettings;
 import io.github.eyunya11.createrealtimeschedule.network.ClockSyncPayload;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
@@ -33,7 +34,7 @@ public final class ClockService {
     /** Gives a clock that has never been started its start time, as of the given game time. */
     public static void initialize(RealClockData data, long gameTime) {
         if (!data.isInitialized())
-            data.setOffset(RealClock.offsetFor(gameTime, RealClockConfig.startTimeTicks()));
+            data.setOffset(RealClock.offsetFor(gameTime, ModSettings.startTimeTicks()));
     }
 
     /** The clock value now: ticks since the start of day 0, never reset by the sky or by sleeping. */
