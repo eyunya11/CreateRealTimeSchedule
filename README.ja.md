@@ -93,6 +93,8 @@ Java 21 が必要です。`./gradlew build` で `build/libs` に jar ができ�
 ./gradlew runServer           # 開発用のサーバー。最初の起動のあと、run/eula.txt で EULA に同意する
 ```
 
+GitHub Actions が、`main` 向けのプルリクエストと、`main` への push のたびに、`./gradlew build` と `./gradlew runGameTestServer` を実行します([.github/workflows/build.yml](.github/workflows/build.yml))。
+
 ## ライセンス
 
 MIT です。[LICENSE](LICENSE) を見てください。
