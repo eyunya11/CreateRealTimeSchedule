@@ -39,7 +39,8 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
  * <p>The trains here have no track: a bare {@link Train} is given a schedule and told it has
  * arrived, and Create's {@link ScheduleRuntime#tickConditions} is driven by hand while the test
  * decides what the clock says. That is the path a real train takes once it stands in a station, so
- * everything about waiting is Create's own; only the moving between stations is left out.
+ * everything about waiting is Create's own; only the moving between stations is left out. That part
+ * is covered by {@link TrackTests}, which runs a train on real track.
  *
  * <p>The tests never wait for game time. They put the clock where they want it, which the test
  * puts back as it found it, so they cannot disturb the tests that do wait.
@@ -54,26 +55,30 @@ public class ScheduleTests {
 
     private static final String EMPTY = "empty";
     private static final String STATUS_KEY = "createrealtimeschedule.schedule.condition.real_time_of_day.status";
-    private static final int DAILY = 0;
+    static final int DAILY = 0;
     private static final int EVERY_QUARTER_HOUR = 9;
 
     // ------------------------------------------------------------------ helpers
+    // The ones that are not private are shared with TrackTests.
 
     /** A clock value: the given day of the clock, at the given time. */
-    private static long clock(long day, int hour, int minute, int second) {
+    static long clock(long day, int hour, int minute, int second) {
         return day * RealClock.TICKS_PER_DAY + RealClock.ticksOf(hour, minute, second);
     }
 
-    private static String show(long clockTicks) {
+    static String show(long clockTicks) {
         return "day " + RealClock.day(clockTicks) + " " + RealClock.format(clockTicks);
     }
 
-    private static RealTimeOfDayCondition condition(int hour, int minute, int rotation, int minimumStopSeconds) {
+    static RealTimeOfDayCondition condition(int hour, int minute, int rotation, int minimumStopSeconds) {
         return new RealTimeOfDayCondition(hour, minute, rotation, minimumStopSeconds);
     }
 
-    /** A stop with one column of conditions for each condition given, any of which lets the train go. */
-    private static ScheduleEntry stop(String name, RealTimeOfDayCondition... either) {
+    /**
+     * A stop with one column of conditions for each condition given, any of which lets the train go.
+     * With none given, the stop has no conditions at all and a train that gets there stays.
+     */
+    static ScheduleEntry stop(String name, RealTimeOfDayCondition... either) {
         DestinationInstruction destination = new DestinationInstruction();
         destination.getData().putString("Text", name);
         List<List<ScheduleWaitCondition>> columns = new ArrayList<>();
@@ -85,7 +90,7 @@ public class ScheduleTests {
         return new ScheduleEntry(destination, columns);
     }
 
-    private static Schedule schedule(ScheduleEntry... entries) {
+    static Schedule schedule(ScheduleEntry... entries) {
         return new Schedule(new ArrayList<>(List.of(entries)), true, 0);
     }
 
