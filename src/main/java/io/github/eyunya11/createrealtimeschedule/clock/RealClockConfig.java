@@ -3,14 +3,20 @@ package io.github.eyunya11.createrealtimeschedule.clock;
 import net.neoforged.neoforge.common.ModConfigSpec;
 
 /**
- * Per-world settings of the clock, in {@code serverconfig/} of the world.
+ * Per-world settings of the mod (the clock, the sky and the wait condition), in
+ * {@code serverconfig/} of the world. A client gets the server's values while it is connected.
  *
  * <p>The getters answer with the default while the config has not loaded, which is the case in
- * unit tests and for the instant before a server has read its files.
+ * unit tests, on a client that is not connected to a world, and for the instant before a server has
+ * read its files.
  */
 public final class RealClockConfig {
 
     public static final String DEFAULT_START_TIME = "06:00";
+    /** The minimum stop a new real_time_of_day condition starts with, until the config says otherwise. */
+    public static final int DEFAULT_MINIMUM_STOP_SECONDS = 20;
+    /** The longest minimum stop the schedule screen and the config allow. */
+    public static final int MAX_MINIMUM_STOP_SECONDS = 600;
 
     private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
 
@@ -30,6 +36,12 @@ public final class RealClockConfig {
             "The clock only runs while the server does, so a restart leaves it behind real time.")
         .define("align_on_start", false);
 
+    private static final ModConfigSpec.IntValue DEFAULT_MINIMUM_STOP = BUILDER
+        .comment("The minimum stop, in seconds, that a new real_time_of_day condition starts with in the schedule screen.",
+            "It is only the starting value: a condition that has been made keeps the value it was given.",
+            "A train that arrives late stops for the minimum stop at least, however late it is.")
+        .defineInRange("default_minimum_stop_seconds", DEFAULT_MINIMUM_STOP_SECONDS, 0, MAX_MINIMUM_STOP_SECONDS);
+
     public static final ModConfigSpec SPEC = BUILDER.build();
 
     private RealClockConfig() {}
@@ -46,5 +58,10 @@ public final class RealClockConfig {
 
     public static boolean alignOnStart() {
         return SPEC.isLoaded() && ALIGN_ON_START.get();
+    }
+
+    /** The minimum stop, in seconds, that a new real_time_of_day condition starts with. */
+    public static int defaultMinimumStopSeconds() {
+        return SPEC.isLoaded() ? DEFAULT_MINIMUM_STOP.get() : DEFAULT_MINIMUM_STOP_SECONDS;
     }
 }

@@ -19,6 +19,7 @@ import com.simibubi.create.foundation.utility.CreateLang;
 import io.github.eyunya11.createrealtimeschedule.Createrealtimeschedule;
 import io.github.eyunya11.createrealtimeschedule.clock.ClockService;
 import io.github.eyunya11.createrealtimeschedule.clock.RealClock;
+import io.github.eyunya11.createrealtimeschedule.clock.RealClockConfig;
 import net.createmod.catnip.data.Pair;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.GuiGraphics;
@@ -63,8 +64,6 @@ public class RealTimeOfDayCondition extends ScheduleWaitCondition {
     public static final String CONTEXT_SLOT = "Slot";
 
     public static final int DEFAULT_HOUR = 8;
-    public static final int DEFAULT_MINIMUM_STOP_SECONDS = 20;
-    public static final int MAX_MINIMUM_STOP_SECONDS = 600;
 
     private static final String LANG = ID.getNamespace() + ".schedule.condition." + ID.getPath();
     private static final String[] ROTATION_NAMES = {
@@ -74,8 +73,9 @@ public class RealTimeOfDayCondition extends ScheduleWaitCondition {
     /** What a stop's booking came to. */
     public record Booking(long slot, long departure) {}
 
+    /** A new condition: 08:00 every day, with the minimum stop the config starts new conditions with. */
     public RealTimeOfDayCondition() {
-        this(DEFAULT_HOUR, 0, 0, DEFAULT_MINIMUM_STOP_SECONDS);
+        this(DEFAULT_HOUR, 0, 0, RealClockConfig.defaultMinimumStopSeconds());
     }
 
     /**
@@ -252,7 +252,7 @@ public class RealTimeOfDayCondition extends ScheduleWaitCondition {
         }, MINUTE);
 
         builder.addScrollInput(40, 36, (i, l) -> {
-            i.withRange(0, MAX_MINIMUM_STOP_SECONDS + 1)
+            i.withRange(0, RealClockConfig.MAX_MINIMUM_STOP_SECONDS + 1)
                 .withStepFunction(context -> context.shift ? 30 : 5)
                 .withShiftStep(30)
                 .format(seconds -> Component.literal(formatSeconds(seconds)))

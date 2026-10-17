@@ -16,6 +16,7 @@ import com.simibubi.create.content.trains.schedule.destination.DestinationInstru
 import io.github.eyunya11.createrealtimeschedule.Createrealtimeschedule;
 import io.github.eyunya11.createrealtimeschedule.clock.ClockService;
 import io.github.eyunya11.createrealtimeschedule.clock.RealClock;
+import io.github.eyunya11.createrealtimeschedule.clock.RealClockConfig;
 import io.github.eyunya11.createrealtimeschedule.schedule.DeparturePlanner.SlotRecord;
 import io.github.eyunya11.createrealtimeschedule.schedule.RealTimeOfDayCondition;
 import io.github.eyunya11.createrealtimeschedule.schedule.TrainSlotMemory;
@@ -29,6 +30,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.contents.TranslatableContents;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.neoforged.neoforge.common.ModConfigSpec;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
@@ -180,8 +182,27 @@ public class ScheduleTests {
         helper.assertValueEqual(RealTimeOfDayCondition.DEFAULT_HOUR, fresh.hour(), "hour of a new condition");
         helper.assertValueEqual(0, fresh.minute(), "minute of a new condition");
         helper.assertValueEqual(RealClock.TICKS_PER_DAY, fresh.rotationTicks(), "a new condition repeats daily");
-        helper.assertValueEqual(RealTimeOfDayCondition.DEFAULT_MINIMUM_STOP_SECONDS * 20L, fresh.minimumStopTicks(),
+        helper.assertValueEqual(RealClockConfig.DEFAULT_MINIMUM_STOP_SECONDS * 20L, fresh.minimumStopTicks(),
             "minimum stop of a new condition");
+        helper.succeed();
+    }
+
+    /** The setting changes where a new condition starts, and nothing about one that has been made. */
+    @GameTest(template = EMPTY)
+    public static void aNewConditionStartsWithTheMinimumStopTheConfigSays(GameTestHelper helper) {
+        ModConfigSpec.ConfigValue<Integer> setting = RealClockConfig.SPEC.getValues().get("default_minimum_stop_seconds");
+        helper.assertTrue(setting != null, "the config has a default_minimum_stop_seconds setting");
+        int before = setting.get();
+        RealTimeOfDayCondition made = condition(8, 0, DAILY, 5);
+        try {
+            setting.set(45);
+            helper.assertValueEqual(45 * 20L, new RealTimeOfDayCondition().minimumStopTicks(), "minimum stop of a new condition with the setting at 45 s");
+            helper.assertValueEqual(45, RealClockConfig.defaultMinimumStopSeconds(), "the setting as the mod reads it");
+            helper.assertValueEqual(5 * 20L, made.minimumStopTicks(), "minimum stop of a condition made with 5 s");
+        } finally {
+            setting.set(before);
+        }
+        helper.assertValueEqual(before, RealClockConfig.defaultMinimumStopSeconds(), "the setting after the test put it back");
         helper.succeed();
     }
 
