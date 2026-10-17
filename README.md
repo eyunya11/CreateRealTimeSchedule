@@ -79,7 +79,8 @@ Not checked yet:
 - loops, curves, signals and several trains with the condition on real track;
 - how the settings line looks in the schedule window (it only compiles);
 - several players on a dedicated server seeing the same time and sky;
-- that a client without the mod is refused by a server that has it.
+- that a client without the mod is refused by a server that has it;
+- that a client takes the server's `default_minimum_stop_seconds` when it joins. NeoForge's code sends the server's config files to a joining client, but this has not been tried with a real client.
 
 ## Building
 
