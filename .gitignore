@@ -19,3 +19,6 @@ hs_err_pid*
 
 # Common working directory
 run
+
+# Written by unit tests that load NeoForge classes
+logs

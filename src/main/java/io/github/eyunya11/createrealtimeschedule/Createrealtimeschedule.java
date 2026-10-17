@@ -1,6 +1,5 @@
 package io.github.eyunya11.createrealtimeschedule;
 
-import io.github.eyunya11.createrealtimeschedule.clock.RealClockConfig;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.config.ModConfig;
@@ -18,6 +17,6 @@ public class Createrealtimeschedule {
 
     public Createrealtimeschedule(ModContainer modContainer) {
         // The settings belong to the world, so they live in the world's serverconfig folder.
-        modContainer.registerConfig(ModConfig.Type.SERVER, RealClockConfig.SPEC);
+        modContainer.registerConfig(ModConfig.Type.SERVER, ModSettings.SPEC);
     }
 }

@@ -3,6 +3,7 @@ package io.github.eyunya11.createrealtimeschedule.clock;
 import java.time.Clock;
 
 import io.github.eyunya11.createrealtimeschedule.Createrealtimeschedule;
+import io.github.eyunya11.createrealtimeschedule.ModSettings;
 import io.github.eyunya11.createrealtimeschedule.command.RtClockCommand;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
@@ -24,7 +25,7 @@ public final class ClockEvents {
         MinecraftServer server = event.getServer();
         // Reading it creates the clock on the first start of a world.
         ClockService.data(server);
-        if (RealClockConfig.alignOnStart())
+        if (ModSettings.alignOnStart())
             ClockService.alignToWallClock(server, Clock.systemDefaultZone());
     }
 
@@ -36,7 +37,7 @@ public final class ClockEvents {
 
     @SubscribeEvent
     public static void onServerTick(ServerTickEvent.Post event) {
-        SkySync.apply(event.getServer(), RealClockConfig.syncSky());
+        SkySync.apply(event.getServer(), ModSettings.syncSky());
     }
 
     @SubscribeEvent

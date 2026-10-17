@@ -10,7 +10,7 @@ import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import io.github.eyunya11.createrealtimeschedule.Createrealtimeschedule;
 import io.github.eyunya11.createrealtimeschedule.clock.ClockService;
 import io.github.eyunya11.createrealtimeschedule.clock.RealClock;
-import io.github.eyunya11.createrealtimeschedule.clock.RealClockConfig;
+import io.github.eyunya11.createrealtimeschedule.ModSettings;
 import io.github.eyunya11.createrealtimeschedule.clock.RealClockData;
 import io.github.eyunya11.createrealtimeschedule.clock.SkySync;
 import io.github.eyunya11.createrealtimeschedule.network.ClockSyncPayload;
@@ -96,7 +96,7 @@ public class ClockTests {
             long actual = server.overworld().getDayTime();
             boolean cycleOn = server.getGameRules().getBoolean(GameRules.RULE_DAYLIGHT);
             saved.restore(server);
-            helper.assertTrue(RealClockConfig.syncSky(), "sync_sky should default to on");
+            helper.assertTrue(ModSettings.syncSky(), "sync_sky should default to on");
             // The hook runs at the end of a tick and this at some point in the next, so the sky can
             // be one step behind the clock but no more.
             helper.assertTrue(Math.abs(actual - expected) <= 1, "sky at " + actual + ", clock says " + expected);
@@ -141,7 +141,7 @@ public class ClockTests {
         long gameTime = 4_321_000L;
         ClockService.initialize(fresh, gameTime);
         helper.assertTrue(fresh.isInitialized(), "starting it marks it started");
-        helper.assertValueEqual(RealClockConfig.startTimeTicks(), RealClock.clockTicks(gameTime, fresh.offset()),
+        helper.assertValueEqual(ModSettings.startTimeTicks(), RealClock.clockTicks(gameTime, fresh.offset()),
             "clock at the moment it is started");
         // Starting it again does not move it.
         long offset = fresh.offset();
