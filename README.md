@@ -11,7 +11,7 @@ Status: early (0.1.0-SNAPSHOT). The clock, the sky and the wait condition work a
 ## Requirements
 
 - Minecraft 1.21.1 with NeoForge 21.1 (built against 21.1.262)
-- Create 6.0.11 or later
+- Create 6.0.10 or later
 - This mod on the server and on every client. A schedule that holds the new condition cannot be read without it.
 
 ## The clock
