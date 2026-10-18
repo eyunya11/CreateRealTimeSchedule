@@ -18,9 +18,6 @@ import io.github.eyunya11.createrealtimeschedule.schedule.RealTimeOfDayCondition
 import io.github.eyunya11.createrealtimeschedule.schedule.TrainSlotMemory;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
-import net.minecraft.gametest.framework.GameTestInfo;
-import net.minecraft.gametest.framework.GameTestListener;
-import net.minecraft.gametest.framework.GameTestRunner;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.server.MinecraftServer;
@@ -91,7 +88,7 @@ public class TrackTests {
      */
     @GameTest(template = TRACK_LINE, batch = "realtimetrack_early", timeoutTicks = TIMEOUT_TICKS)
     public static void aTrainOnTrackThatArrivesEarlyWaitsForItsSlotAndLeavesOnIt(GameTestHelper helper) {
-        new Run(helper, new Scenario(ScheduleTests.clock(2, 7, 59, 55), 2, ScheduleTests.clock(2, 8, 0, 0))).begin();
+        new Run(helper, new Scenario(TestTimes.clock(2, 7, 59, 55), 2, TestTimes.clock(2, 8, 0, 0))).begin();
     }
 
     /**
@@ -100,7 +97,7 @@ public class TrackTests {
      */
     @GameTest(template = TRACK_LINE, batch = "realtimetrack_late", timeoutTicks = TIMEOUT_TICKS)
     public static void aTrainOnTrackThatArrivesLateLeavesAfterTheMinimumStopAndNotBefore(GameTestHelper helper) {
-        new Run(helper, new Scenario(ScheduleTests.clock(2, 8, 0, 10), 5, ScheduleTests.clock(2, 8, 0, 15))).begin();
+        new Run(helper, new Scenario(TestTimes.clock(2, 8, 0, 10), 5, TestTimes.clock(2, 8, 0, 15))).begin();
     }
 
     // ------------------------------------------------------------------ one run
@@ -133,27 +130,11 @@ public class TrackTests {
             this.server = helper.getLevel().getServer();
             this.scenario = scenario;
             this.line = new TrackLine(helper, TRACK_LAST_X, new int[] {ALPHA_X, BETA_X, GAMMA_X},
-                new String[] {"Alpha", "Beta", "Gamma"}, ScheduleTests.clock(2, 7, 0, 0));
+                new String[] {"Alpha", "Beta", "Gamma"}, TestTimes.clock(2, 7, 0, 0));
         }
 
         void begin() {
-            helper.testInfo.addListener(new GameTestListener() {
-                @Override
-                public void testStructureLoaded(GameTestInfo test) {}
-
-                @Override
-                public void testPassed(GameTestInfo test, GameTestRunner runner) {
-                    line.cleanUp();
-                }
-
-                @Override
-                public void testFailed(GameTestInfo test, GameTestRunner runner) {
-                    line.cleanUp();
-                }
-
-                @Override
-                public void testAddedForRerun(GameTestInfo oldTest, GameTestInfo newTest, GameTestRunner runner) {}
-            });
+            line.cleanUpWhenTheTestEnds();
             helper.onEachTick(this::tick);
         }
 
@@ -166,7 +147,7 @@ public class TrackTests {
         /** A clock value to the tick, which is as close as the game can tell a train's moves apart. */
         private static String exact(long clock) {
             long ticks = Math.floorMod(clock, (long) RealClock.TICKS_PER_SECOND);
-            return ScheduleTests.show(clock) + (ticks == 0 ? "" : " + " + ticks + " ticks");
+            return TestTimes.show(clock) + (ticks == 0 ? "" : " + " + ticks + " ticks");
         }
 
         private static String seconds(long ticks) {
@@ -190,9 +171,14 @@ public class TrackTests {
             phaseTicks = 0;
         }
 
+        /** Where the test is and where the line and its train are, for a failure message. */
+        private String describe() {
+            return "phase " + phase + ", " + line.describe();
+        }
+
         private void stuckAfter(int ticks, String what) {
             if (phaseTicks > ticks)
-                helper.fail(what + " after " + phaseTicks + " ticks (phase " + phase + ", " + line.describe() + ")");
+                helper.fail(what + " after " + phaseTicks + " ticks (" + describe() + ")");
         }
 
         private void setUp() {
@@ -215,7 +201,7 @@ public class TrackTests {
         private void toBeta() {
             GlobalStation at = train.getCurrentStation();
             if (at == gamma)
-                helper.fail("the train ran past Beta (" + line.describe() + ")");
+                helper.fail("the train ran past Beta (" + describe() + ")");
             if (at != beta || train.runtime.state != ScheduleRuntime.State.POST_TRANSIT) {
                 stuckAfter(600, "the train has not arrived at Beta");
                 return;
@@ -249,7 +235,7 @@ public class TrackTests {
                 helper.assertTrue(line.frontOfTrain().distanceToSqr(stoodAt) < 1.0e-9, "the train has moved at " + exact(now) + " while it waits at Beta");
                 if (now > scenario.departure() + LEAVING_TICKS)
                     helper.fail("the train is still at Beta at " + exact(now) + ", more than " + LEAVING_TICKS
-                        + " ticks after its departure time " + exact(scenario.departure()) + " (" + line.describe() + ")");
+                        + " ticks after its departure time " + exact(scenario.departure()) + " (" + describe() + ")");
                 return;
             }
 
@@ -264,7 +250,7 @@ public class TrackTests {
             LOGGER.info("[{}] arrived at {}, slot {}, departure {}; left at {}", helper.testInfo.getTestName(),
                 exact(booked.stamp()), exact(booked.slot()), departureSeen ? exact(departureBooked) : "not seen", exact(left));
             helper.assertValueEqual(booked.stamp(), scenario.arrival(), "arrival the condition saw");
-            helper.assertValueEqual(booked.slot(), ScheduleTests.clock(2, SLOT_HOUR, SLOT_MINUTE, 0), "slot the condition booked");
+            helper.assertValueEqual(booked.slot(), TestTimes.clock(2, SLOT_HOUR, SLOT_MINUTE, 0), "slot the condition booked");
             helper.assertTrue(departureSeen, "the condition never held a departure time: it let the train go on the tick it arrived");
             helper.assertValueEqual(departureBooked, scenario.departure(), "departure the condition booked");
             helper.assertValueEqual(train.runtime.currentEntry, 1, "stop the schedule is on once the train has left Beta");

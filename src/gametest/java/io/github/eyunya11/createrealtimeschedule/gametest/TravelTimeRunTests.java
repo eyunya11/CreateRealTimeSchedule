@@ -11,13 +11,10 @@ import com.simibubi.create.content.trains.schedule.ScheduleRuntime;
 import com.simibubi.create.content.trains.station.GlobalStation;
 
 import io.github.eyunya11.createrealtimeschedule.Createrealtimeschedule;
-import io.github.eyunya11.createrealtimeschedule.travel.TrainSpec;
+import io.github.eyunya11.createrealtimeschedule.travel.TrainSpecs;
 import io.github.eyunya11.createrealtimeschedule.travel.TravelTime;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
-import net.minecraft.gametest.framework.GameTestInfo;
-import net.minecraft.gametest.framework.GameTestListener;
-import net.minecraft.gametest.framework.GameTestRunner;
 import net.minecraft.server.MinecraftServer;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
@@ -45,7 +42,7 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
  */
 @GameTestHolder(Createrealtimeschedule.MODID)
 @PrefixGameTestTemplate(false)
-public class TravelTimeTests {
+public class TravelTimeRunTests {
 
     private static final Logger LOGGER = LogUtils.getLogger();
 
@@ -54,8 +51,12 @@ public class TravelTimeTests {
     private static final int TIMEOUT_TICKS = 1500;
     private static final int ALPHA_X = 6;
 
-    /** How far the model may be from the train, in ticks (20 to a second). All five runs agree to the tick. */
-    private static final int TOLERANCE_TICKS = 2;
+    /**
+     * How far the model may be from the train, in ticks (20 to a second): not at all. All five runs
+     * agree to the tick, and {@code TravelTimeTest} pins the same counts, so a train that takes a
+     * different number of ticks (after an update of Create, say) fails here and is noticed.
+     */
+    private static final int TOLERANCE_TICKS = 0;
 
     @GameTest(template = TRACK_LINE, batch = "realtimetravel_20_full", timeoutTicks = TIMEOUT_TICKS)
     public static void twentyBlocksAtFullThrottle(GameTestHelper helper) {
@@ -103,27 +104,11 @@ public class TravelTimeTests {
             this.stationDistance = stationDistance;
             this.throttle = throttle;
             this.line = new TrackLine(helper, ALPHA_X + stationDistance + 4, new int[] {ALPHA_X, ALPHA_X + stationDistance},
-                new String[] {"Alpha", "Beta"}, ScheduleTests.clock(2, 7, 0, 0));
+                new String[] {"Alpha", "Beta"});
         }
 
         void begin() {
-            helper.testInfo.addListener(new GameTestListener() {
-                @Override
-                public void testStructureLoaded(GameTestInfo test) {}
-
-                @Override
-                public void testPassed(GameTestInfo test, GameTestRunner runner) {
-                    line.cleanUp();
-                }
-
-                @Override
-                public void testFailed(GameTestInfo test, GameTestRunner runner) {
-                    line.cleanUp();
-                }
-
-                @Override
-                public void testAddedForRerun(GameTestInfo oldTest, GameTestInfo newTest, GameTestRunner runner) {}
-            });
+            line.cleanUpWhenTheTestEnds();
             helper.onEachTick(this::tick);
         }
 
@@ -157,8 +142,7 @@ public class TravelTimeTests {
 
         private void finish(long measured) {
             // The speeds are the ones this train reports, so that the model is given what Create uses.
-            TrainSpec spec = new TrainSpec(train.maxSpeed() * 20.0, train.maxTurnSpeed() * 20.0, train.acceleration() * 400.0);
-            int model = TravelTime.ticks(spec, throttle, distance, List.of()).orElseThrow();
+            int model = TravelTime.ticks(TrainSpecs.of(train), throttle, distance, List.of()).orElseThrow();
             LOGGER.info("[{}] stations {} blocks apart, the train went {} blocks, throttle {}: measured {} ticks ({}s), model {} ticks ({}s)",
                 helper.testInfo.getTestName(), stationDistance, String.format(Locale.ROOT, "%.3f", distance), throttle,
                 measured, String.format(Locale.ROOT, "%.2f", measured / 20.0), model, String.format(Locale.ROOT, "%.2f", model / 20.0));

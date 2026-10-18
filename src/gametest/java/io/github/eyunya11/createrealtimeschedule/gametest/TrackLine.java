@@ -2,6 +2,7 @@ package io.github.eyunya11.createrealtimeschedule.gametest;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.OptionalLong;
 import java.util.UUID;
 
 import org.slf4j.Logger;
@@ -30,6 +31,9 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.Direction.AxisDirection;
 import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.gametest.framework.GameTestInfo;
+import net.minecraft.gametest.framework.GameTestListener;
+import net.minecraft.gametest.framework.GameTestRunner;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtUtils;
 import net.minecraft.server.MinecraftServer;
@@ -47,8 +51,8 @@ import net.minecraft.world.phys.Vec3;
  * <p>Create's own track blocks and station blocks make the track graph, the first station assembles
  * a train out of a bogey, train controls and a blaze burner (which is the conductor Create wants
  * before it lets a train follow a schedule), and everything after that, the schedule, the
- * navigation and the movement, is Create's. A test calls {@link #setUp()} once a tick until it
- * answers true, gives the train its schedule, and calls {@link #cleanUp()} when it ends.
+ * navigation and the movement, is Create's. A test calls {@link #cleanUpWhenTheTestEnds()} once,
+ * then {@link #setUp()} once a tick until it answers true, and gives the train its schedule.
  *
  * <p>Tests that use a line share the clock and Create's railways with everything else, so each must
  * have a batch of its own: tests in one batch run side by side.
@@ -72,7 +76,7 @@ final class TrackLine {
     private final int lastX;
     private final int[] stationX;
     private final String[] names;
-    private final long startClock;
+    private final OptionalLong startClock;
     private final long savedOffset;
     private final UUID owner = UUID.randomUUID();
     private final GlobalStation[] stations;
@@ -81,13 +85,22 @@ final class TrackLine {
     private int phaseTicks;
     private Train train;
 
+    /** A line that leaves the clock alone, for a test that does not read it. */
+    TrackLine(GameTestHelper helper, int lastX, int[] stationX, String[] names) {
+        this(helper, lastX, stationX, names, OptionalLong.empty());
+    }
+
+    /** A line that puts the clock at {@code startClock} when it is built, so that a failure reads in times that mean something. */
+    TrackLine(GameTestHelper helper, int lastX, int[] stationX, String[] names, long startClock) {
+        this(helper, lastX, stationX, names, OptionalLong.of(startClock));
+    }
+
     /**
      * @param lastX    the last track block of the line; it runs from {@link #FIRST_X}
      * @param stationX where each station is, in the order they are named; the train is built at the first
      * @param names    the stations' names
-     * @param startClock the clock value to put the clock at when the line is built, so that a failure reads in times that mean something
      */
-    TrackLine(GameTestHelper helper, int lastX, int[] stationX, String[] names, long startClock) {
+    private TrackLine(GameTestHelper helper, int lastX, int[] stationX, String[] names, OptionalLong startClock) {
         this.helper = helper;
         this.level = helper.getLevel();
         this.server = level.getServer();
@@ -97,6 +110,30 @@ final class TrackLine {
         this.startClock = startClock;
         this.savedOffset = ClockService.data(server).offset();
         this.stations = new GlobalStation[stationX.length];
+    }
+
+    /**
+     * Has {@link #cleanUp()} run when the test passes, fails or times out. The clock's offset is put
+     * back too, so it is safe for a test to move the clock.
+     */
+    void cleanUpWhenTheTestEnds() {
+        helper.testInfo.addListener(new GameTestListener() {
+            @Override
+            public void testStructureLoaded(GameTestInfo test) {}
+
+            @Override
+            public void testPassed(GameTestInfo test, GameTestRunner runner) {
+                cleanUp();
+            }
+
+            @Override
+            public void testFailed(GameTestInfo test, GameTestRunner runner) {
+                cleanUp();
+            }
+
+            @Override
+            public void testAddedForRerun(GameTestInfo oldTest, GameTestInfo newTest, GameTestRunner runner) {}
+        });
     }
 
     Train train() {
@@ -147,12 +184,12 @@ final class TrackLine {
 
     private void stuckAfter(int ticks, String what) {
         if (phaseTicks > ticks)
-            helper.fail(what + " after " + phaseTicks + " ticks (" + describe() + ")");
+            helper.fail(what + " after " + phaseTicks + " ticks (while setting up, in " + phase + "; " + describe() + ")");
     }
 
-    /** Where the line and its train are, for a failure message. */
+    /** Where the line and its train are, for a failure message. The caller says what stage its own test is in. */
     String describe() {
-        StringBuilder text = new StringBuilder("setting up: " + phase + ", clock " + ScheduleTests.show(ClockService.now(server))
+        StringBuilder text = new StringBuilder("clock " + TestTimes.show(ClockService.now(server))
             + ", line starts at x mod 16 = " + Math.floorMod(helper.absolutePos(BlockPos.ZERO).getX(), 16));
         if (train == null)
             return text.append(", no train").toString();
@@ -167,7 +204,7 @@ final class TrackLine {
     }
 
     private void buildTrack() {
-        clockOnNextTick(startClock);
+        startClock.ifPresent(this::clockOnNextTick);
         BlockState track = AllBlocks.TRACK.getDefaultState().setValue(TrackBlock.SHAPE, TrackShape.XO);
         for (int x = FIRST_X; x <= lastX; x++)
             helper.setBlock(track(x), track);
