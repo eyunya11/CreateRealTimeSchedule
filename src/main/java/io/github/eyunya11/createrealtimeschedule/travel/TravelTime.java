@@ -10,16 +10,16 @@ import java.util.OptionalInt;
  *
  * <p>It does what Create's {@code Navigation.tick} does, one tick at a time, for a train that starts
  * and ends at a stop with nothing in the way. That costs a loop of a few thousand steps for a run of
- * five thousand blocks, which is cheap enough to do for every pair of stations of a timetable, and
- * it is exact: the game tests ({@code TravelTimeTests}) run real trains on real track, from 20 to 300
- * blocks and from a tenth of the throttle to a full one, and the model gives the number of ticks the
- * train took each time. A smooth speed profile was tried first and left out, because it is further
- * from the train than this is (up to 0.55 s on 300 blocks) and does not make the arithmetic any
- * cheaper.
+ * five thousand blocks, which is cheap enough to do for every pair of stations of a timetable. It
+ * agrees with real trains to the tick on the five straight runs that the game tests
+ * ({@code TravelTimeRunTests}) time, from 20 to 300 blocks and from a tenth of the throttle to a
+ * full one; curves and signs have not been timed on a real train. A smooth speed profile was tried
+ * first and left out, because it is further from the train than this is (up to 0.55 s on 300
+ * blocks) and does not make the arithmetic any cheaper.
  *
- * <p>Create's control law jitters: runs a block apart can differ by half a second, because the
- * braking rule flips on and off from tick to tick near the stop. The model has the same jitter, as a
- * real train does.
+ * <p>Create's control law jitters: over 5 to 3,000 blocks at full throttle, runs a block apart differ
+ * by up to 9 ticks (0.45 s), because the braking rule flips on and off from tick to tick near the
+ * stop. The model has the same jitter, as a real train does.
  *
  * <p>Signals, other trains and a train that waits for chunks are not in it; they are the reasons a
  * real trip is longer than this.
@@ -37,6 +37,13 @@ public final class TravelTime {
     /** A route that takes longer than a day of game time is taken to be one the train never finishes. */
     private static final int GIVE_UP_TICKS = 20 * 60 * 60 * 24;
 
+    /**
+     * The lowest cap, in blocks per second, that is taken as a speed and not as a stop. Below it a
+     * trip of a few thousand blocks would take over a day, and the loop would run to the end of that
+     * day before saying so. (A speed-limit sign of 1% is 0.28 blocks per second.)
+     */
+    public static final double MIN_CAP = 0.05;
+
     private TravelTime() {}
 
     /**
@@ -48,14 +55,21 @@ public final class TravelTime {
      * @param throttle the share of the top speed the train is allowed (1 for full; Create's throttle
      *                 instruction in a schedule sets it)
      * @param zones    where the head may not go faster than a cap, measured from the start of the trip
-     * @return empty if a cap is not above zero, or if the train never arrives
+     * @return empty if a cap is below {@link #MIN_CAP} (a sign that stops the train), if the throttle
+     *         or the distance is not a number in range, or if the train would never arrive (or not
+     *         within a day)
      */
     public static OptionalInt ticks(TrainSpec spec, double throttle, double distance, List<SpeedZone> zones) {
         if (!(throttle > 0) || throttle > 1 || !(distance >= 0))
             return OptionalInt.empty();
-        for (SpeedZone zone : zones)
-            if (!(zone.cap() > 0))
+        for (SpeedZone zone : zones) {
+            if (!(zone.cap() >= MIN_CAP))
                 return OptionalInt.empty();
+            // Answered without running the loop: the stretch alone is longer than a day at that cap.
+            double inside = Math.min(zone.end(), distance) - Math.max(zone.start(), 0);
+            if (inside / (zone.cap() / 20) > GIVE_UP_TICKS)
+                return OptionalInt.empty();
+        }
         if (distance == 0)
             return OptionalInt.of(0);
 

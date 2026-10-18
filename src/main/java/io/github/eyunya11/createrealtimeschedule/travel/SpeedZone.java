@@ -15,6 +15,16 @@ public record SpeedZone(double start, double end, double cap) {
             throw new IllegalArgumentException("a zone cannot end before it starts: " + start + " to " + end);
     }
 
+    /**
+     * A curve. Create holds a train to its turn speed on one, so the cap is the spec's; a curve that
+     * is built with {@code new SpeedZone(..., someNumber)} instead goes at whatever that number is.
+     * (At a throttle low enough that the train is slower than the turn speed anyway, a curve changes
+     * nothing, as in the game.)
+     */
+    public static SpeedZone curve(double start, double end, TrainSpec spec) {
+        return new SpeedZone(start, end, spec.turnSpeed());
+    }
+
     public boolean contains(double position) {
         return position >= start && position <= end;
     }
