@@ -1,5 +1,8 @@
 package io.github.eyunya11.createrealtimeschedule.gametest;
 
+import static io.github.eyunya11.createrealtimeschedule.gametest.TestTimes.clock;
+import static io.github.eyunya11.createrealtimeschedule.gametest.TestTimes.show;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -62,15 +65,6 @@ public class ScheduleTests {
 
     // ------------------------------------------------------------------ helpers
     // The ones that are not private are shared with TrackTests.
-
-    /** A clock value: the given day of the clock, at the given time. */
-    static long clock(long day, int hour, int minute, int second) {
-        return day * RealClock.TICKS_PER_DAY + RealClock.ticksOf(hour, minute, second);
-    }
-
-    static String show(long clockTicks) {
-        return "day " + RealClock.day(clockTicks) + " " + RealClock.format(clockTicks);
-    }
 
     static RealTimeOfDayCondition condition(int hour, int minute, int rotation, int minimumStopSeconds) {
         return new RealTimeOfDayCondition(hour, minute, rotation, minimumStopSeconds);
