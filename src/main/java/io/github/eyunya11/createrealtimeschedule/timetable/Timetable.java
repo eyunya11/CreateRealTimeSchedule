@@ -348,7 +348,7 @@ public record Timetable(String name, List<Line> lines, List<Train> trains, List<
     }
 
     private static String time(int seconds) {
-        return isTime(seconds) ? ServiceTime.format(seconds) : seconds + " s";
+        return ServiceTime.show(seconds);
     }
 
     /** {@code line "central"}, or {@code lines[2]} for one that has no usable id to name it by. */

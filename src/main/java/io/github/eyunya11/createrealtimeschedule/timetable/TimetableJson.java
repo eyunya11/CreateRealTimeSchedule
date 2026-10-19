@@ -144,6 +144,8 @@ public final class TimetableJson {
         String format = top.string("format", true);
         if (format != null && !format.equals(Timetable.FORMAT))
             problems.add("format", "must be \"" + Timetable.FORMAT + "\"; this is not a timetable of this mod");
+        if (format == null || !format.equals(Timetable.FORMAT))
+            return null; // some other JSON: what it has or lacks is not worth listing
         if (!readVersion(top, problems))
             return null;
 
@@ -372,7 +374,8 @@ public final class TimetableJson {
      * The timetable as JSON, laid out the same way every time: two spaces of indent, the members in a
      * fixed order, and a stop or a list of names on one line. Members that have their default value
      * ({@code loop} false, {@code type} empty, a time a stop does not have) are left out. A timetable that
-     * {@link Timetable#problems()} finds fault with is written as it is, and is refused when read back.
+     * {@link Timetable#problems()} finds fault with is written as it is, and is refused when read back;
+     * a time outside the service day is written as {@link ServiceTime#show} has it, which is no time.
      */
     public static String write(Timetable timetable) {
         MapNode root = new MapNode();
@@ -404,9 +407,9 @@ public final class TimetableJson {
                 MapNode stopNode = new MapNode();
                 stopNode.put("station", text(stop.station()));
                 if (stop.hasArrive())
-                    stopNode.put("arrive", text(ServiceTime.format(stop.arrive())));
+                    stopNode.put("arrive", text(ServiceTime.show(stop.arrive())));
                 if (stop.hasDepart())
-                    stopNode.put("depart", text(ServiceTime.format(stop.depart())));
+                    stopNode.put("depart", text(ServiceTime.show(stop.depart())));
                 stops.add(stopNode);
             }
             node.put("stops", stops);

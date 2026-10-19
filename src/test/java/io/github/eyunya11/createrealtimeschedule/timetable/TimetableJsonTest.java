@@ -283,6 +283,25 @@ class TimetableJsonTest {
     }
 
     @Test
+    void saysNothingElseAboutAJsonThatIsNotOfThisFormat() {
+        String foreign = "{\"name\": \"plan\", \"stations\": [1, 2], \"routes\": {}, \"x\": 1, \"y\": 2}";
+        assertOnlyProblem(foreign, "format: is missing");
+        assertOnlyProblem("{\"format\": \"other\", \"version\": \"x\", \"lines\": 5, \"colour\": 1}",
+            "format: must be \"createrealtimeschedule.timetable\"");
+    }
+
+    @Test
+    void writesATimeOutsideTheServiceDayAsTextNoReaderTakesForATime() {
+        Line line = new Line("l", "Line", List.of("A", "B"), false);
+        Train train = new Train("1", "l", "", List.of(new Stop("A", Stop.NONE, -5), new Stop("B", ServiceTime.LIMIT, Stop.NONE)));
+        String json = TimetableJson.write(new Timetable("", List.of(line), List.of(train), List.of()));
+        assertTrue(json.contains("\"depart\": \"-5 s\""), json);
+        assertTrue(json.contains("\"arrive\": \"" + ServiceTime.LIMIT + " s\""), json);
+        assertProblem(json, "trains[0].stops[0].depart: must be a time");
+        assertProblem(json, "trains[0].stops[1].arrive: must be a time");
+    }
+
+    @Test
     void refusesAVersionItCannotReadAndSaysNothingElse() {
         assertOnlyProblem("{\"format\": \"createrealtimeschedule.timetable\"}", "version: is missing");
         for (String version : List.of("\"1\"", "1.5", "1e0", "true", "123456789012"))

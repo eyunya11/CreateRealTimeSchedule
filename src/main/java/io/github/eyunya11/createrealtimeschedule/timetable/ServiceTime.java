@@ -46,6 +46,15 @@ public final class ServiceTime {
     }
 
     /**
+     * Like {@link #format}, but a count of seconds that is no time of the service day comes out as
+     * {@code -5 s} instead of an exception: for a message, and for text that has to be written even
+     * though it is wrong, which no reader takes for a time.
+     */
+    public static String show(int seconds) {
+        return seconds >= 0 && seconds < LIMIT ? format(seconds) : seconds + " s";
+    }
+
+    /**
      * {@code HH:MM}, or {@code HH:MM:SS} when there are seconds.
      *
      * @throws IllegalArgumentException if the seconds are not a time the timetable can write

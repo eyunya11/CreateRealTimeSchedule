@@ -59,6 +59,14 @@ class ServiceTimeTest {
     }
 
     @Test
+    void showIsFormatForATimeAndPlainSecondsForWhatIsNoTime() {
+        assertEquals("08:10", ServiceTime.show(8 * 3600 + 10 * 60));
+        assertEquals("-5 s", ServiceTime.show(-5));
+        assertEquals("172800 s", ServiceTime.show(ServiceTime.LIMIT));
+        assertTrue(ServiceTime.parse(ServiceTime.show(-5)).isEmpty());
+    }
+
+    @Test
     void formatRefusesATimeOutsideTheServiceDay() {
         assertThrows(IllegalArgumentException.class, () -> ServiceTime.format(-1));
         assertThrows(IllegalArgumentException.class, () -> ServiceTime.format(ServiceTime.LIMIT));
