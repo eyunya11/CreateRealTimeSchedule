@@ -1,0 +1,41 @@
+{
+  "format": "createrealtimeschedule.timetable",
+  "version": 1,
+  "name": "Central Line, weekdays",
+  "lines": [
+    {
+      "id": "central",
+      "name": "Central Line",
+      "stations": ["Central 1", "North Gate", "Harbor"]
+    }
+  ],
+  "trains": [
+    {
+      "number": "101",
+      "line": "central",
+      "type": "local",
+      "stops": [
+        {"station": "Central 1", "depart": "08:10"},
+        {"station": "North Gate", "arrive": "08:25", "depart": "08:26"},
+        {"station": "Harbor", "arrive": "08:41"}
+      ]
+    },
+    {
+      "number": "102",
+      "line": "central",
+      "type": "local",
+      "stops": [
+        {"station": "Harbor", "depart": "08:50"},
+        {"station": "North Gate", "arrive": "09:05", "depart": "09:06"},
+        {"station": "Central 1", "arrive": "09:21"}
+      ]
+    }
+  ],
+  "duties": [
+    {
+      "id": "1A",
+      "depot": "Central 1",
+      "trains": ["101", "102"]
+    }
+  ]
+}
