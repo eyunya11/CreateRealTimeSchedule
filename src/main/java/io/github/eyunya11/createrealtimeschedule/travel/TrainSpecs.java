@@ -1,6 +1,8 @@
 package io.github.eyunya11.createrealtimeschedule.travel;
 
 import com.simibubi.create.content.trains.entity.Train;
+import com.simibubi.create.infrastructure.config.AllConfigs;
+import com.simibubi.create.infrastructure.config.CTrains;
 
 /**
  * Where a {@link TrainSpec} comes from in the game. This is the only class of the package that
@@ -20,5 +22,17 @@ public final class TrainSpecs {
      */
     public static TrainSpec of(Train train) {
         return new TrainSpec(train.maxSpeed() * 20.0, train.maxTurnSpeed() * 20.0, train.acceleration() * 400.0);
+    }
+
+    /**
+     * What a train without fuel has by the server's config, for when there is no train to ask: the
+     * export of the network.
+     *
+     * @throws IllegalArgumentException if the config sets a speed or the acceleration to nothing, which
+     *                                  leaves no train that moves
+     */
+    public static TrainSpec unpowered() {
+        CTrains trains = AllConfigs.server().trains;
+        return new TrainSpec(trains.trainTopSpeed.getF(), trains.trainTurningTopSpeed.getF(), trains.trainAcceleration.getF());
     }
 }

@@ -27,6 +27,7 @@ The clock is the game time plus an offset that is saved in the world. Twenty tic
 | `/rtclock get` | everyone | Shows the day and the time of the clock |
 | `/rtclock set <H:MM[:SS]>` | operators | Sets the time of day and keeps the day. Trains that are waiting follow it: a later time lets them go, an earlier one makes them wait longer |
 | `/rtclock align` | operators | Sets the time of day to the server's own |
+| `/rtnetwork export` | operators | Writes the stations of the track network and the running time between them (for a train without fuel at full throttle) to `createrealtimeschedule/network.json` in the world folder. It is meant for the timetable editor that is still to come |
 
 ## The sky
 

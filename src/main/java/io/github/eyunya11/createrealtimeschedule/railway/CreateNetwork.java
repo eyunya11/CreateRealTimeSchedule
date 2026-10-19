@@ -1,0 +1,120 @@
+package io.github.eyunya11.createrealtimeschedule.railway;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.IdentityHashMap;
+import java.util.List;
+import java.util.Map;
+
+import com.simibubi.create.content.trains.graph.EdgeData;
+import com.simibubi.create.content.trains.graph.EdgePointType;
+import com.simibubi.create.content.trains.graph.TrackEdge;
+import com.simibubi.create.content.trains.graph.TrackGraph;
+import com.simibubi.create.content.trains.graph.TrackNode;
+import com.simibubi.create.content.trains.graph.TrackNodeLocation;
+import com.simibubi.create.content.trains.signal.TrackEdgePoint;
+import com.simibubi.create.content.trains.station.GlobalStation;
+
+import io.github.eyunya11.createrealtimeschedule.railway.RailNetwork.Edge;
+import io.github.eyunya11.createrealtimeschedule.railway.RailNetwork.Station;
+import net.createmod.catnip.data.Couple;
+import net.minecraft.world.phys.Vec3;
+
+/**
+ * Reads Create's track graphs into a {@link RailNetwork}. This is the only class of the package that
+ * knows about Create; the search and the writing of the result can be used (and tested) without it.
+ *
+ * <p>Create's own search for a train's way ({@code Navigation.search}) is tied to a train; this
+ * takes from it what does not depend on one. A train goes from an edge to another when
+ * {@code TrackEdge.canTravelTo} says the track continues smoothly, and not onto an edge that has an
+ * edge point that does not let it through that way ({@code canNavigateVia}: a signal that faces the
+ * other way). A station can be stopped at from one direction only, the one {@code canApproachFrom}
+ * allows. What a train does not know until it is on the road is left out: signals that are red,
+ * other trains, and the kinds of track a particular train cannot use.
+ */
+public final class CreateNetwork {
+
+    private CreateNetwork() {}
+
+    /** The network of all the track graphs of the game, which a train cannot get from one to another of. */
+    public static RailNetwork read(Collection<TrackGraph> graphs) {
+        List<Edge> edges = new ArrayList<>();
+        List<Station> stations = new ArrayList<>();
+        for (TrackGraph graph : graphs)
+            addGraph(graph, edges, stations);
+        // The graphs are held in a hash map; sorted by name, the export comes out the same every time.
+        stations.sort(Comparator.comparing(Station::name).thenComparingInt(Station::edge).thenComparingDouble(Station::offset));
+        return new RailNetwork(edges, stations);
+    }
+
+    private static final Comparator<TrackNode> NODE_ORDER = Comparator
+        .<TrackNode, Double>comparing(node -> position(node).x)
+        .thenComparing(node -> position(node).y)
+        .thenComparing(node -> position(node).z)
+        .thenComparingInt(node -> node.getLocation().yOffsetPixels)
+        .thenComparing(node -> node.getLocation().dimension.location().toString());
+
+    private static Vec3 position(TrackNode node) {
+        return node.getLocation().getLocation();
+    }
+
+    private static void addGraph(TrackGraph graph, List<Edge> edges, List<Station> stations) {
+        List<TrackNode> nodes = new ArrayList<>();
+        for (TrackNodeLocation location : graph.getNodes()) {
+            TrackNode node = graph.locateNode(location);
+            if (node != null)
+                nodes.add(node);
+        }
+        nodes.sort(NODE_ORDER);
+
+        // The edges, numbered in the order of the nodes they start at and the nodes they lead to.
+        int base = edges.size();
+        List<TrackEdge> graphEdges = new ArrayList<>();
+        Map<TrackEdge, Integer> index = new IdentityHashMap<>();
+        for (TrackNode node : nodes) {
+            List<Map.Entry<TrackNode, TrackEdge>> leaving = new ArrayList<>(graph.getConnectionsFrom(node).entrySet());
+            leaving.sort(Map.Entry.comparingByKey(NODE_ORDER));
+            for (Map.Entry<TrackNode, TrackEdge> connection : leaving) {
+                index.put(connection.getValue(), base + graphEdges.size());
+                graphEdges.add(connection.getValue());
+            }
+        }
+
+        for (TrackEdge edge : graphEdges) {
+            List<Integer> next = new ArrayList<>();
+            for (Map.Entry<TrackNode, TrackEdge> connection : graph.getConnectionsFrom(edge.node2).entrySet()) {
+                TrackEdge onward = connection.getValue();
+                if (connection.getKey() != edge.node1 && edge.canTravelTo(onward) && lets(onward, connection.getKey()))
+                    next.add(index.get(onward));
+            }
+            next.sort(Integer::compare);
+            edges.add(new Edge(edge.getLength(), edge.isTurn(), next));
+        }
+
+        for (GlobalStation station : graph.getPoints(EdgePointType.STATION)) {
+            if (station.name == null || station.name.isBlank() || station.edgeLocation == null)
+                continue;
+            TrackNode first = graph.locateNode(station.edgeLocation.getFirst());
+            TrackNode second = graph.locateNode(station.edgeLocation.getSecond());
+            if (first == null || second == null)
+                continue;
+            TrackEdge edge = graph.getConnection(Couple.create(first, second));
+            Integer edgeIndex = edge == null ? null : index.get(edge);
+            if (edgeIndex == null || !station.canApproachFrom(second))
+                continue;
+            double offset = Math.max(0, Math.min(edge.getLength(), station.getLocationOn(edge)));
+            stations.add(new Station(station.name, edgeIndex, offset));
+        }
+    }
+
+    /** Whether every edge point on the edge lets a train run onto it and on to {@code end}. */
+    private static boolean lets(TrackEdge edge, TrackNode end) {
+        EdgeData data = edge.getEdgeData();
+        if (data.hasPoints())
+            for (TrackEdgePoint point : data.getPoints())
+                if (!point.canNavigateVia(end))
+                    return false;
+        return true;
+    }
+}

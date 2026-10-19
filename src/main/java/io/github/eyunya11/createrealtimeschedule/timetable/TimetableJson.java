@@ -1,5 +1,9 @@
 package io.github.eyunya11.createrealtimeschedule.timetable;
 
+import static io.github.eyunya11.createrealtimeschedule.json.JsonOutput.raw;
+import static io.github.eyunya11.createrealtimeschedule.json.JsonOutput.text;
+import static io.github.eyunya11.createrealtimeschedule.json.JsonOutput.texts;
+
 import java.io.IOException;
 import java.io.StringReader;
 import java.util.ArrayList;
@@ -9,14 +13,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.OptionalInt;
 import java.util.Set;
-import java.util.StringJoiner;
 import java.util.regex.Pattern;
 
 import org.jetbrains.annotations.Nullable;
 
-import com.google.gson.JsonPrimitive;
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonToken;
+
+import io.github.eyunya11.createrealtimeschedule.json.JsonOutput;
+import io.github.eyunya11.createrealtimeschedule.json.JsonOutput.ListNode;
+import io.github.eyunya11.createrealtimeschedule.json.JsonOutput.MapNode;
 
 /**
  * Reads and writes a {@link Timetable} as JSON, with no Minecraft types in it so that it can be
@@ -380,7 +386,7 @@ public final class TimetableJson {
     public static String write(Timetable timetable) {
         MapNode root = new MapNode();
         root.put("format", text(Timetable.FORMAT));
-        root.put("version", new Leaf(Integer.toString(Timetable.VERSION)));
+        root.put("version", raw(Integer.toString(Timetable.VERSION)));
         root.put("name", text(timetable.name()));
 
         ListNode lines = new ListNode();
@@ -390,7 +396,7 @@ public final class TimetableJson {
             node.put("name", text(line.name()));
             node.put("stations", texts(line.stations()));
             if (line.loop())
-                node.put("loop", new Leaf("true"));
+                node.put("loop", raw("true"));
             lines.add(node);
         }
         root.put("lines", lines);
@@ -426,108 +432,6 @@ public final class TimetableJson {
             duties.add(node);
         }
         root.put("duties", duties);
-
-        StringBuilder out = new StringBuilder();
-        render(root, 0, out);
-        return out.append('\n').toString();
-    }
-
-    /** What is written is a tree of these, so that the layout can be decided with the whole of a node in view. */
-    private sealed interface Node permits Leaf, ListNode, MapNode {}
-
-    /** A value on one line, already in JSON. */
-    private record Leaf(String json) implements Node {}
-
-    private record ListNode(List<Node> items) implements Node {
-        ListNode() {
-            this(new ArrayList<>());
-        }
-
-        void add(Node item) {
-            items.add(item);
-        }
-    }
-
-    private record MapNode(Map<String, Node> entries) implements Node {
-        MapNode() {
-            this(new LinkedHashMap<>());
-        }
-
-        void put(String key, Node value) {
-            entries.put(key, value);
-        }
-    }
-
-    private static Leaf text(String value) {
-        return new Leaf(new JsonPrimitive(value).toString());
-    }
-
-    private static ListNode texts(List<String> values) {
-        ListNode list = new ListNode();
-        for (String value : values)
-            list.add(text(value));
-        return list;
-    }
-
-    /** Wider than this and a list of values goes one to a line. */
-    private static final int WIDTH = 100;
-
-    private static void render(Node node, int depth, StringBuilder out) {
-        String flat = flat(node);
-        if (flat != null && depth * 2 + flat.length() <= WIDTH) {
-            out.append(flat);
-            return;
-        }
-        switch (node) {
-            case Leaf leaf -> out.append(leaf.json());
-            case ListNode list -> {
-                out.append("[\n");
-                for (int i = 0; i < list.items().size(); i++) {
-                    out.append("  ".repeat(depth + 1));
-                    render(list.items().get(i), depth + 1, out);
-                    out.append(i < list.items().size() - 1 ? ",\n" : "\n");
-                }
-                out.append("  ".repeat(depth)).append(']');
-            }
-            case MapNode map -> {
-                out.append("{\n");
-                int left = map.entries().size();
-                for (Map.Entry<String, Node> entry : map.entries().entrySet()) {
-                    out.append("  ".repeat(depth + 1)).append(quote(entry.getKey())).append(": ");
-                    render(entry.getValue(), depth + 1, out);
-                    out.append(--left > 0 ? ",\n" : "\n");
-                }
-                out.append("  ".repeat(depth)).append('}');
-            }
-        }
-    }
-
-    /** The node on one line, or null if there is anything but plain values in it. */
-    private static @Nullable String flat(Node node) {
-        return switch (node) {
-            case Leaf leaf -> leaf.json();
-            case ListNode list -> {
-                StringJoiner joiner = new StringJoiner(", ", "[", "]");
-                for (Node item : list.items()) {
-                    if (!(item instanceof Leaf leaf))
-                        yield null;
-                    joiner.add(leaf.json());
-                }
-                yield joiner.toString();
-            }
-            case MapNode map -> {
-                StringJoiner joiner = new StringJoiner(", ", "{", "}");
-                for (Map.Entry<String, Node> entry : map.entries().entrySet()) {
-                    if (!(entry.getValue() instanceof Leaf leaf))
-                        yield null;
-                    joiner.add(quote(entry.getKey()) + ": " + leaf.json());
-                }
-                yield joiner.toString();
-            }
-        };
-    }
-
-    private static String quote(String value) {
-        return new JsonPrimitive(value).toString();
+        return JsonOutput.render(root);
     }
 }
