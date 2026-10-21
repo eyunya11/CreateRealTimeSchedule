@@ -40,7 +40,8 @@ public final class TravelTime {
     /**
      * The lowest cap, in blocks per second, that is taken as a speed and not as a stop. Below it a
      * trip of a few thousand blocks would take over a day, and the loop would run to the end of that
-     * day before saying so. (A speed-limit sign of 1% is 0.28 blocks per second.)
+     * day before saying so. (The lowest speed-limit sign of Create Train Next, 1 km/h, is 0.28 blocks
+     * per second.)
      */
     public static final double MIN_CAP = 0.05;
 

@@ -11,6 +11,7 @@ import com.simibubi.create.content.trains.schedule.ScheduleRuntime;
 import com.simibubi.create.content.trains.station.GlobalStation;
 
 import io.github.eyunya11.createrealtimeschedule.Createrealtimeschedule;
+import io.github.eyunya11.createrealtimeschedule.travel.TrainSpec;
 import io.github.eyunya11.createrealtimeschedule.travel.TrainSpecs;
 import io.github.eyunya11.createrealtimeschedule.travel.TravelTime;
 import net.minecraft.gametest.framework.GameTest;
@@ -26,7 +27,7 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
  * <p>A train is built on a {@link TrackLine}, given a schedule with one stop, Beta, and left to run
  * there from Alpha. The test counts the ticks from the first one in which the train moves to the one
  * in which it has arrived, and compares that with what the model says for the same distance, the
- * same throttle and the speeds the train itself reports.
+ * same throttle and the speeds Create's config gives this train ({@link TrainSpecs#of}).
  *
  * <p>Only straight track, no signals and one train are tried. Most lines are 50 blocks long, so the
  * runs are short: a low throttle makes the train cruise on them as a full one does on a long run,
@@ -82,6 +83,38 @@ public class TravelTimeRunTests {
     @GameTest(template = LONG_TRACK_LINE, batch = "realtimetravel_300_full", timeoutTicks = TIMEOUT_TICKS)
     public static void threeHundredBlocksAtFullThrottle(GameTestHelper helper) {
         new Run(helper, 300, 1.0).begin();
+    }
+
+    /**
+     * {@link TrainSpecs#of} reads Create's config rather than the train, so that a speed limit lowering
+     * {@code Train.maxSpeed} (Create Train Next's) does not pass for the top speed. Without such a limit
+     * the two must agree, for a train without fuel and for one with it; the defaults for the two differ,
+     * so a spec that picks the wrong one fails.
+     */
+    @GameTest(template = TRACK_LINE, batch = "realtimetravel_spec", timeoutTicks = TIMEOUT_TICKS)
+    public static void theSpecIsWhatTheTrainUses(GameTestHelper helper) {
+        TrackLine line = new TrackLine(helper, ALPHA_X + 20 + 4, new int[] {ALPHA_X, ALPHA_X + 20},
+            new String[] {"Alpha", "Beta"});
+        line.cleanUpWhenTheTestEnds();
+        helper.onEachTick(() -> {
+            if (!line.setUp())
+                return;
+            Train train = line.train();
+            train.fuelTicks = 0;
+            assertSpecIsTheTrains(helper, train, "without fuel");
+            train.fuelTicks = 100;
+            assertSpecIsTheTrains(helper, train, "with fuel");
+            helper.succeed();
+        });
+    }
+
+    private static void assertSpecIsTheTrains(GameTestHelper helper, Train train, String which) {
+        TrainSpec spec = TrainSpecs.of(train);
+        String got = which + ": the spec is " + spec + " and the train has " + train.maxSpeed() * 20.0 + ", "
+            + train.maxTurnSpeed() * 20.0 + ", " + train.acceleration() * 400.0;
+        helper.assertTrue(Math.abs(spec.topSpeed() - train.maxSpeed() * 20.0) < 1e-4, got);
+        helper.assertTrue(Math.abs(spec.turnSpeed() - train.maxTurnSpeed() * 20.0) < 1e-4, got);
+        helper.assertTrue(Math.abs(spec.acceleration() - train.acceleration() * 400.0) < 1e-4, got);
     }
 
     /** One train on one line, stepped once a tick by the game test. */
@@ -141,7 +174,7 @@ public class TravelTimeRunTests {
         }
 
         private void finish(long measured) {
-            // The speeds are the ones this train reports, so that the model is given what Create uses.
+            // The speeds are the config's for this train, which theSpecIsWhatTheTrainUses holds to what Create uses.
             int model = TravelTime.ticks(TrainSpecs.of(train), throttle, distance, List.of()).orElseThrow();
             LOGGER.info("[{}] stations {} blocks apart, the train went {} blocks, throttle {}: measured {} ticks ({}s), model {} ticks ({}s)",
                 helper.testInfo.getTestName(), stationDistance, String.format(Locale.ROOT, "%.3f", distance), throttle,
