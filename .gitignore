@@ -22,3 +22,6 @@ run
 
 # Written by unit tests that load NeoForge classes
 logs
+
+# A jar of Create Train Next for the game tests that time trains under its signs (see build.gradle)
+libs

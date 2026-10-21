@@ -13,7 +13,7 @@ import java.util.OptionalInt;
  * five thousand blocks, which is cheap enough to do for every pair of stations of a timetable. It
  * agrees with real trains to the tick on the five straight runs that the game tests
  * ({@code TravelTimeRunTests}) time, from 20 to 300 blocks and from a tenth of the throttle to a
- * full one; curves and signs have not been timed on a real train. A smooth speed profile was tried
+ * full one; curves have not been timed on a real train. A smooth speed profile was tried
  * first and left out, because it is further from the train than this is (up to 0.55 s on 300
  * blocks) and does not make the arithmetic any cheaper.
  *
@@ -22,7 +22,8 @@ import java.util.OptionalInt;
  * stop. The model has the same jitter, as a real train does.
  *
  * <p>The speed-limit signs of Create Train Next are in it as that mod enforces them (see
- * {@link SpeedSigns}); they have not been timed on a real train either.
+ * {@link SpeedSigns}). It agrees to the tick with trains that run under them on four straight runs of
+ * 300 blocks ({@code SpeedSignRunTests}, which run only with a jar of Create Train Next at hand).
  *
  * <p>Signals, other trains and a train that waits for chunks are not in it; they are the reasons a
  * real trip is longer than this.
