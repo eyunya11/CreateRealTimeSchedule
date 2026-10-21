@@ -16,7 +16,7 @@ import org.junit.jupiter.api.Test;
  * output, and they agree with {@code tools/travel_time_replica.py}, a second replica written apart
  * from it that follows Create's code (and Create Train Next's, for signs) more closely. Neither is a
  * real train: straight runs have been compared with one to the tick, with and without signs
- * ({@code SpeedSignRunTests} for signs), and runs over S-bends to within half a second
+ * ({@code SpeedSignRunTests} for signs), and runs over curves to within a second
  * ({@code CurveRunTests}).
  */
 class TravelTimeTest {
