@@ -2,18 +2,20 @@ package io.github.eyunya11.createrealtimeschedule.travel;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
+import java.util.OptionalInt;
 
 import org.junit.jupiter.api.Test;
 
 /**
  * The ticks of the first test are what real trains took in the game tests
- * ({@code TravelTimeRunTests}). The values for zones and for the other runs are this model's own
+ * ({@code TravelTimeRunTests}). The values for zones, signs and the other runs are this model's own
  * output, and they agree with {@code tools/travel_time_replica.py}, a second replica written apart
- * from it that follows Create's code more closely; neither is a real train, so only straight runs have
- * been compared with one.
+ * from it that follows Create's code (and Create Train Next's, for signs) more closely; neither is a
+ * real train, so only straight runs have been compared with one.
  */
 class TravelTimeTest {
 
@@ -22,6 +24,18 @@ class TravelTimeTest {
 
     private static int ticks(double throttle, double distance, List<SpeedZone> zones) {
         return TravelTime.ticks(STANDARD, throttle, distance, zones).orElseThrow();
+    }
+
+    private static int ticks(double throttle, double distance, SpeedSigns signs) {
+        return TravelTime.ticks(STANDARD, throttle, distance, NO_ZONES, signs).orElseThrow();
+    }
+
+    private static SpeedSigns signs(SpeedSign... signs) {
+        return SpeedSigns.of(List.of(signs));
+    }
+
+    private static SpeedSigns startingUnder(int kmh, SpeedSign... signs) {
+        return new SpeedSigns(OptionalInt.of(kmh), List.of(signs));
     }
 
     @Test
@@ -91,6 +105,79 @@ class TravelTimeTest {
         TrainSpec slowTurner = new TrainSpec(28, 7, 3);
         assertTrue(TravelTime.ticks(slowTurner, 1, 1000, List.of(SpeedZone.curve(400, 700, slowTurner))).orElseThrow()
             > ticks(1, 1000, List.of(curve)));
+    }
+
+    @Test
+    void aSignHoldsTheTrainFromWhereTheFrontPassesItToTheNextSign() {
+        // 40 km/h is 11.1 blocks a second, 60 is 16.7 and 20 is 5.6.
+        assertEquals(1293, ticks(1, 1000, signs(SpeedSign.limit(400, 40), SpeedSign.release(700))));
+        assertEquals(1552, ticks(1, 1000, signs(SpeedSign.limit(400, 40))));
+        assertEquals(1415, ticks(1, 1000, signs(SpeedSign.limit(200, 60), SpeedSign.limit(500, 40), SpeedSign.release(800))));
+        assertEquals(755, ticks(1, 300, signs(SpeedSign.limit(100, 20), SpeedSign.release(200))));
+        assertEquals(158, ticks(1, 40, signs(SpeedSign.limit(20, 40))));
+    }
+
+    @Test
+    void aTripCanStartUnderTheLimitOfASignAnEarlierTripPassed() {
+        assertEquals(1886, ticks(1, 1000, startingUnder(40)));
+        assertEquals(1413, ticks(1, 1000, startingUnder(40, SpeedSign.release(500))));
+        // Long enough to cruise: the distance at 11.1 blocks a second, and a few seconds to start and stop.
+        double seconds = TravelTime.seconds(STANDARD, 1, 1000, NO_ZONES, startingUnder(40)).orElseThrow();
+        assertEquals(1000 / (40 / 3.6) + 4.3, seconds, 0.1);
+    }
+
+    @Test
+    void theThrottleIsTakenOffTheLimitAsCreateTakesItOffTheTopSpeed() {
+        // Half throttle under a 40 km/h sign is 20 km/h, 5.6 blocks a second, and not the smaller of
+        // 40 km/h and half the top speed (14 blocks a second): Create Train Next holds Train.maxSpeed,
+        // and Create multiplies that by the throttle.
+        assertEquals(3651, ticks(0.5, 1000, startingUnder(40)));
+        double seconds = TravelTime.seconds(STANDARD, 0.5, 1000, NO_ZONES, startingUnder(40)).orElseThrow();
+        assertEquals(1000 / (20 / 3.6), seconds, 3);
+        assertEquals(4382, ticks(0.25, 1000, signs(SpeedSign.limit(400, 40), SpeedSign.release(700))));
+    }
+
+    @Test
+    void aSignTheTrainIsSlowerThanOrAReleaseWithoutALimitChangesNothing() {
+        // 144 km/h is 40 blocks a second, faster than the 28 of the top speed.
+        assertEquals(ticks(1, 100, NO_ZONES), ticks(1, 100, signs(SpeedSign.limit(30, 144))));
+        assertEquals(ticks(1, 1000, NO_ZONES), ticks(1, 1000, signs(SpeedSign.release(500))));
+    }
+
+    @Test
+    void aSignAtOrBehindTheStartIsBehindTheTrain() {
+        assertEquals(ticks(1, 1000, NO_ZONES), ticks(1, 1000, signs(SpeedSign.limit(0, 40), SpeedSign.limit(-5, 20))));
+    }
+
+    @Test
+    void theTrainSlowsForASignJustPastTheStop() {
+        // Create Train Next looks for signs along the track past the end of the path, as Create's signal
+        // scout goes on past it, so a slow sign five blocks after the stop slows the arrival.
+        assertEquals(218, ticks(1, 100, NO_ZONES));
+        assertEquals(297, ticks(1, 100, signs(SpeedSign.limit(105, 10))));
+    }
+
+    @Test
+    void signsGoWithCurvesAndWithAPoweredTrain() {
+        assertEquals(1765, TravelTime.ticks(STANDARD, 1, 1000, List.of(new SpeedZone(400, 700, 14)),
+            signs(SpeedSign.limit(200, 40))).orElseThrow());
+        // 100 km/h is 27.8 blocks a second, under the 40 of a powered train.
+        assertEquals(833, TravelTime.ticks(TrainSpec.POWERED, 1, 1000, NO_ZONES,
+            signs(SpeedSign.limit(300, 100), SpeedSign.release(600))).orElseThrow());
+    }
+
+    @Test
+    void theSignsCanBeGivenInAnyOrder() {
+        assertEquals(1415, ticks(1, 1000, signs(SpeedSign.release(800), SpeedSign.limit(500, 40), SpeedSign.limit(200, 60))));
+    }
+
+    @Test
+    void aSignHasALimitOfAtLeastOneKmhOrNoneOfItsOwn() {
+        assertThrows(IllegalArgumentException.class, () -> SpeedSign.limit(10, 0));
+        assertThrows(IllegalArgumentException.class, () -> new SpeedSign(10, 40, true));
+        assertThrows(IllegalArgumentException.class, () -> SpeedSign.limit(Double.NaN, 40));
+        assertThrows(IllegalArgumentException.class, () -> startingUnder(0));
+        assertEquals(1, SpeedSign.limit(10, 1).kmh());
     }
 
     @Test
