@@ -19,6 +19,7 @@ import com.google.gson.JsonParser;
 
 import io.github.eyunya11.createrealtimeschedule.railway.RailNetwork.Edge;
 import io.github.eyunya11.createrealtimeschedule.railway.RailNetwork.Station;
+import io.github.eyunya11.createrealtimeschedule.travel.SpeedSign;
 import io.github.eyunya11.createrealtimeschedule.travel.TrainSpec;
 
 class NetworkJsonTest {
@@ -69,6 +70,28 @@ class NetworkJsonTest {
         assertEquals(30, curves.get(0).getAsJsonArray().get(0).getAsDouble(), 1e-9);
         assertEquals(60, curves.get(0).getAsJsonArray().get(1).getAsDouble(), 1e-9);
         assertTrue(json.contains("\"curves\": [[30, 60]]"), json);
+    }
+
+    @Test
+    void aLegWithSignsListsThemWithTheirLimitsAndCountsThemInItsTime() {
+        RailNetwork network = new RailNetwork(
+            List.of(new Edge(1100, false, List.of(), List.of(SpeedSign.limit(410, 40), SpeedSign.release(710)))),
+            List.of(new Station("A", 0, 10), new Station("B", 0, 1010)));
+        String json = write(network, 1.0);
+        // Too wide for one line, the leg is laid out a member to a line, and the signs stay on theirs.
+        assertTrue(json.contains("\"signs\": [{\"at\": 400, \"kmh\": 40}, {\"at\": 700, \"release\": true}],\n"), json);
+        assertTrue(json.contains("\"ticks\": 1293\n"), json);
+        JsonArray signs = JsonParser.parseString(json).getAsJsonObject().getAsJsonArray("legs").get(0).getAsJsonObject()
+            .getAsJsonArray("signs");
+        assertEquals(2, signs.size());
+        assertEquals(40, signs.get(0).getAsJsonObject().get("kmh").getAsInt());
+        assertTrue(signs.get(1).getAsJsonObject().get("release").getAsBoolean());
+        assertFalse(signs.get(1).getAsJsonObject().has("kmh"));
+    }
+
+    @Test
+    void aLegWithoutSignsHasNoSignsMember() {
+        assertFalse(write(threeInARow(), 1.0).contains("signs"));
     }
 
     @Test

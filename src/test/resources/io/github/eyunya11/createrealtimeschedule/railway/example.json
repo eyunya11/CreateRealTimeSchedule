@@ -1,6 +1,6 @@
 {
   "format": "createrealtimeschedule.network",
-  "version": 1,
+  "version": 2,
   "train": {"topSpeed": 28, "turnSpeed": 14, "acceleration": 3, "throttle": 1},
   "stations": ["Alpha", "Beta", "Gamma"],
   "legs": [

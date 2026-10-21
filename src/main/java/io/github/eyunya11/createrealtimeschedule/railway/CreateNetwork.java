@@ -7,6 +7,10 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.jetbrains.annotations.Nullable;
+import org.slf4j.Logger;
+
+import com.mojang.logging.LogUtils;
 import com.simibubi.create.content.trains.graph.EdgeData;
 import com.simibubi.create.content.trains.graph.EdgePointType;
 import com.simibubi.create.content.trains.graph.TrackEdge;
@@ -18,7 +22,9 @@ import com.simibubi.create.content.trains.station.GlobalStation;
 
 import io.github.eyunya11.createrealtimeschedule.railway.RailNetwork.Edge;
 import io.github.eyunya11.createrealtimeschedule.railway.RailNetwork.Station;
+import io.github.eyunya11.createrealtimeschedule.travel.SpeedSign;
 import net.createmod.catnip.data.Couple;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.Vec3;
 
 /**
@@ -32,8 +38,19 @@ import net.minecraft.world.phys.Vec3;
  * other way). A station can be stopped at from one direction only, the one {@code canApproachFrom}
  * allows. What a train does not know until it is on the road is left out: signals that are red,
  * other trains, and the kinds of track a particular train cannot use.
+ *
+ * <p>The speed-limit signs of Create Train Next are read too, where that mod is there, without
+ * depending on it: the kind of edge point is looked up by name, and the limit is read by reflection.
  */
 public final class CreateNetwork {
+
+    private static final Logger LOGGER = LogUtils.getLogger();
+
+    /** The kind of edge point that Create Train Next's speed-limit signs and release signs are. */
+    private static final ResourceLocation SPEED_LIMIT = ResourceLocation.fromNamespaceAndPath("createtrainnext", "speed_limit");
+
+    /** Whether a sign that could not be read has been reported, so that the log is told once. */
+    private static boolean warned;
 
     private CreateNetwork() {}
 
@@ -81,6 +98,7 @@ public final class CreateNetwork {
             }
         }
 
+        Map<TrackEdge, List<SpeedSign>> signs = signs(graph);
         for (TrackEdge edge : graphEdges) {
             List<Integer> next = new ArrayList<>();
             for (Map.Entry<TrackNode, TrackEdge> connection : graph.getConnectionsFrom(edge.node2).entrySet()) {
@@ -89,7 +107,7 @@ public final class CreateNetwork {
                     next.add(index.get(onward));
             }
             next.sort(Integer::compare);
-            edges.add(new Edge(edge.getLength(), edge.isTurn(), next));
+            edges.add(new Edge(edge.getLength(), edge.isTurn(), next, signs.getOrDefault(edge, List.of())));
         }
 
         for (GlobalStation station : graph.getPoints(EdgePointType.STATION)) {
@@ -105,6 +123,48 @@ public final class CreateNetwork {
                 continue;
             double offset = Math.max(0, Math.min(edge.getLength(), station.getLocationOn(edge)));
             stations.add(new Station(station.name, edgeIndex, offset));
+        }
+    }
+
+    /**
+     * Create Train Next's signs on the graph, by the edge they face along. A sign is placed on the edge
+     * from the first node of its location to the second, and holds the trains that run that way: its
+     * {@code appliesTo(toward)} is {@code isPrimary(toward)}, true for the second node. The edge the
+     * other way has it behind its trains, and gets nothing.
+     */
+    private static Map<TrackEdge, List<SpeedSign>> signs(TrackGraph graph) {
+        Map<TrackEdge, List<SpeedSign>> signs = new IdentityHashMap<>();
+        EdgePointType<?> type = EdgePointType.TYPES.get(SPEED_LIMIT);
+        if (type == null)
+            return signs;
+        for (TrackEdgePoint point : graph.getPoints(type)) {
+            if (point.edgeLocation == null)
+                continue;
+            TrackNode first = graph.locateNode(point.edgeLocation.getFirst());
+            TrackNode second = graph.locateNode(point.edgeLocation.getSecond());
+            TrackEdge edge = first == null || second == null ? null : graph.getConnection(Couple.create(first, second));
+            if (edge == null)
+                continue;
+            double offset = Math.max(0, Math.min(edge.getLength(), point.getLocationOn(edge)));
+            SpeedSign sign = sign(point, offset);
+            if (sign != null)
+                signs.computeIfAbsent(edge, unused -> new ArrayList<>()).add(sign);
+        }
+        return signs;
+    }
+
+    /** The sign as Create Train Next's {@code isRelease} and {@code getLimit} (in km/h) give it, or null if they cannot be read. */
+    private static @Nullable SpeedSign sign(TrackEdgePoint point, double offset) {
+        try {
+            if ((Boolean) point.getClass().getMethod("isRelease").invoke(point))
+                return SpeedSign.release(offset);
+            return SpeedSign.limit(offset, (Integer) point.getClass().getMethod("getLimit").invoke(point));
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            if (!warned) {
+                warned = true;
+                LOGGER.warn("Could not read a speed-limit sign of Create Train Next; such signs are left out of the network", e);
+            }
+            return null;
         }
     }
 

@@ -7,11 +7,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalInt;
 
 import org.junit.jupiter.api.Test;
 
 import io.github.eyunya11.createrealtimeschedule.railway.RailNetwork.Edge;
 import io.github.eyunya11.createrealtimeschedule.railway.RailNetwork.Station;
+import io.github.eyunya11.createrealtimeschedule.travel.SpeedSign;
 import io.github.eyunya11.createrealtimeschedule.travel.SpeedZone;
 import io.github.eyunya11.createrealtimeschedule.travel.TrainSpec;
 import io.github.eyunya11.createrealtimeschedule.travel.TravelTime;
@@ -267,6 +269,83 @@ class RailNetworkTest {
         assertTrue(legOf(network, "A", "B").ticks(TrainSpec.STANDARD, 0).isEmpty());
     }
 
+    // ------------------------------------------------------------------ speed-limit signs
+
+    private static Edge signed(double length, List<SpeedSign> signs, Integer... next) {
+        return new Edge(length, false, List.of(next), signs);
+    }
+
+    private static List<Double> positions(Leg leg) {
+        return leg.signs().stream().map(SpeedSign::position).toList();
+    }
+
+    @Test
+    void theSignsOnTheWayAreGivenAsDistancesFromTheStart() {
+        RailNetwork network = network(List.of(
+                signed(40, List.of(SpeedSign.limit(25, 40)), 1),
+                signed(30, List.of(SpeedSign.release(30), SpeedSign.limit(0, 60)), 2),
+                signed(50, List.of(SpeedSign.limit(10, 20)))),
+            new Station("A", 0, 10), new Station("B", 2, 20));
+        Leg leg = legOf(network, "A", "B");
+        assertEquals(80, leg.distance(), DELTA);
+        assertEquals(List.of(15.0, 30.0, 60.0, 70.0), positions(leg));
+        assertEquals(List.of(40, 60, 0, 20), leg.signs().stream().map(SpeedSign::kmh).toList());
+        assertTrue(leg.signs().get(2).release());
+    }
+
+    @Test
+    void aSignAtTheStartMarkerIsBehindTheTrainAndOneAtTheEndMarkerIsPassed() {
+        RailNetwork network = network(List.of(signed(60, List.of(SpeedSign.limit(10, 40), SpeedSign.limit(30, 20)))),
+            new Station("A", 0, 10), new Station("B", 0, 30));
+        assertEquals(List.of(20.0), positions(legOf(network, "A", "B")));
+    }
+
+    @Test
+    void theSignsPastTheStopAreThoseATrainComingInBrakesFor() {
+        // The track goes on without a choice of way, so the train coming in to B looks along it: the
+        // signs 10 and 80 blocks past B count, and the one 730 blocks past is beyond the search.
+        RailNetwork network = network(List.of(
+                signed(60, List.of(SpeedSign.limit(40, 10)), 1),
+                signed(100, List.of(SpeedSign.limit(50, 20)), 2),
+                signed(1000, List.of(SpeedSign.limit(600, 30)))),
+            new Station("A", 0, 10), new Station("B", 0, 30));
+        assertEquals(List.of(30.0, 100.0), positions(legOf(network, "A", "B")));
+    }
+
+    @Test
+    void theSearchPastTheStopEndsWhereTheTrackBranches() {
+        RailNetwork network = network(List.of(
+                signed(60, List.of(SpeedSign.limit(40, 10)), 1, 2),
+                signed(100, List.of(SpeedSign.limit(5, 20))),
+                signed(100, List.of(SpeedSign.limit(5, 20)))),
+            new Station("A", 0, 10), new Station("B", 0, 30));
+        assertEquals(List.of(30.0), positions(legOf(network, "A", "B")));
+    }
+
+    @Test
+    void aLegsSignsGoIntoItsRunningTime() {
+        // As in TravelTimeTest: 1000 blocks with a 40 km/h sign at 400 and a release sign at 700.
+        RailNetwork network = network(List.of(signed(1100, List.of(SpeedSign.limit(410, 40), SpeedSign.release(710)))),
+            new Station("A", 0, 10), new Station("B", 0, 1010));
+        Leg leg = legOf(network, "A", "B");
+        assertEquals(1293, leg.ticks(TrainSpec.STANDARD, 1).orElseThrow());
+        // Coming in under the limit of an earlier sign, the train is slower until the first sign of the leg.
+        assertTrue(leg.ticks(TrainSpec.STANDARD, 1, OptionalInt.of(20)).orElseThrow() > 1293 + 100);
+    }
+
+    @Test
+    void theLimitAtTheEndIsThatOfTheLastSignOrTheOneTheTrainCameWith() {
+        Edge edge = signed(100, List.of(SpeedSign.limit(20, 40), SpeedSign.release(50), SpeedSign.limit(90, 60)));
+        RailNetwork network = network(List.of(edge), new Station("A", 0, 0), new Station("B", 0, 30),
+            new Station("C", 0, 70));
+        assertEquals(OptionalInt.of(40), legOf(network, "A", "B").limitAtEnd(OptionalInt.empty()));
+        assertEquals(OptionalInt.empty(), legOf(network, "A", "C").limitAtEnd(OptionalInt.of(60)));
+        RailNetwork plain = network(List.of(straight(60)), new Station("A", 0, 10), new Station("B", 0, 30));
+        assertEquals(OptionalInt.of(60), legOf(plain, "A", "B").limitAtEnd(OptionalInt.of(60)));
+        // The sign past C is ahead of the train when it stops there, not yet its limit.
+        assertEquals(OptionalInt.empty(), legOf(network, "B", "C").limitAtEnd(OptionalInt.of(40)));
+    }
+
     // ------------------------------------------------------------------ what is refused
 
     @Test
@@ -276,6 +355,8 @@ class RailNetworkTest {
         assertThrows(IllegalArgumentException.class, () -> network(List.of(straight(10)), new Station("A", 1, 0)));
         assertThrows(IllegalArgumentException.class, () -> network(List.of(straight(10)), new Station("A", 0, 11)));
         assertThrows(IllegalArgumentException.class, () -> network(List.of(straight(10)), new Station("A", 0, -1)));
+        assertThrows(IllegalArgumentException.class, () -> network(List.of(signed(10, List.of(SpeedSign.limit(11, 40))))));
+        assertThrows(IllegalArgumentException.class, () -> network(List.of(signed(10, List.of(SpeedSign.limit(-1, 40))))));
     }
 
     @Test
