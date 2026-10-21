@@ -13,7 +13,10 @@ import java.util.OptionalInt;
  * five thousand blocks, which is cheap enough to do for every pair of stations of a timetable. It
  * agrees with real trains to the tick on the five straight runs that the game tests
  * ({@code TravelTimeRunTests}) time, from 20 to 300 blocks and from a tenth of the throttle to a
- * full one; curves have not been timed on a real train. A smooth speed profile was tried
+ * full one. Over a curve it is within half a second of a real train, not to the tick
+ * ({@code CurveRunTests}): Create keeps the wheels of a bogey a fixed straight distance apart on a
+ * curve, which nudges the front wheel off the distance the train counts by a fraction of a block,
+ * and that is left out. A smooth speed profile was tried
  * first and left out, because it is further from the train than this is (up to 0.55 s on 300
  * blocks) and does not make the arithmetic any cheaper.
  *

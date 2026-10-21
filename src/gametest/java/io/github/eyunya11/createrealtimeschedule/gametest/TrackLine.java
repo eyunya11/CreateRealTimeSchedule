@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.OptionalLong;
 import java.util.UUID;
 
+import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 
 import com.mojang.logging.LogUtils;
@@ -16,16 +17,22 @@ import com.simibubi.create.content.contraptions.glue.SuperGlueEntity;
 import com.simibubi.create.content.processing.burner.BlazeBurnerBlock;
 import com.simibubi.create.content.trains.entity.RemoveTrainPacket;
 import com.simibubi.create.content.trains.entity.Train;
+import com.simibubi.create.content.trains.graph.TrackGraph;
 import com.simibubi.create.content.trains.graph.TrackGraphHelper;
+import com.simibubi.create.content.trains.graph.TrackGraphLocation;
 import com.simibubi.create.content.trains.station.GlobalStation;
 import com.simibubi.create.content.trains.station.StationBlockEntity;
+import com.simibubi.create.content.trains.track.BezierConnection;
 import com.simibubi.create.content.trains.track.ITrackBlock;
 import com.simibubi.create.content.trains.track.TrackBlock;
+import com.simibubi.create.content.trains.track.TrackBlockEntity;
+import com.simibubi.create.content.trains.track.TrackMaterial;
 import com.simibubi.create.content.trains.track.TrackShape;
 
 import io.github.eyunya11.createrealtimeschedule.clock.ClockService;
 import io.github.eyunya11.createrealtimeschedule.clock.RealClock;
 import io.github.eyunya11.createrealtimeschedule.schedule.TrainSlotMemory;
+import net.createmod.catnip.data.Couple;
 import net.createmod.catnip.platform.CatnipServices;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -54,10 +61,21 @@ import net.minecraft.world.phys.Vec3;
  * navigation and the movement, is Create's. A test calls {@link #cleanUpWhenTheTestEnds()} once,
  * then {@link #setUp()} once a tick until it answers true, and gives the train its schedule.
  *
+ * <p>A line can have a {@link Bend}, a curved track of Create's that takes it over to a row of blocks
+ * further south, for a test of what a curve does to a train.
+ *
  * <p>Tests that use a line share the clock and Create's railways with everything else, so each must
  * have a batch of its own: tests in one batch run side by side.
  */
 final class TrackLine {
+
+    /**
+     * An S-bend, as a player lays one with Create's track: a curved track from the block at
+     * {@code fromX} to the one at {@code toX}, after which the line runs on {@code shift} blocks further
+     * south (towards +z). The track graph holds it as an edge of its own that is a turn, and a train
+     * is held to its turn speed while its front is on it, as on any curve.
+     */
+    record Bend(int fromX, int toX, int shift) {}
 
     private static final Logger LOGGER = LogUtils.getLogger();
 
@@ -77,6 +95,7 @@ final class TrackLine {
     private final int[] stationX;
     private final String[] names;
     private final OptionalLong startClock;
+    private final @Nullable Bend bend;
     private final long savedOffset;
     private final UUID owner = UUID.randomUUID();
     private final GlobalStation[] stations;
@@ -87,12 +106,17 @@ final class TrackLine {
 
     /** A line that leaves the clock alone, for a test that does not read it. */
     TrackLine(GameTestHelper helper, int lastX, int[] stationX, String[] names) {
-        this(helper, lastX, stationX, names, OptionalLong.empty());
+        this(helper, lastX, stationX, names, OptionalLong.empty(), null);
     }
 
     /** A line that puts the clock at {@code startClock} when it is built, so that a failure reads in times that mean something. */
     TrackLine(GameTestHelper helper, int lastX, int[] stationX, String[] names, long startClock) {
-        this(helper, lastX, stationX, names, OptionalLong.of(startClock));
+        this(helper, lastX, stationX, names, OptionalLong.of(startClock), null);
+    }
+
+    /** A line with a bend in it, which leaves the clock alone. A station past the bend is on the row it leads to. */
+    TrackLine(GameTestHelper helper, int lastX, int[] stationX, String[] names, Bend bend) {
+        this(helper, lastX, stationX, names, OptionalLong.empty(), bend);
     }
 
     /**
@@ -100,7 +124,8 @@ final class TrackLine {
      * @param stationX where each station is, in the order they are named; the train is built at the first
      * @param names    the stations' names
      */
-    private TrackLine(GameTestHelper helper, int lastX, int[] stationX, String[] names, OptionalLong startClock) {
+    private TrackLine(GameTestHelper helper, int lastX, int[] stationX, String[] names, OptionalLong startClock,
+        @Nullable Bend bend) {
         this.helper = helper;
         this.level = helper.getLevel();
         this.server = level.getServer();
@@ -108,6 +133,7 @@ final class TrackLine {
         this.stationX = stationX;
         this.names = names;
         this.startClock = startClock;
+        this.bend = bend;
         this.savedOffset = ClockService.data(server).offset();
         this.stations = new GlobalStation[stationX.length];
     }
@@ -144,12 +170,22 @@ final class TrackLine {
         return stations[index];
     }
 
+    /** The track block at {@code x}, on the row the line runs on there. */
     BlockPos track(int x) {
-        return new BlockPos(x, TRACK_Y, TRACK_Z);
+        return new BlockPos(x, TRACK_Y, rowZ(x));
     }
 
     private BlockPos stationBlock(int x) {
-        return new BlockPos(x, TRACK_Y, TRACK_Z + 1);
+        return new BlockPos(x, TRACK_Y, rowZ(x) + 1);
+    }
+
+    private int rowZ(int x) {
+        return bend != null && x >= bend.toX() ? TRACK_Z + bend.shift() : TRACK_Z;
+    }
+
+    /** Whether there is a straight track block at {@code x}: everywhere but under the bend. */
+    private boolean straightAt(int x) {
+        return bend == null || x <= bend.fromX() || x >= bend.toX();
     }
 
     /** Sets the clock to read {@code clock} on the next tick. The game test runs at the end of a tick, after the level and its trains, so the next thing to read the clock is the next tick's. */
@@ -206,18 +242,54 @@ final class TrackLine {
     private void buildTrack() {
         startClock.ifPresent(this::clockOnNextTick);
         BlockState track = AllBlocks.TRACK.getDefaultState().setValue(TrackBlock.SHAPE, TrackShape.XO);
-        for (int x = FIRST_X; x <= lastX; x++)
-            helper.setBlock(track(x), track);
+        for (int x = FIRST_X; x <= lastX; x++) {
+            if (!straightAt(x))
+                continue;
+            // The ends of a curve keep it in their block entities.
+            boolean bendEnd = bend != null && (x == bend.fromX() || x == bend.toX());
+            helper.setBlock(track(x), bendEnd ? track.setValue(TrackBlock.HAS_BE, true) : track);
+        }
+        if (bend != null)
+            layBend();
         enter(Phase.WAIT_FOR_GRAPH);
     }
 
-    /** A track block lays its part of the graph a tick after it is placed, so the stations wait for it. */
+    /**
+     * Does what {@code TrackPlacement} does when a player joins the two ends with the track item: a
+     * {@link BezierConnection} from the east face of the one to the west face of the other, each end
+     * pointing at the other, kept by the block entities at both ends.
+     */
+    private void layBend() {
+        BlockPos from = helper.absolutePos(track(bend.fromX()));
+        BlockPos to = helper.absolutePos(track(bend.toX()));
+        BlockState fromState = level.getBlockState(from);
+        BlockState toState = level.getBlockState(to);
+        ITrackBlock block = (ITrackBlock) fromState.getBlock();
+        Vec3 east = new Vec3(1, 0, 0);
+        Vec3 west = new Vec3(-1, 0, 0);
+        BezierConnection curve = new BezierConnection(Couple.create(from, to),
+            Couple.create(block.getCurveStart(level, from, fromState, east), block.getCurveStart(level, to, toState, west)),
+            Couple.create(east, west),
+            Couple.create(block.getUpNormal(level, from, fromState), block.getUpNormal(level, to, toState)),
+            true, false, TrackMaterial.ANDESITE);
+        ((TrackBlockEntity) level.getBlockEntity(from)).addConnection(curve);
+        ((TrackBlockEntity) level.getBlockEntity(to)).addConnection(curve.secondary());
+    }
+
+    /**
+     * A track block lays its part of the graph a tick after it is placed, so the stations wait for it;
+     * and with a bend, for the bend to join the rows into one graph.
+     */
     private void waitForGraph() {
-        for (int x : stationX)
-            if (TrackGraphHelper.getGraphLocationAt(level, helper.absolutePos(track(x)), AxisDirection.NEGATIVE, new Vec3(1, 0, 0)) == null) {
-                stuckAfter(40, "the track graph does not reach x = " + x);
+        TrackGraph graph = null;
+        for (int x : stationX) {
+            TrackGraphLocation at = TrackGraphHelper.getGraphLocationAt(level, helper.absolutePos(track(x)), AxisDirection.NEGATIVE, new Vec3(1, 0, 0));
+            if (at == null || (graph != null && at.graph != graph)) {
+                stuckAfter(40, at == null ? "the track graph does not reach x = " + x : "the stations are not on one track graph");
                 return;
             }
+            graph = at.graph;
+        }
         for (int x : stationX)
             placeStation(x);
         enter(Phase.WAIT_FOR_STATIONS);
@@ -315,7 +387,13 @@ final class TrackLine {
             for (int dx = -1; dx <= 1; dx++)
                 level.setBlock(helper.absolutePos(trackFirst.offset(dx, 1, 0)), Blocks.AIR.defaultBlockState(), 3);
             for (int x = FIRST_X; x <= lastX; x++)
-                level.setBlock(helper.absolutePos(track(x)), Blocks.AIR.defaultBlockState(), 3);
+                if (straightAt(x))
+                    level.setBlock(helper.absolutePos(track(x)), Blocks.AIR.defaultBlockState(), 3);
+            // The blocks Create puts along a curve, so that it can be walked on and broken.
+            if (bend != null)
+                for (int x = bend.fromX(); x <= bend.toX(); x++)
+                    for (int z = TRACK_Z; z <= TRACK_Z + bend.shift(); z++)
+                        level.setBlock(helper.absolutePos(new BlockPos(x, TRACK_Y, z)), Blocks.AIR.defaultBlockState(), 3);
         } catch (RuntimeException e) {
             LOGGER.warn("[{}] could not clean up after the track test", helper.testInfo.getTestName(), e);
         } finally {

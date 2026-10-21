@@ -15,8 +15,9 @@ import org.junit.jupiter.api.Test;
  * ({@code TravelTimeRunTests}). The values for zones, signs and the other runs are this model's own
  * output, and they agree with {@code tools/travel_time_replica.py}, a second replica written apart
  * from it that follows Create's code (and Create Train Next's, for signs) more closely. Neither is a
- * real train: straight runs have been compared with one, with and without signs
- * ({@code SpeedSignRunTests} for signs), and curves have not.
+ * real train: straight runs have been compared with one to the tick, with and without signs
+ * ({@code SpeedSignRunTests} for signs), and runs over S-bends to within half a second
+ * ({@code CurveRunTests}).
  */
 class TravelTimeTest {
 
