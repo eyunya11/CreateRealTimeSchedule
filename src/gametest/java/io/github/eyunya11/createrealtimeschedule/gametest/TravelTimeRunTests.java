@@ -9,6 +9,8 @@ import com.mojang.logging.LogUtils;
 import com.simibubi.create.content.trains.entity.Train;
 import com.simibubi.create.content.trains.schedule.ScheduleRuntime;
 import com.simibubi.create.content.trains.station.GlobalStation;
+import com.simibubi.create.infrastructure.config.AllConfigs;
+import com.simibubi.create.infrastructure.config.CTrains;
 
 import io.github.eyunya11.createrealtimeschedule.Createrealtimeschedule;
 import io.github.eyunya11.createrealtimeschedule.travel.TrainSpec;
@@ -88,8 +90,11 @@ public class TravelTimeRunTests {
     /**
      * {@link TrainSpecs#of} reads Create's config rather than the train, so that a speed limit lowering
      * {@code Train.maxSpeed} (Create Train Next's) does not pass for the top speed. Without such a limit
-     * the two must agree, for a train without fuel and for one with it; the defaults for the two differ,
-     * so a spec that picks the wrong one fails.
+     * the two must agree, for a train without fuel and for one with it.
+     *
+     * <p>A spec that takes a value from the wrong one of the two configs fails only if the two differ in
+     * that value. The defaults give both an acceleration of 3, so the test raises the powered one for
+     * the tick it runs in, and checks first that all three values differ.
      */
     @GameTest(template = TRACK_LINE, batch = "realtimetravel_spec", timeoutTicks = TIMEOUT_TICKS)
     public static void theSpecIsWhatTheTrainUses(GameTestHelper helper) {
@@ -100,10 +105,22 @@ public class TravelTimeRunTests {
             if (!line.setUp())
                 return;
             Train train = line.train();
-            train.fuelTicks = 0;
-            assertSpecIsTheTrains(helper, train, "without fuel");
-            train.fuelTicks = 100;
-            assertSpecIsTheTrains(helper, train, "with fuel");
+            CTrains config = AllConfigs.server().trains;
+            double poweredAcceleration = config.poweredTrainAcceleration.get();
+            config.poweredTrainAcceleration.set(config.trainAcceleration.get() + 1.5);
+            try {
+                TrainSpec powered = TrainSpecs.powered();
+                TrainSpec unpowered = TrainSpecs.unpowered();
+                helper.assertTrue(powered.topSpeed() != unpowered.topSpeed() && powered.turnSpeed() != unpowered.turnSpeed()
+                    && powered.acceleration() != unpowered.acceleration(),
+                    "the configs must differ in every value for this test to tell them apart: " + powered + " and " + unpowered);
+                train.fuelTicks = 0;
+                assertSpecIsTheTrains(helper, train, "without fuel");
+                train.fuelTicks = 100;
+                assertSpecIsTheTrains(helper, train, "with fuel");
+            } finally {
+                config.poweredTrainAcceleration.set(poweredAcceleration);
+            }
             helper.succeed();
         });
     }
