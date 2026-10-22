@@ -96,6 +96,8 @@ Java 21. `./gradlew build` makes the jar in `build/libs`. The first run download
 
 GitHub Actions runs `./gradlew build` and `./gradlew runGameTestServer` for every pull request into `main` and for every push to `main` ([.github/workflows/build.yml](.github/workflows/build.yml)).
 
+The game tests that time trains under the speed-limit signs of Create Train Next run only when a jar of a build of it is at `libs/createtrainnext.jar` (git ignores `libs/`). Create Train Next has no release to depend on, so CI does not run them.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).

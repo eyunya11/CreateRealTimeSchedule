@@ -11,6 +11,9 @@ import java.util.Set;
 
 import org.jetbrains.annotations.Nullable;
 
+import io.github.eyunya11.createrealtimeschedule.travel.SpeedSign;
+import io.github.eyunya11.createrealtimeschedule.travel.SpeedSigns;
+
 /**
  * The part of a track network that matters for running times, with no Minecraft or Create types in
  * it so that the search can be tested on small networks written out by hand. {@link CreateNetwork}
@@ -28,10 +31,27 @@ public final class RailNetwork {
      * @param length the length in blocks
      * @param curved whether Create holds a train to its turn speed here
      * @param next   the indexes of the edges a train can go on to from the end of this one
+     * @param signs  the speed-limit signs of Create Train Next that face the way this edge runs, each
+     *               at its distance from the start of the edge (kept sorted by it)
+     * @param onward the edge a train runs on to from the end of this one when nothing steers it, or -1
+     *               where the track ends. A train looking ahead past the end of its path, for signs,
+     *               goes this way: Create takes the first of the ways the track goes on, in the order
+     *               of its graph, whatever the signals say.
      */
-    public record Edge(double length, boolean curved, List<Integer> next) {
+    public record Edge(double length, boolean curved, List<Integer> next, List<SpeedSign> signs, int onward) {
         public Edge {
             next = List.copyOf(next);
+            signs = signs.stream().sorted(Comparator.comparingDouble(SpeedSign::position)).toList();
+        }
+
+        /** An edge that goes on to the first of {@code next} when nothing steers the train. */
+        public Edge(double length, boolean curved, List<Integer> next, List<SpeedSign> signs) {
+            this(length, curved, next, signs, next.isEmpty() ? -1 : next.get(0));
+        }
+
+        /** An edge with no signs on it. */
+        public Edge(double length, boolean curved, List<Integer> next) {
+            this(length, curved, next, List.of());
         }
     }
 
@@ -44,6 +64,16 @@ public final class RailNetwork {
 
     private static final double EPSILON = 1e-9;
 
+    /**
+     * How far past the end of a leg its signs are looked for. A train brakes for the signs ahead of it
+     * on the way into a stop too (see {@link SpeedSigns}), as far as it could need to brake from its
+     * top speed and 30 blocks more: under 200 blocks for Create's default config, and under 400 with
+     * fuel.
+     */
+    private static final double SIGNS_PAST_THE_END = 512;
+    /** A bound on the edges followed past the end, for a loop of edges with no length. */
+    private static final int MAX_EDGES_PAST_THE_END = 64;
+
     private final List<Edge> edges;
     private final List<Station> stations;
     /** For every edge, the indexes of its stations by offset. */
@@ -51,7 +81,7 @@ public final class RailNetwork {
 
     /**
      * @throws IllegalArgumentException if an index is out of range, a length is negative, or a station
-     *                                  is not on its edge
+     *                                  or a sign is not on its edge
      */
     public RailNetwork(List<Edge> edges, List<Station> stations) {
         this.edges = List.copyOf(edges);
@@ -63,6 +93,11 @@ public final class RailNetwork {
             for (int next : edge.next())
                 if (next < 0 || next >= this.edges.size())
                     throw new IllegalArgumentException("edge " + i + " goes on to edge " + next + ", which is not there");
+            if (edge.onward() < -1 || edge.onward() >= this.edges.size())
+                throw new IllegalArgumentException("edge " + i + " runs on to edge " + edge.onward() + ", which is not there");
+            for (SpeedSign sign : edge.signs())
+                if (!(sign.position() >= 0 && sign.position() <= edge.length()))
+                    throw new IllegalArgumentException("edge " + i + " has a sign at " + sign.position() + ", outside it");
             stationsOn.add(new ArrayList<>());
         }
         for (int i = 0; i < this.stations.size(); i++) {
@@ -164,6 +199,7 @@ public final class RailNetwork {
 
         List<Leg.Curve> curves = new ArrayList<>();
         Set<String> via = new LinkedHashSet<>();
+        List<SpeedSign> signs = new ArrayList<>();
         double position = 0;
         for (Path step : chain) {
             Edge edge = edges.get(step.edge());
@@ -171,6 +207,10 @@ public final class RailNetwork {
             boolean lastStep = step == last;
             double from = first ? start.offset() : 0;
             double to = lastStep ? end.offset() : edge.length();
+            // A sign at the start marker is behind the train; one at the end marker is passed on arrival.
+            for (SpeedSign sign : edge.signs())
+                if ((first ? sign.position() > from : sign.position() >= from) && sign.position() <= to)
+                    signs.add(moved(sign, position - from));
             if (edge.curved() && to - from > EPSILON) {
                 double a = position;
                 double b = position + (to - from);
@@ -191,6 +231,36 @@ public final class RailNetwork {
                     via.add(station.name());
             }
         }
-        return new Leg(start.name(), end.name(), distance, curves, new ArrayList<>(via));
+        signs.addAll(signsPastTheEnd(last.edge(), end.offset(), distance));
+        return new Leg(start.name(), end.name(), distance, curves, new ArrayList<>(via), signs);
+    }
+
+    /**
+     * The signs past the end marker that a train coming in to it brakes for: on the rest of the edge,
+     * and on the edges after it, as far as it looks. Past the end of its path nothing steers the look
+     * ahead, so it goes on along {@link Edge#onward}, branches and all.
+     */
+    private List<SpeedSign> signsPastTheEnd(int edgeIndex, double offset, double distance) {
+        List<SpeedSign> found = new ArrayList<>();
+        Edge edge = edges.get(edgeIndex);
+        for (SpeedSign sign : edge.signs())
+            if (sign.position() > offset && sign.position() - offset <= SIGNS_PAST_THE_END)
+                found.add(moved(sign, distance - offset));
+        double edgeStart = distance - offset;
+        for (int followed = 0; followed < MAX_EDGES_PAST_THE_END; followed++) {
+            edgeStart += edge.length();
+            if (edgeStart - distance >= SIGNS_PAST_THE_END || edge.onward() < 0)
+                break;
+            edge = edges.get(edge.onward());
+            for (SpeedSign sign : edge.signs())
+                if (edgeStart + sign.position() - distance <= SIGNS_PAST_THE_END)
+                    found.add(moved(sign, edgeStart));
+        }
+        return found;
+    }
+
+    /** The sign moved along by {@code by} blocks: from where it is on its edge to where it is on a leg. */
+    private static SpeedSign moved(SpeedSign sign, double by) {
+        return new SpeedSign(sign.position() + by, sign.kmh(), sign.release());
     }
 }

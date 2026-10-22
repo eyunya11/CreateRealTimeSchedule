@@ -8,6 +8,7 @@ import java.util.OptionalInt;
 import io.github.eyunya11.createrealtimeschedule.json.JsonOutput;
 import io.github.eyunya11.createrealtimeschedule.json.JsonOutput.ListNode;
 import io.github.eyunya11.createrealtimeschedule.json.JsonOutput.MapNode;
+import io.github.eyunya11.createrealtimeschedule.travel.SpeedSign;
 import io.github.eyunya11.createrealtimeschedule.travel.TrainSpec;
 
 /**
@@ -16,15 +17,16 @@ import io.github.eyunya11.createrealtimeschedule.travel.TrainSpec;
  * only written here; nothing in the mod reads it back.
  *
  * <p>Distances are given to a hundredth of a block, but the ticks are worked out from the distance
- * before it was rounded.
+ * before it was rounded. The ticks are for a train that starts under no speed limit; one that comes
+ * in under the limit of an earlier sign takes longer until the first sign of the leg.
  */
 public final class NetworkJson {
 
     /** The {@code format} member of a network in JSON. */
     public static final String FORMAT = "createrealtimeschedule.network";
 
-    /** The version of the JSON written. */
-    public static final int VERSION = 1;
+    /** The version of the JSON written. Version 2 added the signs of a leg. */
+    public static final int VERSION = 2;
 
     private NetworkJson() {}
 
@@ -58,6 +60,18 @@ public final class NetworkJson {
                 for (Leg.Curve curve : leg.curves())
                     curves.add(JsonOutput.inline(new ListNode().add(number(curve.start())).add(number(curve.end()))));
                 node.put("curves", JsonOutput.inline(curves));
+            }
+            if (!leg.signs().isEmpty()) {
+                ListNode signs = new ListNode();
+                for (SpeedSign sign : leg.signs()) {
+                    MapNode entry = new MapNode().put("at", number(sign.position()));
+                    if (sign.release())
+                        entry.put("release", JsonOutput.raw("true"));
+                    else
+                        entry.put("kmh", JsonOutput.raw(Integer.toString(sign.kmh())));
+                    signs.add(JsonOutput.inline(entry));
+                }
+                node.put("signs", JsonOutput.inline(signs));
             }
             OptionalInt ticks = leg.ticks(spec, throttle);
             if (ticks.isPresent())

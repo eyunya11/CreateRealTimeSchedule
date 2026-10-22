@@ -20,9 +20,8 @@ public final class TrainSpecs {
      *
      * <p>The config is read here instead of asking the train, because {@code Train.maxSpeed} is not
      * always the top speed: Create Train Next lowers it to the limit of the last speed sign or signal
-     * the train passed. Such a limit belongs to where the train is, not to the train. A sign is not a
-     * {@link SpeedZone}, though: Create Train Next brakes for it in its own way and caps the speed
-     * before the throttle, and {@link TravelTime} does not take signs yet (see the proposal).
+     * the train passed. Such a limit belongs to where the train is, not to the train; for
+     * {@link TravelTime}, a sign is a {@link SpeedSign} on the route.
      *
      * @throws IllegalArgumentException if the config sets a speed or the acceleration to nothing
      */

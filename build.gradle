@@ -149,6 +149,14 @@ dependencies {
     // The game tests are written against the mod itself
     gametestImplementation sourceSets.main.output
 
+    // Create Train Next, for the game tests that time trains under its speed-limit signs
+    // (SpeedSignRunTests). It has no release to depend on, so a jar of a build of it is put in libs/ by
+    // hand, and git leaves that folder out. Without the jar, those tests are not registered and
+    // nothing else changes; nothing is compiled against it either way.
+    def createTrainNext = file('libs/createtrainnext.jar')
+    if (createTrainNext.exists())
+        runtimeOnly files(createTrainNext)
+
     // Plain unit tests for the code that does not touch Minecraft (see src/test)
     testImplementation platform('org.junit:junit-bom:5.10.3')
     testImplementation 'org.junit.jupiter:junit-jupiter'

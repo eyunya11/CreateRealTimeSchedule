@@ -96,6 +96,8 @@ Java 21 が必要です。`./gradlew build` で `build/libs` に jar ができ�
 
 GitHub Actions が、`main` 向けのプルリクエストと、`main` への push のたびに、`./gradlew build` と `./gradlew runGameTestServer` を実行します([.github/workflows/build.yml](.github/workflows/build.yml))。
 
+Create Train Next の制限速度標識の下を走る列車を測るゲームテストは、Create Train Next をビルドした jar を `libs/createtrainnext.jar` に置いたときだけ走ります(git は `libs/` を含めません)。Create Train Next にはリリースがなく依存にできないので、CI では走りません。
+
 ## ライセンス
 
 MIT です。[LICENSE](LICENSE) を見てください。
