@@ -79,17 +79,27 @@ final class TrackLine {
      * south (towards +z). The track graph holds it as an edge of its own that is a turn, and a train
      * is held to its turn speed while its front is on it, as on any curve.
      */
-    record Bend(int fromX, int toX, int shift) {}
+    record Bend(int fromX, int toX, int shift) {
+        Bend {
+            if (!(fromX < toX && shift > 0))
+                throw new IllegalArgumentException("a bend runs east and over to the south: " + fromX + " to " + toX + ", " + shift + " over");
+        }
+    }
 
     /**
      * A quarter turn to the south: a curved track from the block at {@code fromX} on the first row to
      * the block at ({@code toX}, {@code toZ}), after which the line runs south to {@code lastZ}. The
      * first row ends at {@code fromX}, or goes on past it, which makes the block a junction, as when a
-     * player starts a curve from the middle of a straight. The turn is a quarter circle when
-     * {@code toZ} is {@code toX - fromX + TRACK_Z}, as it then starts and ends as far from where its
-     * two ends' lines meet.
+     * player starts a curve from the middle of a straight. The turn is a quarter circle, so
+     * {@code toZ} has to be {@code toX - fromX + TRACK_Z}: it then starts and ends as far from where
+     * its two ends' lines meet.
      */
-    record Turn(int fromX, int toX, int toZ, int lastZ) {}
+    record Turn(int fromX, int toX, int toZ, int lastZ) {
+        Turn {
+            if (!(fromX < toX && toZ == toX - fromX + TRACK_Z && toZ < lastZ))
+                throw new IllegalArgumentException("not a quarter turn to the south: " + fromX + " to (" + toX + ", " + toZ + "), on to " + lastZ);
+        }
+    }
 
     /**
      * A signal of Create's beside the first row at {@code x}, on its north side, for trains running
@@ -124,6 +134,8 @@ final class TrackLine {
     private final long savedOffset;
     private final UUID owner = UUID.randomUUID();
     private final GlobalStation[] stations;
+    /** The length of the curve as Create laid it, once it is. */
+    private double curveLength = Double.NaN;
 
     private Phase phase = Phase.BUILD_TRACK;
     private int phaseTicks;
@@ -155,8 +167,7 @@ final class TrackLine {
      * it at {@code secondZ}.
      */
     TrackLine(GameTestHelper helper, Turn turn, int firstX, int secondZ, String[] names) {
-        this(helper, turn.fromX(), new BlockPos[] {new BlockPos(firstX, TRACK_Y, TRACK_Z), new BlockPos(turn.toX(), TRACK_Y, secondZ)},
-            names, OptionalLong.empty(), null, turn, List.of());
+        this(helper, turn.fromX(), aroundTheTurn(turn, firstX, secondZ), names, OptionalLong.empty(), null, turn, List.of());
     }
 
     /**
@@ -194,9 +205,24 @@ final class TrackLine {
         BlockPos[] tracks = new BlockPos[stationX.length];
         for (int i = 0; i < stationX.length; i++) {
             int x = stationX[i];
+            if (bend != null && x > bend.fromX() && x < bend.toX())
+                throw new IllegalArgumentException("a station at x = " + x + " would be under the bend, where there is no straight track");
             tracks[i] = new BlockPos(x, TRACK_Y, bend != null && x >= bend.toX() ? TRACK_Z + bend.shift() : TRACK_Z);
         }
         return tracks;
+    }
+
+    /** The track blocks of the two stations of a line that turns south: one on the row, one on the line south of the turn. */
+    private static BlockPos[] aroundTheTurn(Turn turn, int firstX, int secondZ) {
+        if (!(firstX < turn.fromX() && secondZ > turn.toZ() && secondZ <= turn.lastZ()))
+            throw new IllegalArgumentException("the stations have to be on the row before the turn and on the straight line after it: x = "
+                + firstX + ", z = " + secondZ + " for " + turn);
+        return new BlockPos[] {new BlockPos(firstX, TRACK_Y, TRACK_Z), new BlockPos(turn.toX(), TRACK_Y, secondZ)};
+    }
+
+    /** The length of the line's curve as Create laid it, in blocks; known once the line is set up. */
+    double curveLength() {
+        return curveLength;
     }
 
     /**
@@ -348,6 +374,7 @@ final class TrackLine {
             Couple.create(fromAxis, toAxis),
             Couple.create(block.getUpNormal(level, from, fromState), block.getUpNormal(level, to, toState)),
             true, false, TrackMaterial.ANDESITE);
+        curveLength = curve.getLength();
         ((TrackBlockEntity) level.getBlockEntity(from)).addConnection(curve);
         ((TrackBlockEntity) level.getBlockEntity(to)).addConnection(curve.secondary());
     }
@@ -510,10 +537,10 @@ final class TrackLine {
         }
     }
 
-    /** Sets the blocks of the track's layer in the box from x0, z0 to x1, z1 to air. */
+    /** Sets the blocks of the track's layer in the box between x0, z0 and x1, z1 (either way round) to air. */
     private void clear(int x0, int x1, int z0, int z1) {
-        for (int x = x0; x <= x1; x++)
-            for (int z = z0; z <= z1; z++)
+        for (int x = Math.min(x0, x1); x <= Math.max(x0, x1); x++)
+            for (int z = Math.min(z0, z1); z <= Math.max(z0, z1); z++)
                 level.setBlock(helper.absolutePos(new BlockPos(x, TRACK_Y, z)), Blocks.AIR.defaultBlockState(), 3);
     }
 }

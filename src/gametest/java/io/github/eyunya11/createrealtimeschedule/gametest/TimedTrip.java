@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
+import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 
 import com.mojang.logging.LogUtils;
@@ -44,6 +45,15 @@ final class TimedTrip {
         void check(Leg leg, List<Leg> network);
     }
 
+    /**
+     * What the leg's curves add to the model's ticks, against the same leg without them. A run can
+     * only show that the model has the curves right where they cost more than the tolerance; the
+     * others show that they cost nothing, or little, where they should.
+     */
+    enum CurveCost {
+        NOTHING, LESS_THAN_THE_TOLERANCE, MORE_THAN_THE_TOLERANCE
+    }
+
     private final GameTestHelper helper;
     private final MinecraftServer server;
     private final TrackLine line;
@@ -52,6 +62,7 @@ final class TimedTrip {
     private final int toleranceTicks;
     private final int maxTicks;
     private final LegCheck legCheck;
+    private @Nullable CurveCost curveCost;
 
     private Train train;
     private GlobalStation to;
@@ -75,6 +86,12 @@ final class TimedTrip {
         this.toleranceTicks = toleranceTicks;
         this.maxTicks = maxTicks;
         this.legCheck = legCheck;
+    }
+
+    /** Has the model's ticks with the leg's curves differ from those without them by {@code cost}. */
+    TimedTrip curvesCost(CurveCost cost) {
+        this.curveCost = cost;
+        return this;
     }
 
     void begin() {
@@ -129,13 +146,24 @@ final class TimedTrip {
         for (SpeedSign sign : leg.signs())
             signs.add(new SpeedSign(sign.position() - ahead, sign.kmh(), sign.release()));
         int model = TravelTime.ticks(spec, throttle, distance, zones, SpeedSigns.of(signs)).orElseThrow();
-        LOGGER.info("[{}] leg {} to {}, {} blocks, curves {}, throttle {}, the train went {} blocks: measured {} ticks ({}s), model {} ticks ({} off)",
+        int withoutCurves = TravelTime.ticks(spec, throttle, distance, List.of(), SpeedSigns.of(signs)).orElseThrow();
+        LOGGER.info("[{}] leg {} to {}, {} blocks, curves {}, throttle {}, the train went {} blocks: measured {} ticks ({}s), model {} ticks ({} off), {} without the curves",
             helper.testInfo.getTestName(), leg.from(), leg.to(), String.format(Locale.ROOT, "%.3f", leg.distance()), leg.curves(),
             throttle, String.format(Locale.ROOT, "%.3f", distance), measured, String.format(Locale.ROOT, "%.2f", measured / 20.0),
-            model, measured - model);
+            model, measured - model, withoutCurves);
 
         helper.assertTrue(Math.abs(distance - leg.distance()) <= 1,
             "the train went " + distance + " blocks on a leg the export makes " + leg.distance() + " blocks long");
+        if (curveCost != null) {
+            int cost = model - withoutCurves;
+            boolean asExpected = switch (curveCost) {
+                case NOTHING -> cost == 0;
+                case LESS_THAN_THE_TOLERANCE -> cost > 0 && cost <= toleranceTicks;
+                case MORE_THAN_THE_TOLERANCE -> cost > toleranceTicks;
+            };
+            helper.assertTrue(asExpected, "the curves should cost " + curveCost + " in the model, and cost " + cost + " ticks ("
+                + model + " against " + withoutCurves + ")");
+        }
         helper.assertTrue(Math.abs(measured - model) <= toleranceTicks,
             "the train took " + measured + " ticks from " + leg.from() + " to " + leg.to() + " and the model says " + model);
         helper.succeed();
