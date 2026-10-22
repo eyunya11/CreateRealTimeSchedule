@@ -79,11 +79,17 @@ public class SpeedSignRunTests {
     private static final int TOLERANCE_TICKS = 0;
 
     /**
-     * A sign to put beside the track, so many blocks past Alpha, facing the way the train runs.
+     * A sign to put beside the track, so many blocks past Alpha.
      *
-     * @param kmh its limit, or 0 for a release sign
+     * @param kmh      its limit, or 0 for a release sign
+     * @param eastward whether it faces east, the way the train runs; one facing west holds only trains
+     *                 that run west, and the leg from Alpha to Beta must leave it out
      */
-    private record Sign(int blocksPastAlpha, int kmh) {
+    private record Sign(int blocksPastAlpha, int kmh, boolean eastward) {
+        Sign(int blocksPastAlpha, int kmh) {
+            this(blocksPastAlpha, kmh, true);
+        }
+
         boolean release() {
             return kmh == 0;
         }
@@ -97,7 +103,8 @@ public class SpeedSignRunTests {
             run("alimitandarelease", 1.0, new Sign(100, 40), new Sign(200, 0)),
             run("alimitandareleaseathalfthrottle", 0.5, new Sign(100, 40), new Sign(200, 0)),
             run("alimituptothestop", 1.0, new Sign(150, 40)),
-            run("aslowsignjustpastthestop", 1.0, new Sign(DISTANCE + 3, 10)));
+            run("aslowsignjustpastthestop", 1.0, new Sign(DISTANCE + 3, 10)),
+            run("asignfacingtheotherway", 1.0, new Sign(150, 10, false)));
     }
 
     private static TestFunction run(String name, double throttle, Sign... signs) {
@@ -197,7 +204,7 @@ public class SpeedSignRunTests {
                 level.setBlock(at, block.defaultBlockState(), 3);
                 CompoundTag data = new CompoundTag();
                 data.put("TargetTrack", NbtUtils.writeBlockPos(track.subtract(at)));
-                data.putBoolean("TargetDirection", false);
+                data.putBoolean("TargetDirection", !sign.eastward());
                 if (!sign.release())
                     data.putInt("ScrollValue", sign.kmh());
                 level.getBlockEntity(at).loadCustomOnly(data, level.registryAccess());
@@ -219,10 +226,11 @@ public class SpeedSignRunTests {
             leg = CreateNetwork.read(Create.RAILWAYS.trackNetworks.values()).legs().stream()
                 .filter(l -> l.from().equals("Alpha") && l.to().equals("Beta")).findFirst()
                 .orElseThrow(() -> new AssertionError("the network has no leg from Alpha to Beta"));
-            helper.assertTrue(leg.signs().size() == signs.size(),
-                "the leg from Alpha to Beta lists the signs " + leg.signs() + ", but " + signs + " were put up");
-            for (int i = 0; i < signs.size(); i++) {
-                Sign put = signs.get(i);
+            List<Sign> facing = signs.stream().filter(Sign::eastward).toList();
+            helper.assertTrue(leg.signs().size() == facing.size(),
+                "the leg from Alpha to Beta lists the signs " + leg.signs() + ", but " + facing + " face its way");
+            for (int i = 0; i < facing.size(); i++) {
+                Sign put = facing.get(i);
                 SpeedSign read = leg.signs().get(i);
                 helper.assertTrue(read.release() == put.release() && read.kmh() == put.kmh()
                         && Math.abs(read.position() - put.blocksPastAlpha()) <= 1,
@@ -265,7 +273,8 @@ public class SpeedSignRunTests {
                 helper.testInfo.getTestName(), leg.signs(), throttle, String.format(Locale.ROOT, "%.3f", distance), measured,
                 String.format(Locale.ROOT, "%.2f", measured / 20.0), model, withoutSigns);
 
-            helper.assertTrue(model > withoutSigns, "the signs should cost time in the model: " + model + " against " + withoutSigns);
+            if (!leg.signs().isEmpty())
+                helper.assertTrue(model > withoutSigns, "the signs should cost time in the model: " + model + " against " + withoutSigns);
             helper.assertTrue(Math.abs(measured - model) <= TOLERANCE_TICKS,
                 "the train took " + measured + " ticks under the signs " + leg.signs() + " and the model says " + model);
             helper.succeed();

@@ -3,8 +3,10 @@ package io.github.eyunya11.createrealtimeschedule.travel;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTimeout;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.OptionalInt;
 
@@ -232,5 +234,23 @@ class TravelTimeTest {
         assertTrue(TravelTime.ticks(STANDARD, 1, 100, List.of(new SpeedZone(0, 10, TravelTime.MIN_CAP))).isPresent());
         // A stretch that cannot be crossed within a day is refused even above the floor.
         assertFalse(TravelTime.ticks(STANDARD, 1, 5000, List.of(new SpeedZone(0, 5000, TravelTime.MIN_CAP))).isPresent());
+    }
+
+    @Test
+    void aWayTooLongUnderASlowSignIsRefusedBeforeTheLoopRuns() {
+        // 1 km/h is a block in 72 ticks, so a day covers 24,000 blocks under it. The loop would say the
+        // same after a day of ticks, about a twentieth of a second each time; answered before it, ten
+        // times take next to nothing.
+        assertTimeout(Duration.ofMillis(200), () -> {
+            for (int i = 0; i < 10; i++) {
+                assertFalse(TravelTime.ticks(STANDARD, 1, 30000, NO_ZONES, signs(SpeedSign.limit(1, 1))).isPresent());
+                assertFalse(TravelTime.ticks(STANDARD, 1, 30000, NO_ZONES, startingUnder(1)).isPresent());
+            }
+        });
+        // Only the stretch under the limit counts: released after 100 blocks, the rest is fast.
+        assertTrue(TravelTime.ticks(STANDARD, 1, 30000, NO_ZONES, signs(SpeedSign.limit(1, 1), SpeedSign.release(100)))
+            .isPresent());
+        // A slow way that fits in a day is still run: 20,000 blocks at 1 km/h is 1,440,000 ticks.
+        assertTrue(TravelTime.ticks(STANDARD, 1, 20000, NO_ZONES, startingUnder(1)).orElseThrow() >= 1_440_000);
     }
 }

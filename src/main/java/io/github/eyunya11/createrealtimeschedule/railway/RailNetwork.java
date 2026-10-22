@@ -37,12 +37,27 @@ public final class RailNetwork {
      *                 the way the edge runs, as a signal for trains running the other way is (kept
      *                 sorted). Create's search takes no train onto such an edge, and none past such a
      *                 point on the edge it starts on.
+     * @param onward   the edge a train runs on to from the end of this one when nothing steers it, or
+     *                 -1 where the track ends. A train looking ahead past the end of its path, for
+     *                 signs, goes this way: Create takes the first of the ways the track goes on, in the
+     *                 order of its graph, whatever the signals say.
      */
-    public record Edge(double length, boolean curved, List<Integer> next, List<SpeedSign> signs, List<Double> barriers) {
+    public record Edge(double length, boolean curved, List<Integer> next, List<SpeedSign> signs, List<Double> barriers,
+        int onward) {
         public Edge {
             next = List.copyOf(next);
             signs = signs.stream().sorted(Comparator.comparingDouble(SpeedSign::position)).toList();
             barriers = barriers.stream().sorted().toList();
+        }
+
+        /** An edge that goes on to the first of {@code next} when nothing steers the train. */
+        public Edge(double length, boolean curved, List<Integer> next, List<SpeedSign> signs, List<Double> barriers) {
+            this(length, curved, next, signs, barriers, next.isEmpty() ? -1 : next.get(0));
+        }
+
+        /** An edge with nothing to stop a train, going on to {@code onward} when nothing steers it. */
+        public Edge(double length, boolean curved, List<Integer> next, List<SpeedSign> signs, int onward) {
+            this(length, curved, next, signs, List.of(), onward);
         }
 
         /** An edge with no signs on it and nothing to stop a train. */
@@ -94,6 +109,8 @@ public final class RailNetwork {
             for (int next : edge.next())
                 if (next < 0 || next >= this.edges.size())
                     throw new IllegalArgumentException("edge " + i + " goes on to edge " + next + ", which is not there");
+            if (edge.onward() < -1 || edge.onward() >= this.edges.size())
+                throw new IllegalArgumentException("edge " + i + " runs on to edge " + edge.onward() + ", which is not there");
             for (SpeedSign sign : edge.signs())
                 if (!(sign.position() >= 0 && sign.position() <= edge.length()))
                     throw new IllegalArgumentException("edge " + i + " has a sign at " + sign.position() + ", outside it");
@@ -265,8 +282,8 @@ public final class RailNetwork {
 
     /**
      * The signs past the end marker that a train coming in to it brakes for: on the rest of the edge,
-     * and on the edges after it for as long as the track goes on without a choice of way. Where it
-     * branches, the way a train would look along is Create's to choose, and the search stops.
+     * and on the edges after it, as far as it looks. Past the end of its path nothing steers the look
+     * ahead, so it goes on along {@link Edge#onward}, branches and all.
      */
     private List<SpeedSign> signsPastTheEnd(int edgeIndex, double offset, double distance) {
         List<SpeedSign> found = new ArrayList<>();
@@ -277,9 +294,9 @@ public final class RailNetwork {
         double edgeStart = distance - offset;
         for (int followed = 0; followed < MAX_EDGES_PAST_THE_END; followed++) {
             edgeStart += edge.length();
-            if (edgeStart - distance >= SIGNS_PAST_THE_END || edge.next().size() != 1)
+            if (edgeStart - distance >= SIGNS_PAST_THE_END || edge.onward() < 0)
                 break;
-            edge = edges.get(edge.next().get(0));
+            edge = edges.get(edge.onward());
             for (SpeedSign sign : edge.signs())
                 if (edgeStart + sign.position() - distance <= SIGNS_PAST_THE_END)
                     found.add(moved(sign, edgeStart));
