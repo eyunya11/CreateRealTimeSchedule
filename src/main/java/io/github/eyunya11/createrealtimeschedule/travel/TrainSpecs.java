@@ -20,13 +20,14 @@ public final class TrainSpecs {
      *
      * <p>The config is read here instead of asking the train, because {@code Train.maxSpeed} is not
      * always the top speed: Create Train Next lowers it to the limit of the last speed sign or signal
-     * the train passed. Such a limit belongs to where the train is, not to the train; for
-     * {@link TravelTime}, a sign's limit is a {@link SpeedZone} of the route.
+     * the train passed. Such a limit belongs to where the train is, not to the train. A sign is not a
+     * {@link SpeedZone}, though: Create Train Next brakes for it in its own way and caps the speed
+     * before the throttle, and {@link TravelTime} does not take signs yet (see the proposal).
      *
      * @throws IllegalArgumentException if the config sets a speed or the acceleration to nothing
      */
     public static TrainSpec of(Train train) {
-        return train.fuelTicks > 0 ? powered() : unpowered();
+        return byConfig(train.fuelTicks > 0);
     }
 
     /**
@@ -35,9 +36,7 @@ public final class TrainSpecs {
      * @throws IllegalArgumentException if the config sets a speed or the acceleration to nothing
      */
     public static TrainSpec powered() {
-        CTrains trains = AllConfigs.server().trains;
-        return new TrainSpec(trains.poweredTrainTopSpeed.getF(), trains.poweredTrainTurningTopSpeed.getF(),
-            trains.poweredTrainAcceleration.getF());
+        return byConfig(true);
     }
 
     /**
@@ -48,7 +47,15 @@ public final class TrainSpecs {
      *                                  leaves no train that moves
      */
     public static TrainSpec unpowered() {
+        return byConfig(false);
+    }
+
+    /** Picks each value as {@code Train.maxSpeed}, {@code maxTurnSpeed} and {@code acceleration} do. */
+    private static TrainSpec byConfig(boolean powered) {
         CTrains trains = AllConfigs.server().trains;
-        return new TrainSpec(trains.trainTopSpeed.getF(), trains.trainTurningTopSpeed.getF(), trains.trainAcceleration.getF());
+        return new TrainSpec(
+            (powered ? trains.poweredTrainTopSpeed : trains.trainTopSpeed).getF(),
+            (powered ? trains.poweredTrainTurningTopSpeed : trains.trainTurningTopSpeed).getF(),
+            (powered ? trains.poweredTrainAcceleration : trains.trainAcceleration).getF());
     }
 }
