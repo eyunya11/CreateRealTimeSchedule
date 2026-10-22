@@ -346,6 +346,43 @@ class RailNetworkTest {
         assertEquals(OptionalInt.empty(), legOf(network, "B", "C").limitAtEnd(OptionalInt.of(40)));
     }
 
+    // ------------------------------------------------------------------ barriers (signals the other way)
+
+    private static Edge barred(double length, List<Double> barriers, Integer... next) {
+        return new Edge(length, false, List.of(next), List.of(), barriers);
+    }
+
+    @Test
+    void onTheEdgeATrainStartsOnItReachesOnlyWhatIsBeforeABarrierAhead() {
+        // As Create's search does: it gives up at the barrier, and goes on to no other edge either.
+        RailNetwork network = network(List.of(barred(60, List.of(30.0), 1), straight(40)),
+            new Station("A", 0, 10), new Station("B", 0, 20), new Station("C", 0, 50), new Station("D", 1, 10));
+        assertEquals(List.of("A>B", "C>D"), pairs(network));
+    }
+
+    @Test
+    void aBarrierBehindTheStartIsNoBarrier() {
+        RailNetwork network = network(List.of(barred(60, List.of(5.0), 1), straight(40)),
+            new Station("A", 0, 10), new Station("B", 0, 20), new Station("C", 1, 10));
+        assertEquals(List.of("A>B", "A>C", "B>C"), pairs(network));
+    }
+
+    @Test
+    void noTrainIsTakenOntoAnEdgeWithABarrierEvenToAStationBeforeIt() {
+        RailNetwork network = network(List.of(straight(40, 1), barred(40, List.of(35.0))),
+            new Station("A", 0, 10), new Station("B", 1, 10));
+        assertEquals(List.of(), pairs(network));
+    }
+
+    @Test
+    void comingRoundToTheFirstEdgeAgainTheBarrierBehindTheStartIsNotLookedAt() {
+        // Create looks only at what lies ahead of where the train stood when the way leads back onto
+        // the edge it started on, so the loop takes it past the barrier to B, behind A.
+        RailNetwork network = network(List.of(barred(60, List.of(5.0), 1), straight(100, 0)),
+            new Station("A", 0, 30), new Station("B", 0, 10));
+        assertEquals(30 + 100 + 10, legOf(network, "A", "B").distance(), DELTA);
+    }
+
     // ------------------------------------------------------------------ what is refused
 
     @Test
@@ -357,6 +394,7 @@ class RailNetworkTest {
         assertThrows(IllegalArgumentException.class, () -> network(List.of(straight(10)), new Station("A", 0, -1)));
         assertThrows(IllegalArgumentException.class, () -> network(List.of(signed(10, List.of(SpeedSign.limit(11, 40))))));
         assertThrows(IllegalArgumentException.class, () -> network(List.of(signed(10, List.of(SpeedSign.limit(-1, 40))))));
+        assertThrows(IllegalArgumentException.class, () -> network(List.of(barred(10, List.of(10.5)))));
     }
 
     @Test

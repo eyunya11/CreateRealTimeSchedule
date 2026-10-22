@@ -34,9 +34,10 @@ import net.minecraft.world.phys.Vec3;
  * <p>Create's own search for a train's way ({@code Navigation.search}) is tied to a train; this
  * takes from it what does not depend on one. A train goes from an edge to another when
  * {@code TrackEdge.canTravelTo} says the track continues smoothly, and not onto an edge that has an
- * edge point that does not let it through that way ({@code canNavigateVia}: a signal that faces the
- * other way). A station can be stopped at from one direction only, the one {@code canApproachFrom}
- * allows. What a train does not know until it is on the road is left out: signals that are red,
+ * edge point that does not let it through that way ({@code canNavigateVia}: a signal for trains
+ * running the other way), nor past such a point on the edge it starts on; these points are the
+ * edge's barriers, and {@link RailNetwork} keeps to them as Create does. A station can be stopped at
+ * from one direction only, the one {@code canApproachFrom} allows. What a train does not know until it is on the road is left out: signals that are red,
  * other trains, and the kinds of track a particular train cannot use.
  *
  * <p>The speed-limit signs of Create Train Next are read too, where that mod is there, without
@@ -101,13 +102,11 @@ public final class CreateNetwork {
         Map<TrackEdge, List<SpeedSign>> signs = signs(graph);
         for (TrackEdge edge : graphEdges) {
             List<Integer> next = new ArrayList<>();
-            for (Map.Entry<TrackNode, TrackEdge> connection : graph.getConnectionsFrom(edge.node2).entrySet()) {
-                TrackEdge onward = connection.getValue();
-                if (connection.getKey() != edge.node1 && edge.canTravelTo(onward) && lets(onward, connection.getKey()))
-                    next.add(index.get(onward));
-            }
+            for (Map.Entry<TrackNode, TrackEdge> connection : graph.getConnectionsFrom(edge.node2).entrySet())
+                if (connection.getKey() != edge.node1 && edge.canTravelTo(connection.getValue()))
+                    next.add(index.get(connection.getValue()));
             next.sort(Integer::compare);
-            edges.add(new Edge(edge.getLength(), edge.isTurn(), next, signs.getOrDefault(edge, List.of())));
+            edges.add(new Edge(edge.getLength(), edge.isTurn(), next, signs.getOrDefault(edge, List.of()), barriers(edge)));
         }
 
         for (GlobalStation station : graph.getPoints(EdgePointType.STATION)) {
@@ -168,13 +167,14 @@ public final class CreateNetwork {
         }
     }
 
-    /** Whether every edge point on the edge lets a train run onto it and on to {@code end}. */
-    private static boolean lets(TrackEdge edge, TrackNode end) {
+    /** Where on the edge there is a point that does not let a train through towards the edge's far end. */
+    private static List<Double> barriers(TrackEdge edge) {
+        List<Double> barriers = new ArrayList<>();
         EdgeData data = edge.getEdgeData();
         if (data.hasPoints())
             for (TrackEdgePoint point : data.getPoints())
-                if (!point.canNavigateVia(end))
-                    return false;
-        return true;
+                if (!point.canNavigateVia(edge.node2))
+                    barriers.add(Math.max(0, Math.min(edge.getLength(), point.getLocationOn(edge))));
+        return barriers;
     }
 }
