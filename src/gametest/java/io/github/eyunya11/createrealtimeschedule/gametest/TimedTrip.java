@@ -21,6 +21,7 @@ import io.github.eyunya11.createrealtimeschedule.travel.SpeedZone;
 import io.github.eyunya11.createrealtimeschedule.travel.TrainSpec;
 import io.github.eyunya11.createrealtimeschedule.travel.TrainSpecs;
 import io.github.eyunya11.createrealtimeschedule.travel.TravelTime;
+import net.minecraft.gametest.framework.GameTestAssertException;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.server.MinecraftServer;
 
@@ -132,7 +133,7 @@ final class TimedTrip {
         String from = line.station(0).name;
         List<Leg> network = CreateNetwork.read(Create.RAILWAYS.trackNetworks.values()).legs();
         leg = network.stream().filter(l -> l.from().equals(from) && l.to().equals(to.name)).findFirst()
-            .orElseThrow(() -> new AssertionError("the network has no leg from " + from + " to " + to.name + ": " + network));
+            .orElseThrow(() -> new GameTestAssertException("the network has no leg from " + from + " to " + to.name + ": " + network));
         legCheck.check(leg, network);
     }
 

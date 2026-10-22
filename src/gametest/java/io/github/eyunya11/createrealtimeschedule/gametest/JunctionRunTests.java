@@ -3,6 +3,7 @@ package io.github.eyunya11.createrealtimeschedule.gametest;
 import java.util.List;
 
 import io.github.eyunya11.createrealtimeschedule.Createrealtimeschedule;
+import io.github.eyunya11.createrealtimeschedule.gametest.TimedTrip.CurveCost;
 import io.github.eyunya11.createrealtimeschedule.gametest.TrackLine.Turn;
 import io.github.eyunya11.createrealtimeschedule.railway.CreateNetwork;
 import io.github.eyunya11.createrealtimeschedule.railway.Leg;
@@ -52,11 +53,14 @@ public class JunctionRunTests {
     @GameTest(template = TURN, batch = "realtimejunction_branch", timeoutTicks = TIMEOUT_TICKS)
     public static void ontoTheBranch(GameTestHelper helper) {
         double expectedStart = BRANCH.fromX() + 1 - (ALPHA_X + 0.5);
-        new TimedTrip(helper, junction(helper), 2, 1.0, CurveRunTests.TOLERANCE_TICKS, TIMEOUT_TICKS - 300, (leg, network) -> {
+        TrackLine line = junction(helper);
+        new TimedTrip(helper, line, 2, 1.0, CurveRunTests.TOLERANCE_TICKS, TIMEOUT_TICKS - 300, (leg, network) -> {
             holdTheNetwork(helper, network);
-            helper.assertTrue(leg.curves().size() == 1 && Math.abs(leg.curves().get(0).start() - expectedStart) <= 1 && leg.via().isEmpty(),
-                "the leg from Alpha to Gamma is " + leg + ", and the turn starts " + expectedStart + " blocks on");
-        }).begin();
+            double expectedEnd = expectedStart + line.curveLength();
+            helper.assertTrue(leg.curves().size() == 1 && Math.abs(leg.curves().get(0).start() - expectedStart) <= 1
+                    && Math.abs(leg.curves().get(0).end() - expectedEnd) <= 1 && leg.via().isEmpty(),
+                "the leg from Alpha to Gamma is " + leg + ", and the turn runs from " + expectedStart + " to " + expectedEnd + " blocks on");
+        }).curvesCost(CurveCost.LESS_THAN_THE_TOLERANCE).begin();
     }
 
     private static TrackLine junction(GameTestHelper helper) {

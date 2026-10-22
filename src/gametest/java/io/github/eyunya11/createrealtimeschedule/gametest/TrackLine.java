@@ -109,6 +109,19 @@ final class TrackLine {
      */
     record Signal(int x, boolean eastward) {}
 
+    /**
+     * A loop that a train goes round and comes back to where it started: the first row from
+     * {@code radius} to {@code eastX}, a quarter turn south at each end of it, lines south on x = 0
+     * and x = {@code eastX + radius}, and a row back along z = {@code southZ}, joined to them by two
+     * more quarter turns. All four turns have the radius {@code radius}.
+     */
+    record Loop(int eastX, int radius, int southZ) {
+        Loop {
+            if (!(radius > 0 && eastX > radius && southZ > TRACK_Z + 2 * radius))
+                throw new IllegalArgumentException("not a loop: east to " + eastX + ", turns of " + radius + ", back along z = " + southZ);
+        }
+    }
+
     private static final Logger LOGGER = LogUtils.getLogger();
 
     /** The line, in the test's own coordinates. These count from the structure block, so the bottom layer of the template is at y = 1. */
@@ -130,6 +143,7 @@ final class TrackLine {
     private final OptionalLong startClock;
     private final @Nullable Bend bend;
     private final @Nullable Turn turn;
+    private final @Nullable Loop loop;
     private final List<Signal> signals;
     private final long savedOffset;
     private final UUID owner = UUID.randomUUID();
@@ -143,22 +157,27 @@ final class TrackLine {
 
     /** A line that leaves the clock alone, for a test that does not read it. */
     TrackLine(GameTestHelper helper, int lastX, int[] stationX, String[] names) {
-        this(helper, lastX, onTheRow(stationX, null), names, OptionalLong.empty(), null, null, List.of());
+        this(helper, lastX, onTheRow(stationX, null), names, OptionalLong.empty(), null, null, List.of(), null);
     }
 
     /** A line that puts the clock at {@code startClock} when it is built, so that a failure reads in times that mean something. */
     TrackLine(GameTestHelper helper, int lastX, int[] stationX, String[] names, long startClock) {
-        this(helper, lastX, onTheRow(stationX, null), names, OptionalLong.of(startClock), null, null, List.of());
+        this(helper, lastX, onTheRow(stationX, null), names, OptionalLong.of(startClock), null, null, List.of(), null);
     }
 
     /** A line with a bend in it, which leaves the clock alone. A station past the bend is on the row it leads to. */
     TrackLine(GameTestHelper helper, int lastX, int[] stationX, String[] names, Bend bend) {
-        this(helper, lastX, onTheRow(stationX, bend), names, OptionalLong.empty(), bend, null, List.of());
+        this(helper, lastX, onTheRow(stationX, bend), names, OptionalLong.empty(), bend, null, List.of(), null);
     }
 
     /** A line with signals beside it, which leaves the clock alone. */
     TrackLine(GameTestHelper helper, int lastX, int[] stationX, String[] names, List<Signal> signals) {
-        this(helper, lastX, onTheRow(stationX, null), names, OptionalLong.empty(), null, null, signals);
+        this(helper, lastX, onTheRow(stationX, null), names, OptionalLong.empty(), null, null, signals, null);
+    }
+
+    /** A loop, which leaves the clock alone, with stations on its first row. */
+    TrackLine(GameTestHelper helper, Loop loop, int[] stationX, String[] names) {
+        this(helper, loop.eastX(), onTheLoop(stationX, loop), names, OptionalLong.empty(), null, null, List.of(), loop);
     }
 
     /**
@@ -167,7 +186,7 @@ final class TrackLine {
      * it at {@code secondZ}.
      */
     TrackLine(GameTestHelper helper, Turn turn, int firstX, int secondZ, String[] names) {
-        this(helper, turn.fromX(), aroundTheTurn(turn, firstX, secondZ), names, OptionalLong.empty(), null, turn, List.of());
+        this(helper, turn.fromX(), aroundTheTurn(turn, firstX, secondZ), names, OptionalLong.empty(), null, turn, List.of(), null);
     }
 
     /**
@@ -176,7 +195,7 @@ final class TrackLine {
      * first row or on the line south of the turn; the train is built at the first, on the first row.
      */
     TrackLine(GameTestHelper helper, int lastX, Turn turn, BlockPos[] stationTracks, String[] names) {
-        this(helper, lastX, stationTracks, names, OptionalLong.empty(), null, turn, List.of());
+        this(helper, lastX, stationTracks, names, OptionalLong.empty(), null, turn, List.of(), null);
     }
 
     /**
@@ -185,7 +204,7 @@ final class TrackLine {
      * @param names         the stations' names
      */
     private TrackLine(GameTestHelper helper, int lastX, BlockPos[] stationTracks, String[] names, OptionalLong startClock,
-        @Nullable Bend bend, @Nullable Turn turn, List<Signal> signals) {
+        @Nullable Bend bend, @Nullable Turn turn, List<Signal> signals, @Nullable Loop loop) {
         this.helper = helper;
         this.level = helper.getLevel();
         this.server = level.getServer();
@@ -195,6 +214,7 @@ final class TrackLine {
         this.startClock = startClock;
         this.bend = bend;
         this.turn = turn;
+        this.loop = loop;
         this.signals = List.copyOf(signals);
         this.savedOffset = ClockService.data(server).offset();
         this.stations = new GlobalStation[stationTracks.length];
@@ -210,6 +230,14 @@ final class TrackLine {
             tracks[i] = new BlockPos(x, TRACK_Y, bend != null && x >= bend.toX() ? TRACK_Z + bend.shift() : TRACK_Z);
         }
         return tracks;
+    }
+
+    /** The track blocks of stations on the first row of a loop, between its turns. */
+    private static BlockPos[] onTheLoop(int[] stationX, Loop loop) {
+        for (int x : stationX)
+            if (!(x > loop.radius() && x < loop.eastX()))
+                throw new IllegalArgumentException("a station at x = " + x + " is not on the first row of " + loop);
+        return onTheRow(stationX, null);
     }
 
     /** The track blocks of the two stations of a line that turns south: one on the row, one on the line south of the turn. */
@@ -257,6 +285,21 @@ final class TrackLine {
         return stations[index];
     }
 
+    /**
+     * The first x from {@code fromX} on at which the first row's blocks from {@code x - before} to
+     * {@code x + after} are all in one chunk of the world, and so on one edge of Create's track graph,
+     * which splits a straight line at chunk borders. Where the test is placed decides it.
+     */
+    static int inOneChunk(GameTestHelper helper, int fromX, int before, int after) {
+        for (int x = fromX; ; x++)
+            if (chunkAt(helper, x - before) == chunkAt(helper, x + after))
+                return x;
+    }
+
+    private static int chunkAt(GameTestHelper helper, int x) {
+        return Math.floorDiv(helper.absolutePos(new BlockPos(x, TRACK_Y, TRACK_Z)).getX(), 16);
+    }
+
     /** The track block at {@code x}, on the row the line runs on there (not on the line south of a turn). */
     BlockPos track(int x) {
         return new BlockPos(x, TRACK_Y, rowZ(x));
@@ -277,9 +320,9 @@ final class TrackLine {
         return bend != null && x >= bend.toX() ? TRACK_Z + bend.shift() : TRACK_Z;
     }
 
-    /** Whether there is a straight track block at {@code x}: everywhere but under the bend. */
+    /** Whether there is a straight track block at {@code x} of the first row: everywhere but under the bend, and west of a loop's first turn. */
     private boolean straightAt(int x) {
-        return bend == null || x <= bend.fromX() || x >= bend.toX();
+        return (bend == null || x <= bend.fromX() || x >= bend.toX()) && (loop == null || x >= loop.radius());
     }
 
     /** Sets the clock to read {@code clock} on the next tick. The game test runs at the end of a tick, after the level and its trains, so the next thing to read the clock is the next tick's. */
@@ -341,7 +384,8 @@ final class TrackLine {
         for (int x = FIRST_X; x <= lastX; x++) {
             if (!straightAt(x))
                 continue;
-            boolean endsACurve = bend != null && (x == bend.fromX() || x == bend.toX()) || turn != null && x == turn.fromX();
+            boolean endsACurve = bend != null && (x == bend.fromX() || x == bend.toX()) || turn != null && x == turn.fromX()
+                || loop != null && (x == loop.radius() || x == loop.eastX());
             helper.setBlock(track(x), endsACurve ? curveEnd : track);
         }
         if (bend != null)
@@ -352,7 +396,30 @@ final class TrackLine {
                 helper.setBlock(new BlockPos(turn.toX(), TRACK_Y, z), z == turn.toZ() ? southward.setValue(TrackBlock.HAS_BE, true) : southward);
             layCurve(track(turn.fromX()), new Vec3(1, 0, 0), new BlockPos(turn.toX(), TRACK_Y, turn.toZ()), new Vec3(0, 0, -1));
         }
+        if (loop != null)
+            buildTheRestOfTheLoop(loop, track, curveEnd);
         enter(Phase.WAIT_FOR_GRAPH);
+    }
+
+    /** The loop's two lines south, its row back and its four turns; the first row is laid already. */
+    private void buildTheRestOfTheLoop(Loop loop, BlockState alongX, BlockState alongXCurveEnd) {
+        int r = loop.radius();
+        int eastLine = loop.eastX() + r;
+        int northZ = TRACK_Z + r;
+        int southLineZ = loop.southZ() - r;
+        BlockState alongZ = AllBlocks.TRACK.getDefaultState().setValue(TrackBlock.SHAPE, TrackShape.ZO);
+        for (int z = northZ; z <= southLineZ; z++) {
+            BlockState state = z == northZ || z == southLineZ ? alongZ.setValue(TrackBlock.HAS_BE, true) : alongZ;
+            helper.setBlock(new BlockPos(0, TRACK_Y, z), state);
+            helper.setBlock(new BlockPos(eastLine, TRACK_Y, z), state);
+        }
+        for (int x = r; x <= loop.eastX(); x++)
+            helper.setBlock(new BlockPos(x, TRACK_Y, loop.southZ()), x == r || x == loop.eastX() ? alongXCurveEnd : alongX);
+        Vec3 east = new Vec3(1, 0, 0), west = new Vec3(-1, 0, 0), south = new Vec3(0, 0, 1), north = new Vec3(0, 0, -1);
+        layCurve(track(loop.eastX()), east, new BlockPos(eastLine, TRACK_Y, northZ), north);
+        layCurve(new BlockPos(eastLine, TRACK_Y, southLineZ), south, new BlockPos(loop.eastX(), TRACK_Y, loop.southZ()), east);
+        layCurve(new BlockPos(r, TRACK_Y, loop.southZ()), west, new BlockPos(0, TRACK_Y, southLineZ), south);
+        layCurve(new BlockPos(0, TRACK_Y, northZ), north, track(r), west);
     }
 
     /**
@@ -530,6 +597,8 @@ final class TrackLine {
                 clear(bend.fromX(), bend.toX(), TRACK_Z, TRACK_Z + bend.shift());
             if (turn != null)
                 clear(turn.fromX(), turn.toX(), TRACK_Z, turn.toZ());
+            if (loop != null)
+                clear(0, loop.eastX() + loop.radius(), TRACK_Z, loop.southZ());
         } catch (RuntimeException e) {
             LOGGER.warn("[{}] could not clean up after the track test", helper.testInfo.getTestName(), e);
         } finally {
