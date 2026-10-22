@@ -75,7 +75,7 @@ class NetworkJsonTest {
     @Test
     void aLegWithSignsListsThemWithTheirLimitsAndCountsThemInItsTime() {
         RailNetwork network = new RailNetwork(
-            List.of(new Edge(1100, false, List.of(), List.of(SpeedSign.limit(410, 40), SpeedSign.release(710)))),
+            List.of(new Edge(1100, false, List.of()).withSigns(List.of(SpeedSign.limit(410, 40), SpeedSign.release(710)))),
             List.of(new Station("A", 0, 10), new Station("B", 0, 1010)));
         String json = write(network, 1.0);
         // Too wide for one line, the leg is laid out a member to a line, and the signs stay on theirs.

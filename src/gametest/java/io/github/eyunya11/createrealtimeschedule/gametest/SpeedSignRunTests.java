@@ -25,6 +25,7 @@ import io.github.eyunya11.createrealtimeschedule.travel.TravelTime;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.gametest.framework.GameTestGenerator;
+import net.minecraft.gametest.framework.GameTestAssertException;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.gametest.framework.GameTestInfo;
 import net.minecraft.gametest.framework.GameTestListener;
@@ -225,7 +226,7 @@ public class SpeedSignRunTests {
 
             leg = CreateNetwork.read(Create.RAILWAYS.trackNetworks.values()).legs().stream()
                 .filter(l -> l.from().equals("Alpha") && l.to().equals("Beta")).findFirst()
-                .orElseThrow(() -> new AssertionError("the network has no leg from Alpha to Beta"));
+                .orElseThrow(() -> new GameTestAssertException("the network has no leg from Alpha to Beta"));
             List<Sign> facing = signs.stream().filter(Sign::eastward).toList();
             helper.assertTrue(leg.signs().size() == facing.size(),
                 "the leg from Alpha to Beta lists the signs " + leg.signs() + ", but " + facing + " face its way");

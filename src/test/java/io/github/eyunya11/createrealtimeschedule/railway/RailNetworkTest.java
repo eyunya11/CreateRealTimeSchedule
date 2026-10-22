@@ -188,10 +188,13 @@ class RailNetworkTest {
     }
 
     @Test
-    void aLoopMadeOfOneEdgeReachesAStationBehindTheStartByGoingRound() {
+    void aStationBehindTheStartOnItsOwnEdgeIsNotReachedByGoingRound() {
+        // Create's search, coming round to the edge the train started on, looks only at what lies
+        // ahead of where the train stood, as a game test on a real loop showed: the train at B finds
+        // no way to A, though the loop would take it there.
         RailNetwork network = network(List.of(straight(100, 0)), new Station("A", 0, 20), new Station("B", 0, 60));
         assertEquals(40, legOf(network, "A", "B").distance(), DELTA);
-        assertEquals(60, legOf(network, "B", "A").distance(), DELTA);
+        assertEquals(List.of("A>B"), pairs(network));
     }
 
     @Test
@@ -272,7 +275,7 @@ class RailNetworkTest {
     // ------------------------------------------------------------------ speed-limit signs
 
     private static Edge signed(double length, List<SpeedSign> signs, Integer... next) {
-        return new Edge(length, false, List.of(next), signs);
+        return new Edge(length, false, List.of(next)).withSigns(signs);
     }
 
     private static List<Double> positions(Leg leg) {
@@ -317,7 +320,7 @@ class RailNetworkTest {
         // Past its path, Create's look ahead takes the first way of the graph at a switch: here edge 2,
         // though the train could also go on to edge 1.
         RailNetwork network = network(List.of(
-                new Edge(60, false, List.of(1, 2), List.of(SpeedSign.limit(40, 10)), 2),
+                new Edge(60, false, List.of(1, 2)).withSigns(List.of(SpeedSign.limit(40, 10))).withOnward(2),
                 signed(100, List.of(SpeedSign.limit(5, 20))),
                 signed(100, List.of(SpeedSign.limit(5, 30)))),
             new Station("A", 0, 10), new Station("B", 0, 30));
@@ -326,7 +329,7 @@ class RailNetworkTest {
         assertEquals(List.of(10, 30), leg.signs().stream().map(SpeedSign::kmh).toList());
         // Without that edge, the look ahead ends with the track.
         RailNetwork deadEnd = network(List.of(
-                new Edge(60, false, List.of(), List.of(SpeedSign.limit(40, 10)), -1)),
+                new Edge(60, false, List.of()).withSigns(List.of(SpeedSign.limit(40, 10)))),
             new Station("A", 0, 10), new Station("B", 0, 30));
         assertEquals(List.of(30.0), positions(legOf(deadEnd, "A", "B")));
     }
@@ -361,6 +364,48 @@ class RailNetworkTest {
         assertEquals(OptionalInt.empty(), legOf(network, "B", "C").limitAtEnd(OptionalInt.of(40)));
     }
 
+    // ------------------------------------------------------------------ barriers (signals the other way)
+
+    private static Edge barred(double length, List<Double> barriers, Integer... next) {
+        return new Edge(length, false, List.of(next)).withBarriers(barriers);
+    }
+
+    @Test
+    void onTheEdgeATrainStartsOnItReachesOnlyWhatIsBeforeABarrierAhead() {
+        // As Create's search does: it gives up at the barrier, and goes on to no other edge either.
+        RailNetwork network = network(List.of(barred(60, List.of(30.0), 1), straight(40)),
+            new Station("A", 0, 10), new Station("B", 0, 20), new Station("C", 0, 50), new Station("D", 1, 10));
+        assertEquals(List.of("A>B", "C>D"), pairs(network));
+    }
+
+    @Test
+    void aBarrierBehindTheStartIsNoBarrier() {
+        RailNetwork network = network(List.of(barred(60, List.of(5.0), 1), straight(40)),
+            new Station("A", 0, 10), new Station("B", 0, 20), new Station("C", 1, 10));
+        assertEquals(List.of("A>B", "A>C", "B>C"), pairs(network));
+    }
+
+    @Test
+    void onALaterEdgeTheStationsBeforeABarrierAreReachedAndNothingPastIt() {
+        // As on the first edge: Create's search meets B before the barrier, and stops there, so C past
+        // it and D beyond the edge are not reached. A game test on real track showed the train run to B.
+        RailNetwork network = network(List.of(straight(40, 1), barred(40, List.of(35.0), 2), straight(40)),
+            new Station("A", 0, 10), new Station("B", 1, 10), new Station("C", 1, 38), new Station("D", 2, 10));
+        assertEquals(List.of("A>B", "C>D"), pairs(network));
+        assertEquals(40, legOf(network, "A", "B").distance(), DELTA);
+    }
+
+    @Test
+    void aLoopRoundToTheFirstEdgeReachesNothingOnItWhereverTheBarriersAre() {
+        // The barrier behind A does not stop the way round, but the way round reaches nothing on A's
+        // own edge: not B behind A, and C ahead of A is reached the short way.
+        RailNetwork network = network(List.of(barred(60, List.of(5.0), 1), straight(100, 0)),
+            new Station("A", 0, 30), new Station("B", 0, 10), new Station("C", 0, 50), new Station("D", 1, 10));
+        assertEquals(List.of("A>C", "A>D", "B>A", "B>C", "B>D", "C>D"), pairs(network));
+        assertEquals(20, legOf(network, "A", "C").distance(), DELTA);
+        assertEquals(30 + 10, legOf(network, "A", "D").distance(), DELTA);
+    }
+
     // ------------------------------------------------------------------ what is refused
 
     @Test
@@ -372,8 +417,9 @@ class RailNetworkTest {
         assertThrows(IllegalArgumentException.class, () -> network(List.of(straight(10)), new Station("A", 0, -1)));
         assertThrows(IllegalArgumentException.class, () -> network(List.of(signed(10, List.of(SpeedSign.limit(11, 40))))));
         assertThrows(IllegalArgumentException.class, () -> network(List.of(signed(10, List.of(SpeedSign.limit(-1, 40))))));
-        assertThrows(IllegalArgumentException.class, () -> network(List.of(new Edge(10, false, List.of(), List.of(), 1))));
-        assertThrows(IllegalArgumentException.class, () -> network(List.of(new Edge(10, false, List.of(), List.of(), -2))));
+        assertThrows(IllegalArgumentException.class, () -> network(List.of(barred(10, List.of(10.5)))));
+        assertThrows(IllegalArgumentException.class, () -> network(List.of(straight(10).withOnward(1))));
+        assertThrows(IllegalArgumentException.class, () -> network(List.of(straight(10).withOnward(-2))));
     }
 
     @Test

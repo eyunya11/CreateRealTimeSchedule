@@ -23,6 +23,7 @@ import io.github.eyunya11.createrealtimeschedule.travel.TrainSpec;
 import io.github.eyunya11.createrealtimeschedule.travel.TrainSpecs;
 import io.github.eyunya11.createrealtimeschedule.travel.TravelTime;
 import net.minecraft.gametest.framework.GameTest;
+import net.minecraft.gametest.framework.GameTestAssertException;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.level.storage.LevelResource;
@@ -157,7 +158,7 @@ public class NetworkExportTests {
 
     private static Leg leg(GameTestHelper helper, List<Leg> legs, String from, String to) {
         return legs.stream().filter(l -> l.from().equals(from) && l.to().equals(to)).findFirst()
-            .orElseThrow(() -> new AssertionError("there is no leg from " + from + " to " + to + " in " + legs));
+            .orElseThrow(() -> new GameTestAssertException("there is no leg from " + from + " to " + to + " in " + legs));
     }
 
     private static void near(GameTestHelper helper, double expected, double actual, String what) {

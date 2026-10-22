@@ -28,30 +28,46 @@ import io.github.eyunya11.createrealtimeschedule.travel.SpeedSigns;
 public final class RailNetwork {
 
     /**
-     * @param length the length in blocks
-     * @param curved whether Create holds a train to its turn speed here
-     * @param next   the indexes of the edges a train can go on to from the end of this one
-     * @param signs  the speed-limit signs of Create Train Next that face the way this edge runs, each
-     *               at its distance from the start of the edge (kept sorted by it)
-     * @param onward the edge a train runs on to from the end of this one when nothing steers it, or -1
-     *               where the track ends. A train looking ahead past the end of its path, for signs,
-     *               goes this way: Create takes the first of the ways the track goes on, in the order
-     *               of its graph, whatever the signals say.
+     * @param length   the length in blocks
+     * @param curved   whether Create holds a train to its turn speed here
+     * @param next     the indexes of the edges a train can go on to from the end of this one
+     * @param signs    the speed-limit signs of Create Train Next that face the way this edge runs, each
+     *                 at its distance from the start of the edge (kept sorted by it)
+     * @param barriers where on the edge, from its start, there is a point that lets no train through
+     *                 the way the edge runs, as a signal for trains running the other way is (kept
+     *                 sorted). Create's search reaches the stations on the edge before the first such
+     *                 point, and nothing after it, on the edge or beyond it.
+     * @param onward   the edge a train runs on to from the end of this one when nothing steers it, or
+     *                 -1 where the track ends. A train looking ahead past the end of its path, for
+     *                 signs, goes this way: Create takes the first of the ways the track goes on, in the
+     *                 order of its graph, whatever the signals say.
      */
-    public record Edge(double length, boolean curved, List<Integer> next, List<SpeedSign> signs, int onward) {
+    public record Edge(double length, boolean curved, List<Integer> next, List<SpeedSign> signs, List<Double> barriers,
+        int onward) {
         public Edge {
             next = List.copyOf(next);
             signs = signs.stream().sorted(Comparator.comparingDouble(SpeedSign::position)).toList();
+            barriers = barriers.stream().sorted().toList();
         }
 
-        /** An edge that goes on to the first of {@code next} when nothing steers the train. */
-        public Edge(double length, boolean curved, List<Integer> next, List<SpeedSign> signs) {
-            this(length, curved, next, signs, next.isEmpty() ? -1 : next.get(0));
-        }
-
-        /** An edge with no signs on it. */
+        /**
+         * An edge with no signs on it and nothing to stop a train, that goes on to the first of
+         * {@code next} when nothing steers the train. The {@code with} methods give it the rest.
+         */
         public Edge(double length, boolean curved, List<Integer> next) {
-            this(length, curved, next, List.of());
+            this(length, curved, next, List.of(), List.of(), next.isEmpty() ? -1 : next.get(0));
+        }
+
+        public Edge withSigns(List<SpeedSign> signs) {
+            return new Edge(length, curved, next, signs, barriers, onward);
+        }
+
+        public Edge withBarriers(List<Double> barriers) {
+            return new Edge(length, curved, next, signs, barriers, onward);
+        }
+
+        public Edge withOnward(int onward) {
+            return new Edge(length, curved, next, signs, barriers, onward);
         }
     }
 
@@ -98,6 +114,9 @@ public final class RailNetwork {
             for (SpeedSign sign : edge.signs())
                 if (!(sign.position() >= 0 && sign.position() <= edge.length()))
                     throw new IllegalArgumentException("edge " + i + " has a sign at " + sign.position() + ", outside it");
+            for (double barrier : edge.barriers())
+                if (!(barrier >= 0 && barrier <= edge.length()))
+                    throw new IllegalArgumentException("edge " + i + " has a barrier at " + barrier + ", outside it");
             stationsOn.add(new ArrayList<>());
         }
         for (int i = 0; i < this.stations.size(); i++) {
@@ -149,36 +168,57 @@ public final class RailNetwork {
         // The root stands for the rest of the first edge; its end is first.length - start.offset away.
         Path root = new Path(start.edge(), first.length() - start.offset(), null);
         boolean[] done = new boolean[edges.size()];
+        // Create's search counts the edge a train starts on as visited from the start. Coming round to
+        // it again, it looks only at what lies ahead of where the train stood, which it has looked at
+        // already, so a station behind the train on its own edge is not reached by going round.
+        done[start.edge()] = true;
         PriorityQueue<Path> frontier = new PriorityQueue<>();
 
-        considerStationsOn(root, source, best);
+        if (!considerStationsOn(root, source, best))
+            return;
         for (int next : first.next())
-            frontier.add(new Path(next, root.endDistance() + edges.get(next).length(), root));
+            if (!done[next])
+                frontier.add(new Path(next, root.endDistance() + edges.get(next).length(), root));
 
         while (!frontier.isEmpty()) {
             Path path = frontier.poll();
             if (done[path.edge()])
                 continue;
             done[path.edge()] = true;
-            considerStationsOn(path, source, best);
+            if (!considerStationsOn(path, source, best))
+                continue;
             for (int next : edges.get(path.edge()).next())
                 if (!done[next])
                     frontier.add(new Path(next, path.endDistance() + edges.get(next).length(), path));
         }
     }
 
-    /** Every station on the last edge of the path that a train running the path stops at, as a candidate. */
-    private void considerStationsOn(Path path, int source, Map<List<String>, Leg> best) {
+    /**
+     * Every station on the last edge of the path that a train running the path stops at, as a
+     * candidate, and whether the way goes on past the edge.
+     *
+     * <p>Create's search goes along the points of an edge in order, from where the train comes onto it
+     * (or, on the first edge, from where it stands), and gives up at the first one that does not let
+     * the train through: the stations before that barrier can be reached, and nothing after it on the
+     * edge or beyond it (Navigation.search). This holds on every edge, not only the first.
+     *
+     * @return false if a barrier on the edge ends the way there
+     */
+    private boolean considerStationsOn(Path path, int source, Map<List<String>, Leg> best) {
         Station start = stations.get(source);
+        boolean onFirstEdge = path.parent() == null;
+        double from = onFirstEdge ? start.offset() : 0;
+        double blockedAt = Double.POSITIVE_INFINITY;
+        for (double barrier : edges.get(path.edge()).barriers())
+            if (barrier >= from) {
+                blockedAt = barrier;
+                break;
+            }
         for (int target : stationsOn.get(path.edge())) {
             Station station = stations.get(target);
-            boolean onFirstEdge = path.parent() == null;
-            boolean beforeStart = station.edge() == start.edge() && station.offset() <= start.offset() + EPSILON;
-            // On the first edge only what lies ahead of the marker counts; coming round to the first
-            // edge again, only what lies behind it (what lies ahead was reached sooner).
-            if (onFirstEdge ? target == source || beforeStart : (station.edge() == start.edge() && !beforeStart))
-                continue;
-            if (station.name().equals(start.name()))
+            // On the first edge only what lies ahead of the marker counts.
+            boolean beforeStart = onFirstEdge && station.offset() <= start.offset() + EPSILON;
+            if (target == source || beforeStart || station.offset() >= blockedAt || station.name().equals(start.name()))
                 continue;
             double distance = path.endDistance() - edges.get(path.edge()).length() + station.offset();
             List<String> key = List.of(start.name(), station.name());
@@ -187,6 +227,7 @@ public final class RailNetwork {
                 continue;
             best.put(key, leg(source, target, path, distance));
         }
+        return blockedAt == Double.POSITIVE_INFINITY;
     }
 
     private Leg leg(int source, int target, Path last, double distance) {
