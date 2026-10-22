@@ -1,0 +1,11 @@
+{
+  "format": "createrealtimeschedule.network",
+  "version": 1,
+  "train": {"topSpeed": 28, "turnSpeed": 14, "acceleration": 3, "throttle": 1},
+  "stations": ["Alpha", "Beta", "Gamma"],
+  "legs": [
+    {"from": "Alpha", "to": "Beta", "distance": 20, "ticks": 96},
+    {"from": "Alpha", "to": "Gamma", "distance": 40, "via": ["Beta"], "ticks": 133},
+    {"from": "Beta", "to": "Gamma", "distance": 20, "ticks": 96}
+  ]
+}
