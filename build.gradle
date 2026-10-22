@@ -157,6 +157,9 @@ dependencies {
 
 tasks.named('test') {
     useJUnitPlatform()
+    // Some tests hold the examples in the proposal to the ones in src/test/resources. Without this the
+    // build cache would hand back the last results when only the proposal has changed.
+    inputs.file('docs/proposal.md').withPathSensitivity(PathSensitivity.RELATIVE).withPropertyName('proposal')
 }
 
 // This block of code expands all declared replace properties in the specified resource targets.

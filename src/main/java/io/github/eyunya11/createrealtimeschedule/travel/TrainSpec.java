@@ -5,8 +5,8 @@ package io.github.eyunya11.createrealtimeschedule.travel;
  * per second squared. Create divides the speeds by 20 and the acceleration by 400 to get what it
  * uses each tick; {@link TravelTime} does the same.
  *
- * <p>For a train in the game, take the spec from the train itself with {@link TrainSpecs#of}: a server
- * can change every one of these numbers, and a train with fuel has others.
+ * <p>For a train in the game, take the spec from the server's config with {@link TrainSpecs#of}: a
+ * server can change every one of these numbers, and a train with fuel has others.
  *
  * @param topSpeed     the top speed on straight track (config {@code trainTopSpeed}, 28 by default)
  * @param turnSpeed    the top speed on a curve ({@code trainTurningTopSpeed}, 14); {@link SpeedZone#curve}
