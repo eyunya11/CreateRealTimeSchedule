@@ -28,6 +28,8 @@ import com.simibubi.create.content.trains.track.TrackBlock;
 import com.simibubi.create.content.trains.track.TrackBlockEntity;
 import com.simibubi.create.content.trains.track.TrackMaterial;
 import com.simibubi.create.content.trains.track.TrackShape;
+import com.simibubi.create.content.trains.track.TrackTargetingBehaviour;
+import com.simibubi.create.foundation.blockEntity.behaviour.BlockEntityBehaviour;
 
 import io.github.eyunya11.createrealtimeschedule.clock.ClockService;
 import io.github.eyunya11.createrealtimeschedule.clock.RealClock;
@@ -48,6 +50,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 
@@ -79,12 +82,22 @@ final class TrackLine {
     record Bend(int fromX, int toX, int shift) {}
 
     /**
-     * A quarter turn to the south: a curved track from the block at {@code fromX}, where the first row
-     * ends, to the block at ({@code toX}, {@code toZ}), after which the line runs south to
-     * {@code lastZ}. It is a quarter circle when {@code toZ} is {@code toX - fromX + TRACK_Z}, as it
-     * then starts and ends as far from where its two ends' lines meet.
+     * A quarter turn to the south: a curved track from the block at {@code fromX} on the first row to
+     * the block at ({@code toX}, {@code toZ}), after which the line runs south to {@code lastZ}. The
+     * first row ends at {@code fromX}, or goes on past it, which makes the block a junction, as when a
+     * player starts a curve from the middle of a straight. The turn is a quarter circle when
+     * {@code toZ} is {@code toX - fromX + TRACK_Z}, as it then starts and ends as far from where its
+     * two ends' lines meet.
      */
     record Turn(int fromX, int toX, int toZ, int lastZ) {}
+
+    /**
+     * A signal of Create's beside the first row at {@code x}, on its north side, for trains running
+     * east, or with {@code eastward} false for trains running west. A signal lets trains through only
+     * the way it faces ({@code SignalBoundary.canNavigateVia}), so one for trains running west closes
+     * the line to trains running east.
+     */
+    record Signal(int x, boolean eastward) {}
 
     private static final Logger LOGGER = LogUtils.getLogger();
 
@@ -107,6 +120,7 @@ final class TrackLine {
     private final OptionalLong startClock;
     private final @Nullable Bend bend;
     private final @Nullable Turn turn;
+    private final List<Signal> signals;
     private final long savedOffset;
     private final UUID owner = UUID.randomUUID();
     private final GlobalStation[] stations;
@@ -117,17 +131,22 @@ final class TrackLine {
 
     /** A line that leaves the clock alone, for a test that does not read it. */
     TrackLine(GameTestHelper helper, int lastX, int[] stationX, String[] names) {
-        this(helper, lastX, onTheRow(stationX, null), names, OptionalLong.empty(), null, null);
+        this(helper, lastX, onTheRow(stationX, null), names, OptionalLong.empty(), null, null, List.of());
     }
 
     /** A line that puts the clock at {@code startClock} when it is built, so that a failure reads in times that mean something. */
     TrackLine(GameTestHelper helper, int lastX, int[] stationX, String[] names, long startClock) {
-        this(helper, lastX, onTheRow(stationX, null), names, OptionalLong.of(startClock), null, null);
+        this(helper, lastX, onTheRow(stationX, null), names, OptionalLong.of(startClock), null, null, List.of());
     }
 
     /** A line with a bend in it, which leaves the clock alone. A station past the bend is on the row it leads to. */
     TrackLine(GameTestHelper helper, int lastX, int[] stationX, String[] names, Bend bend) {
-        this(helper, lastX, onTheRow(stationX, bend), names, OptionalLong.empty(), bend, null);
+        this(helper, lastX, onTheRow(stationX, bend), names, OptionalLong.empty(), bend, null, List.of());
+    }
+
+    /** A line with signals beside it, which leaves the clock alone. */
+    TrackLine(GameTestHelper helper, int lastX, int[] stationX, String[] names, List<Signal> signals) {
+        this(helper, lastX, onTheRow(stationX, null), names, OptionalLong.empty(), null, null, signals);
     }
 
     /**
@@ -137,7 +156,16 @@ final class TrackLine {
      */
     TrackLine(GameTestHelper helper, Turn turn, int firstX, int secondZ, String[] names) {
         this(helper, turn.fromX(), new BlockPos[] {new BlockPos(firstX, TRACK_Y, TRACK_Z), new BlockPos(turn.toX(), TRACK_Y, secondZ)},
-            names, OptionalLong.empty(), null, turn);
+            names, OptionalLong.empty(), null, turn, List.of());
+    }
+
+    /**
+     * A line whose first row runs on to {@code lastX} past a turn south, which leaves the clock alone:
+     * a junction, with stations on either way out of it. A station is given by its track block, on the
+     * first row or on the line south of the turn; the train is built at the first, on the first row.
+     */
+    TrackLine(GameTestHelper helper, int lastX, Turn turn, BlockPos[] stationTracks, String[] names) {
+        this(helper, lastX, stationTracks, names, OptionalLong.empty(), null, turn, List.of());
     }
 
     /**
@@ -146,7 +174,7 @@ final class TrackLine {
      * @param names         the stations' names
      */
     private TrackLine(GameTestHelper helper, int lastX, BlockPos[] stationTracks, String[] names, OptionalLong startClock,
-        @Nullable Bend bend, @Nullable Turn turn) {
+        @Nullable Bend bend, @Nullable Turn turn, List<Signal> signals) {
         this.helper = helper;
         this.level = helper.getLevel();
         this.server = level.getServer();
@@ -156,6 +184,7 @@ final class TrackLine {
         this.startClock = startClock;
         this.bend = bend;
         this.turn = turn;
+        this.signals = List.copyOf(signals);
         this.savedOffset = ClockService.data(server).offset();
         this.stations = new GlobalStation[stationTracks.length];
     }
@@ -340,7 +369,24 @@ final class TrackLine {
         }
         for (int i = 0; i < stationTracks.length; i++)
             placeStation(i);
+        for (Signal signal : signals)
+            placeSignal(signal);
         enter(Phase.WAIT_FOR_STATIONS);
+    }
+
+    private BlockPos signalBlock(Signal signal) {
+        return track(signal.x()).north();
+    }
+
+    /** Does what placing the item does, as for a station; the arrow of a signal for trains running east points as a station's does. */
+    private void placeSignal(Signal signal) {
+        BlockPos at = helper.absolutePos(signalBlock(signal));
+        BlockPos trackPos = helper.absolutePos(track(signal.x()));
+        level.setBlock(at, AllBlocks.TRACK_SIGNAL.getDefaultState(), 3);
+        CompoundTag data = new CompoundTag();
+        data.put("TargetTrack", NbtUtils.writeBlockPos(trackPos.subtract(at)));
+        data.putBoolean("TargetDirection", !signal.eastward());
+        level.getBlockEntity(at).loadCustomOnly(data, level.registryAccess());
     }
 
     /**
@@ -362,13 +408,21 @@ final class TrackLine {
         return (StationBlockEntity) level.getBlockEntity(helper.absolutePos(stationBlock(index)));
     }
 
-    /** A station block makes its place in the graph on its first tick; then the line gets its names and its train. */
+    /** A station or signal block makes its place in the graph on its first tick; then the line gets its names and its train. */
     private void waitForStations() {
         for (int i = 0; i < stationTracks.length; i++)
             if (stationEntity(i).getStation() == null) {
                 stuckAfter(40, "the station at " + stationTracks[i].toShortString() + " has no place in the graph");
                 return;
             }
+        for (Signal signal : signals) {
+            BlockEntity entity = level.getBlockEntity(helper.absolutePos(signalBlock(signal)));
+            TrackTargetingBehaviour<?> target = entity == null ? null : BlockEntityBehaviour.get(entity, TrackTargetingBehaviour.TYPE);
+            if (target == null || target.getEdgePoint() == null) {
+                stuckAfter(40, "the signal " + signal + " has no place in the graph");
+                return;
+            }
+        }
         for (int i = 0; i < stationTracks.length; i++) {
             helper.assertTrue(stationEntity(i).updateName(names[i]),
                 "the station at " + stationTracks[i].toShortString() + " could not be named " + names[i]);
@@ -433,6 +487,8 @@ final class TrackLine {
             leftovers.forEach(Entity::discard);
             for (int i = 0; i < stationTracks.length; i++)
                 level.setBlock(helper.absolutePos(stationBlock(i)), Blocks.AIR.defaultBlockState(), 3);
+            for (Signal signal : signals)
+                level.setBlock(helper.absolutePos(signalBlock(signal)), Blocks.AIR.defaultBlockState(), 3);
             BlockPos trackFirst = stationTracks[0];
             for (int dx = -1; dx <= 1; dx++)
                 level.setBlock(helper.absolutePos(trackFirst.offset(dx, 1, 0)), Blocks.AIR.defaultBlockState(), 3);
