@@ -42,10 +42,10 @@ public final class TravelTime {
     private static final int GIVE_UP_TICKS = 20 * 60 * 60 * 24;
 
     /**
-     * The lowest cap, in blocks per second, that is taken as a speed and not as a stop. Below it a
-     * trip of a few thousand blocks would take over a day, and the loop would run to the end of that
-     * day before saying so. (The lowest speed-limit sign of Create Train Next, 1 km/h, is 0.28 blocks
-     * per second.)
+     * The lowest cap of a {@link SpeedZone}, in blocks per second, that is taken as a speed and not as
+     * a stop. Below it a trip of a few thousand blocks would take over a day, and the loop would run to
+     * the end of that day before saying so. Create Train Next's signs are not zones and are not held to
+     * this: the lowest, {@link SpeedSign#MIN_KMH} km/h, is 0.28 blocks per second.
      */
     public static final double MIN_CAP = 0.05;
 
@@ -75,9 +75,8 @@ public final class TravelTime {
      *                 instruction in a schedule sets it)
      * @param zones    where the head may not go faster than a cap, measured from the start of the trip
      * @param signs    the speed-limit signs of Create Train Next on the way
-     * @return empty if a cap is below {@link #MIN_CAP} (a sign that stops the train), if the throttle
-     *         or the distance is not a number in range, or if the train would never arrive (or not
-     *         within a day)
+     * @return empty if a zone's cap is below {@link #MIN_CAP}, if the throttle or the distance is not a
+     *         number in range, or if the train would never arrive (or not within a day)
      */
     public static OptionalInt ticks(TrainSpec spec, double throttle, double distance, List<SpeedZone> zones,
         SpeedSigns signs) {
@@ -91,6 +90,9 @@ public final class TravelTime {
             if (inside / (zone.cap() / 20) > GIVE_UP_TICKS)
                 return OptionalInt.empty();
         }
+        // The same for the signs: a slow one ahead of a long way would also run the loop for a day.
+        if (ticksUnderSigns(signs, distance) > GIVE_UP_TICKS)
+            return OptionalInt.empty();
         if (distance == 0)
             return OptionalInt.of(0);
 
@@ -170,6 +172,30 @@ public final class TravelTime {
         SpeedSigns signs) {
         OptionalInt ticks = ticks(spec, throttle, distance, zones, signs);
         return ticks.isPresent() ? OptionalDouble.of(ticks.getAsInt() / 20.0) : OptionalDouble.empty();
+    }
+
+    /**
+     * The fewest ticks the trip can take for its signs alone: each stretch of it under a limit, run at
+     * that limit. The train is never faster than the limit it is under.
+     */
+    private static double ticksUnderSigns(SpeedSigns signs, double distance) {
+        double ticks = 0;
+        double from = 0;
+        OptionalInt limit = signs.limitAtStart();
+        for (SpeedSign sign : signs.signs()) {
+            if (sign.position() <= 0)
+                continue;
+            if (sign.position() >= distance)
+                break;
+            ticks += ticksAt(limit, sign.position() - from);
+            from = sign.position();
+            limit = sign.release() ? OptionalInt.empty() : OptionalInt.of(sign.kmh());
+        }
+        return ticks + ticksAt(limit, distance - from);
+    }
+
+    private static double ticksAt(OptionalInt limit, double blocks) {
+        return limit.isPresent() ? blocks / (limit.getAsInt() / KMH_PER_BLOCK_PER_TICK) : 0;
     }
 
     /**

@@ -313,13 +313,28 @@ class RailNetworkTest {
     }
 
     @Test
-    void theSearchPastTheStopEndsWhereTheTrackBranches() {
+    void pastTheStopTheSearchGoesTheWayATrainLooksWhenNothingSteersIt() {
+        // Past its path, Create's look ahead takes the first way of the graph at a switch: here edge 2,
+        // though the train could also go on to edge 1.
         RailNetwork network = network(List.of(
-                signed(60, List.of(SpeedSign.limit(40, 10)), 1, 2),
+                new Edge(60, false, List.of(1, 2), List.of(SpeedSign.limit(40, 10)), 2),
                 signed(100, List.of(SpeedSign.limit(5, 20))),
-                signed(100, List.of(SpeedSign.limit(5, 20)))),
+                signed(100, List.of(SpeedSign.limit(5, 30)))),
             new Station("A", 0, 10), new Station("B", 0, 30));
-        assertEquals(List.of(30.0), positions(legOf(network, "A", "B")));
+        Leg leg = legOf(network, "A", "B");
+        assertEquals(List.of(30.0, 55.0), positions(leg));
+        assertEquals(List.of(10, 30), leg.signs().stream().map(SpeedSign::kmh).toList());
+        // Without that edge, the look ahead ends with the track.
+        RailNetwork deadEnd = network(List.of(
+                new Edge(60, false, List.of(), List.of(SpeedSign.limit(40, 10)), -1)),
+            new Station("A", 0, 10), new Station("B", 0, 30));
+        assertEquals(List.of(30.0), positions(legOf(deadEnd, "A", "B")));
+    }
+
+    @Test
+    void anEdgeWrittenByHandRunsOnToTheFirstOfItsWays() {
+        assertEquals(1, signed(10, List.of(), 1, 2).onward());
+        assertEquals(-1, signed(10, List.of()).onward());
     }
 
     @Test
@@ -357,6 +372,8 @@ class RailNetworkTest {
         assertThrows(IllegalArgumentException.class, () -> network(List.of(straight(10)), new Station("A", 0, -1)));
         assertThrows(IllegalArgumentException.class, () -> network(List.of(signed(10, List.of(SpeedSign.limit(11, 40))))));
         assertThrows(IllegalArgumentException.class, () -> network(List.of(signed(10, List.of(SpeedSign.limit(-1, 40))))));
+        assertThrows(IllegalArgumentException.class, () -> network(List.of(new Edge(10, false, List.of(), List.of(), 1))));
+        assertThrows(IllegalArgumentException.class, () -> network(List.of(new Edge(10, false, List.of(), List.of(), -2))));
     }
 
     @Test
