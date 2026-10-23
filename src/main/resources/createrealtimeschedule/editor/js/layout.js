@@ -1,0 +1,217 @@
+/*
+ * What a line's diagram draws of the timetable's trains, and where on the screen it goes: the planned
+ * part of DiagramModel and DiagramView in the mod, line for line, so that a train looks the same in
+ * the editor as in the game. Times are seconds from 00:00 of the service day and run on past 24:00;
+ * positions are those of the axis.
+ *
+ * Besides the segments the mod draws, each train has the points of its stops, for the editor to take
+ * hold of: where the train arrives at each stop and where it leaves.
+ */
+(function (root, factory) {
+  if (typeof module === 'object' && module.exports)
+    module.exports = factory(require('./problems.js'));
+  else
+    (root.rt = root.rt || {}).layout = factory(root.rt.problems);
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (check) {
+  'use strict';
+
+  const NONE = check.NONE;
+
+  function seconds(serviceTime) {
+    return serviceTime === NONE ? NaN : serviceTime;
+  }
+
+  /**
+   * The segments of a train's way through its visits, as DiagramModel's path(): the way between two
+   * stations is that of the axis's hops, standing is drawn at the row the train came in at, and also
+   * at the row it goes out from if that is another. Also the row each visit comes in at and goes out from.
+   */
+  function path(axis, visits) {
+    const n = visits.length;
+    const rowIn = new Array(n).fill(-1);
+    const rowOut = new Array(n).fill(-1);
+    const segments = [];
+    for (let k = 0; k + 1 < n; k++) {
+      const from = visits[k];
+      const to = visits[k + 1];
+      const track = axis.trackDown(from.station, to.station);
+      const hops = axis.hops(from.station, to.station, track !== null ? track : from.down);
+      if (hops.length === 0)
+        continue;
+      rowOut[k] = hops[0].fromRow;
+      rowIn[k + 1] = hops[hops.length - 1].toRow;
+      if (Number.isNaN(from.depart) || Number.isNaN(to.arrive))
+        continue;
+      let at = from.depart;
+      hops.forEach((hop, h) => {
+        const until = h === hops.length - 1 ? to.arrive : at + (to.arrive - from.depart) * hop.share;
+        segments.push({ fromSecond: at, fromPosition: axis.position(hop.fromRow), toSecond: until, toPosition: axis.position(hop.toRow) });
+        at = until;
+      });
+    }
+    for (let k = 0; k < n; k++) {
+      const visit = visits[k];
+      if (Number.isNaN(visit.arrive) || Number.isNaN(visit.depart) || visit.depart <= visit.arrive)
+        continue;
+      const into = rowIn[k] >= 0 ? rowIn[k] : rowOut[k] >= 0 ? rowOut[k] : axis.row(visit.station);
+      if (into < 0)
+        continue;
+      segments.push({ fromSecond: visit.arrive, fromPosition: axis.position(into), toSecond: visit.depart, toPosition: axis.position(into) });
+      if (rowOut[k] >= 0 && rowOut[k] !== into)
+        segments.push({ fromSecond: visit.arrive, fromPosition: axis.position(rowOut[k]), toSecond: visit.depart, toPosition: axis.position(rowOut[k]) });
+    }
+    // A stable sort, as Java's List.sort is, so that segments that start together keep their order.
+    segments.sort((a, b) => a.fromSecond - b.fromSecond);
+    return { segments, rowIn, rowOut };
+  }
+
+  /**
+   * A train of the timetable as the diagram of the axis's line draws it:
+   * {number, type, deadhead, segments, labelSecond, labelPosition, points}. A point is
+   * {stop, arriveSecond, arrivePosition, departSecond, departPosition}, NaN for what the stop does not have.
+   */
+  function plannedTrain(axis, train) {
+    const down = axis.down(train.stops.map(stop => stop.station));
+    const visits = train.stops.map((stop, k) => ({
+      station: stop.station,
+      // A stop with only a departure is a short one: the train comes in then too.
+      arrive: seconds(stop.arrive !== NONE || k === 0 ? stop.arrive : stop.depart),
+      depart: seconds(stop.depart),
+      down,
+    }));
+    const { segments, rowIn, rowOut } = path(axis, visits);
+    const first = rowOut.length > 0 && rowOut[0] >= 0 ? rowOut[0] : visits.length === 0 ? -1 : axis.row(visits[0].station);
+    const points = visits.map((visit, k) => {
+      const inRow = rowIn[k] >= 0 ? rowIn[k] : rowOut[k] >= 0 ? rowOut[k] : axis.row(visit.station);
+      const outRow = rowOut[k] >= 0 ? rowOut[k] : inRow;
+      return {
+        stop: k,
+        arriveSecond: visit.arrive,
+        arrivePosition: inRow >= 0 ? axis.position(inRow) : NaN,
+        departSecond: visit.depart,
+        departPosition: outRow >= 0 ? axis.position(outRow) : NaN,
+      };
+    });
+    return {
+      number: train.number,
+      type: train.type,
+      deadhead: train.deadhead,
+      segments,
+      labelSecond: train.stops.length > 0 ? train.stops[0].depart : NaN,
+      labelPosition: first >= 0 ? axis.position(first) : 0,
+      points,
+    };
+  }
+
+  /** The timetable's trains on the axis's line, in the timetable's order. */
+  function plannedTrains(timetable, axis) {
+    return timetable.trains.filter(train => train.line === axis.line).map(train => plannedTrain(axis, train));
+  }
+
+  /** The narrowest span of time that can be shown, in seconds. */
+  const MIN_SPAN = 5 * 60;
+  /** The widest, in seconds: two days, as far as a timetable's times go. */
+  const MAX_SPAN = 48 * 3600;
+  /** The steps the time scale can be marked in, in seconds. */
+  const STEPS = [60, 5 * 60, 10 * 60, 30 * 60, 3600, 2 * 3600, 6 * 3600];
+
+  function clampSpan(span) {
+    return Math.max(MIN_SPAN, Math.min(MAX_SPAN, span));
+  }
+
+  /** Which part of a diagram is on the screen, and where a point of it goes, as DiagramView has it. */
+  class View {
+    constructor(start, span) {
+      this.span = clampSpan(span);
+      this.startSecond = start;
+      this.left = 0;
+      this.top = 0;
+      this.width = 1;
+      this.height = 1;
+    }
+
+    place(left, top, width, height) {
+      this.left = left;
+      this.top = top;
+      this.width = Math.max(1, width);
+      this.height = Math.max(1, height);
+    }
+
+    start() {
+      return this.startSecond;
+    }
+
+    end() {
+      return this.startSecond + this.span;
+    }
+
+    x(second) {
+      return this.left + (second - this.startSecond) / this.span * this.width;
+    }
+
+    y(position, length) {
+      return length <= 0 ? this.top : this.top + position / length * this.height;
+    }
+
+    second(x) {
+      return this.startSecond + (x - this.left) / this.width * this.span;
+    }
+
+    /** The position on an axis this long at y down the screen. */
+    position(y, length) {
+      return length <= 0 ? 0 : (y - this.top) / this.height * length;
+    }
+
+    zoom(factor, x) {
+      const fixed = this.second(x);
+      const share = (fixed - this.startSecond) / this.span;
+      this.span = clampSpan(this.span * factor);
+      this.startSecond = fixed - share * this.span;
+    }
+
+    pan(dx) {
+      this.startSecond -= dx / this.width * this.span;
+    }
+
+    centreOn(second) {
+      this.startSecond = second - this.span / 2;
+    }
+
+    /** Shows the time from one second to another. */
+    show(from, to) {
+      this.span = clampSpan(to - from);
+      this.startSecond = (from + to) / 2 - this.span / 2;
+    }
+
+    step(minGap) {
+      for (const step of STEPS)
+        if (step / this.span * this.width >= minGap)
+          return step;
+      return STEPS[STEPS.length - 1];
+    }
+
+    /** The part of a segment in the time shown, as [x1, y1, x2, y2] on the screen; null if none of it is. */
+    clip(segment, length) {
+      let from = segment.fromSecond;
+      let to = segment.toSecond;
+      if (to < this.startSecond || from > this.end())
+        return null;
+      let fromPosition = segment.fromPosition;
+      let toPosition = segment.toPosition;
+      if (to > from) {
+        const a = Math.max(from, this.startSecond);
+        const b = Math.min(to, this.end());
+        const slope = (toPosition - fromPosition) / (to - from);
+        const aPosition = fromPosition + (a - from) * slope;
+        const bPosition = fromPosition + (b - from) * slope;
+        from = a;
+        to = b;
+        fromPosition = aPosition;
+        toPosition = bPosition;
+      }
+      return [this.x(from), this.y(fromPosition, length), this.x(to), this.y(toPosition, length)];
+    }
+  }
+
+  return { plannedTrain, plannedTrains, View, MIN_SPAN, MAX_SPAN };
+});
