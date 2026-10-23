@@ -50,3 +50,74 @@ test('a line taken out takes its trains with it, out of their duties too', () =>
   assert.deepEqual(after.trains.map(train => train.number), ['2']);
   assert.deepEqual(after.duties[0].trains, ['2']);
 });
+
+test('a new train gets the number after the highest, and a deadhead the D number after the highest', () => {
+  const before = timetable();
+  assert.equal(edit.nextNumber(before, false), '3');
+  assert.equal(edit.nextNumber(before, true), 'D1');
+  const more = edit.addTrain(edit.addTrain(before, { number: 'D4', line: 'a', type: '', deadhead: true, stops: [] }),
+    { number: '10A', line: 'a', type: '', deadhead: false, stops: [] });
+  assert.equal(edit.nextNumber(more, true), 'D5');
+  assert.equal(edit.nextNumber(more, false), '3');
+});
+
+test('a train taken out leaves its duties, and a train renumbered takes its duties with it', () => {
+  const removed = edit.removeTrain(timetable(), '1');
+  assert.deepEqual(removed.trains.map(train => train.number), ['2']);
+  assert.deepEqual(removed.duties[0].trains, ['2']);
+  const renamed = edit.setTrain(timetable(), '1', { number: '101', type: 'rapid', deadhead: true });
+  assert.equal(renamed.trains[0].number, '101');
+  assert.equal(renamed.trains[0].type, 'rapid');
+  assert.equal(renamed.trains[0].deadhead, true);
+  assert.deepEqual(renamed.duties[0].trains, ['101', '2']);
+});
+
+test('a stop moves with its dwell kept, and a train moves as a whole', () => {
+  const three = edit.addTrain(timetable(), { number: '3', line: 'a', type: '', deadhead: false, stops: [
+    { station: 'X', arrive: NONE, depart: t('09:00') }, { station: 'Y', arrive: t('09:05'), depart: t('09:06') }, { station: 'X', arrive: t('09:10'), depart: NONE }] });
+  const moved = edit.moveStop(three, '3', 1, 30);
+  assert.deepEqual(moved.trains[2].stops[1], { station: 'Y', arrive: t('09:05:30'), depart: t('09:06:30') });
+  assert.deepEqual(moved.trains[2].stops[0], three.trains[2].stops[0]);
+  const all = edit.shiftTrain(three, '3', -60);
+  assert.deepEqual(all.trains[2].stops.map(stop => [stop.arrive, stop.depart]),
+    [[NONE, t('08:59')], [t('09:04'), t('09:05')], [t('09:09'), NONE]]);
+  const set = edit.setStopTime(three, '3', 1, 'arrive', NONE);
+  assert.equal(set.trains[2].stops[1].arrive, NONE);
+  assert.equal(edit.setStopStation(three, '3', 2, 'Z').trains[2].stops[2].station, 'Z');
+});
+
+test('a stop taken out leaves the ends with only the times an end has', () => {
+  const three = edit.addTrain(timetable(), { number: '3', line: 'a', type: '', deadhead: false, stops: [
+    { station: 'X', arrive: NONE, depart: t('09:00') }, { station: 'Y', arrive: t('09:05'), depart: t('09:06') }, { station: 'X', arrive: t('09:10'), depart: NONE }] });
+  assert.deepEqual(edit.removeStop(three, '3', 2).trains[2].stops.map(stop => [stop.station, stop.arrive, stop.depart]),
+    [['X', NONE, t('09:00')], ['Y', t('09:05'), NONE]]);
+  assert.deepEqual(edit.removeStop(three, '3', 0).trains[2].stops.map(stop => [stop.station, stop.arrive, stop.depart]),
+    [['Y', NONE, t('09:06')], ['X', t('09:10'), NONE]]);
+});
+
+test('times snap to the step, to the nearest or up', () => {
+  assert.equal(edit.snap(t('08:00:02'), 5), t('08:00'));
+  assert.equal(edit.snap(t('08:00:03'), 5), t('08:00:05'));
+  assert.equal(edit.snapUp(t('08:00:01'), 5), t('08:00:05'));
+  assert.equal(edit.snapUp(t('08:00:05'), 5), t('08:00:05'));
+  assert.equal(edit.snap(100.4, 1), 100);
+});
+
+test('a train is drawn stop by stop, at the running time or later, standing the dwell', () => {
+  let stops = edit.drawStop([], 'X', t('08:00:02'), null, 20, 5);
+  assert.deepEqual(stops, [{ station: 'X', arrive: NONE, depart: t('08:00') }]);
+  // 67 seconds of running time from X to Y, clicked earlier than that: up to the step after it.
+  stops = edit.drawStop(stops, 'Y', t('08:00:30'), 67, 20, 5);
+  assert.deepEqual(stops[1], { station: 'Y', arrive: t('08:01:10'), depart: t('08:01:30') });
+  assert.equal(edit.drawStop(stops, 'Y', t('08:05'), 67, 20, 5), stops, 'clicking the station the train is at changes nothing');
+  // Clicked later than the running time: the train arrives then.
+  stops = edit.drawStop(stops, 'Z', t('08:05:01'), 30, 20, 5);
+  assert.deepEqual(stops[2], { station: 'Z', arrive: t('08:05'), depart: t('08:05:20') });
+  // With no running time, at the time clicked, but never before the train leaves.
+  const early = edit.drawStop(stops, 'W', t('08:00'), null, 20, 5);
+  assert.equal(early[3].arrive, t('08:05:25'));
+  const done = edit.finishDrawing(stops);
+  assert.deepEqual(done.map(stop => [stop.station, stop.arrive, stop.depart]),
+    [['X', NONE, t('08:00')], ['Y', t('08:01:10'), t('08:01:30')], ['Z', t('08:05'), NONE]]);
+  assert.equal(edit.finishDrawing([stops[0]]), null);
+});

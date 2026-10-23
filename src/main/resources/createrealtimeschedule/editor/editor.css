@@ -142,9 +142,10 @@ textarea {
     grid-template-rows: 1fr auto;
   }
 
+  /* A height of its own, so that the diagram does not change size, and its rows move, with what is in it. */
   .side.right {
     grid-column: 1 / -1;
-    max-height: 32vh;
+    height: 32vh;
     border-left: 0;
     border-top: 1px solid var(--line);
   }
@@ -223,6 +224,19 @@ h2 {
   justify-content: center;
   color: var(--muted);
   pointer-events: none;
+}
+
+#diagram.drawing {
+  cursor: crosshair;
+}
+
+input.bad {
+  border-color: var(--danger);
+  outline: 1px solid var(--danger);
+}
+
+#draw-train {
+  margin-bottom: 6px;
 }
 
 #diagram .grid {

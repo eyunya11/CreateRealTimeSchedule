@@ -189,6 +189,8 @@
   }
 
   function select(selection) {
+    drawing = null;
+    hover = null;
     state.selection = selection;
     if (selection !== null && selection.kind === 'train') {
       const train = state.timetable.trains.find(each => each.number === selection.number);
@@ -238,6 +240,10 @@
       name.value = state.timetable.name;
     $('undo').disabled = state.undo.length === 0;
     $('redo').disabled = state.redo.length === 0;
+    const line = currentLine();
+    const draw = $('draw-train');
+    draw.disabled = line === null || line.stations.length < 2;
+    draw.classList.toggle('active', drawing !== null);
   }
 
   function renderLines() {
@@ -330,9 +336,28 @@
 
   // ------------------------------------------------------------------ the diagram
 
-  /** The diagram's layout of the line chosen: its axis, and the margins around the plot. */
+  /** A train being drawn: the stops so far, and the type and mark it will have. Null when none is. */
+  let drawing = null;
+  /** Where the pointer is while a train is drawn: the station row nearest it, and the time. */
+  let hover = null;
+  /** A stop (index) or a whole train (index -1) being dragged, from the timetable as it was. */
+  let dragging = null;
+  /** The timetable as the drag going on would leave it; null when nothing is dragged. */
+  let shown = null;
+  /** The line's axis and the rows of its stations on the screen, as the diagram was last drawn. */
+  let drawn = null;
+
   function lineAxis(line) {
     return rt.axis.of(line, state.network === null ? [] : state.network.legs);
+  }
+
+  function shownTimetable() {
+    return shown !== null ? shown : state.timetable;
+  }
+
+  /** The seconds a train takes from one station to the other, by the network; null if it does not say. */
+  function running(from, to) {
+    return state.network === null ? null : rt.network.seconds(state.network, from, to);
   }
 
   /** Shows all the trains of the line, or the morning if it has none. */
@@ -355,9 +380,16 @@
     }
   }
 
+  function pathOf(segments, length) {
+    return segments.map(segment => 'M' + view.x(segment.fromSecond).toFixed(1) + ',' + view.y(segment.fromPosition, length).toFixed(1)
+      + 'L' + view.x(segment.toSecond).toFixed(1) + ',' + view.y(segment.toPosition, length).toFixed(1)).join('');
+  }
+
   function renderDiagram() {
     const svg = $('diagram');
     svg.replaceChildren();
+    svg.classList.toggle('drawing', drawing !== null);
+    drawn = null;
     const line = currentLine();
     $('empty-message').textContent = line === null ? t('noLine') : line.stations.length < 2 ? t('noStations') : '';
     if (line === null || line.stations.length < 2)
@@ -365,11 +397,11 @@
     const area = $('diagram-area');
     const width = area.clientWidth;
     const height = area.clientHeight;
-    const lineAxisOf = lineAxis(line);
-    const length = lineAxisOf.length();
+    const axisOfLine = lineAxis(line);
+    const length = axisOfLine.length();
 
     let labelWidth = 0;
-    for (const station of lineAxisOf.stations)
+    for (const station of axisOfLine.stations)
       labelWidth = Math.max(labelWidth, textWidth(station));
     const left = Math.ceil(labelWidth) + 20;
     const top = 18;
@@ -392,13 +424,16 @@
     svg.append(defs);
 
     // the stations
-    lineAxisOf.stations.forEach((station, row) => {
-      const y = view.y(lineAxisOf.position(row), length);
+    const rows = [];
+    axisOfLine.stations.forEach((station, row) => {
+      const y = view.y(axisOfLine.position(row), length);
+      rows.push({ station, y });
       svg.append(s('line', { class: 'grid strong', x1: left, y1: y, x2: plotRight, y2: y }));
       const label = s('text', { class: 'station', x: left - 8, y: y + 4, 'text-anchor': 'end' });
       label.textContent = station;
       svg.append(label);
     });
+    drawn = { axis: axisOfLine, length, rows };
 
     // the time scale
     const step = view.step(56);
@@ -415,15 +450,20 @@
     const plot = s('g', { 'clip-path': 'url(#plot)' });
     svg.append(plot);
     const selected = selectedTrain();
-    for (const planned of rt.layout.plannedTrains(state.timetable, lineAxisOf)) {
-      const d = planned.segments.map(segment => 'M' + view.x(segment.fromSecond).toFixed(1) + ',' + view.y(segment.fromPosition, length).toFixed(1)
-        + 'L' + view.x(segment.toSecond).toFixed(1) + ',' + view.y(segment.toPosition, length).toFixed(1)).join('');
+    for (const planned of rt.layout.plannedTrains(shownTimetable(), axisOfLine)) {
+      const d = pathOf(planned.segments, length);
       const isSelected = selected !== null && selected.number === planned.number;
       const colour = planned.deadhead ? 'var(--deadhead)' : typeColour(planned.type);
       const group = s('g', { class: 'train' + (planned.deadhead ? ' deadhead' : '') + (isSelected ? ' selected' : ''), 'data-number': planned.number });
       group.append(s('path', { class: 'shown', d, stroke: colour }));
       const hit = s('path', { class: 'hit', d });
       hit.addEventListener('pointerdown', event => {
+        if (drawing !== null || event.button !== 0)
+          return; // a click while drawing goes to the row under it
+        if (isSelected && (event.ctrlKey || event.metaKey)) {
+          startDrag(planned.number, -1, event);
+          return;
+        }
         event.stopPropagation();
         select({ kind: 'train', number: planned.number });
       });
@@ -434,12 +474,120 @@
         group.append(number);
       }
       plot.append(group);
-      if (isSelected)
+      if (isSelected && drawing === null)
         for (const point of planned.points)
           for (const [second, position] of [[point.arriveSecond, point.arrivePosition], [point.departSecond, point.departPosition]])
-            if (!Number.isNaN(second) && !Number.isNaN(position))
-              plot.append(s('circle', { class: 'point', cx: view.x(second), cy: view.y(position, length), r: 4, fill: colour }));
+            if (!Number.isNaN(second) && !Number.isNaN(position)) {
+              const handle = s('circle', { class: 'point', cx: view.x(second), cy: view.y(position, length), r: 5, fill: colour });
+              handle.addEventListener('pointerdown', event => {
+                if (event.button === 0)
+                  startDrag(planned.number, point.stop, event);
+              });
+              plot.append(handle);
+            }
     }
+
+    plot.append(s('g', { id: 'preview' }));
+    renderPreview();
+  }
+
+  /** The train being drawn, with the stop it would get where the pointer is. */
+  function renderPreview() {
+    const group = document.getElementById('preview');
+    if (group === null || drawn === null)
+      return;
+    group.replaceChildren();
+    if (drawing === null)
+      return;
+    let stops = drawing.stops;
+    if (hover !== null) {
+      const last = stops[stops.length - 1];
+      stops = rt.edit.drawStop(stops, hover.station, hover.second, last === undefined ? null : running(last.station, hover.station),
+        state.settings.dwell, state.settings.snap);
+    }
+    if (stops.length === 0)
+      return;
+    const train = { number: '', line: drawn.axis.line, type: drawing.type, deadhead: drawing.deadhead,
+      stops: stops.length >= 2 ? rt.edit.finishDrawing(stops) : stops };
+    const planned = rt.layout.plannedTrain(drawn.axis, train);
+    group.append(s('path', { class: 'preview', d: pathOf(planned.segments, drawn.length) }));
+    for (const point of planned.points)
+      for (const [second, position] of [[point.arriveSecond, point.arrivePosition], [point.departSecond, point.departPosition]])
+        if (!Number.isNaN(second) && !Number.isNaN(position))
+          group.append(s('circle', { class: 'point', cx: view.x(second), cy: view.y(position, drawn.length), r: 3, fill: 'var(--accent)' }));
+    const end = stops[stops.length - 1];
+    const at = end.arrive !== rt.edit.NONE ? end.arrive : end.depart;
+    const label = s('text', { class: 'label', x: view.x(at) + 6, y: view.y(drawn.axis.position(Math.max(0, drawn.axis.row(end.station))), drawn.length) + 14 });
+    label.textContent = timeText(at);
+    group.append(label);
+  }
+
+  /** The station row nearest the pointer, and the time under it. */
+  function pointAt(event) {
+    const box = $('diagram').getBoundingClientRect();
+    const x = event.clientX - box.left;
+    const y = event.clientY - box.top;
+    let best = null;
+    for (const row of drawn.rows)
+      if (best === null || Math.abs(row.y - y) < Math.abs(best.y - y))
+        best = row;
+    return { station: best.station, second: view.second(x) };
+  }
+
+  /** Keeps the pointer's events coming to the diagram while a button is held, if the browser still knows the pointer. */
+  function capture(pointerId) {
+    try {
+      $('diagram').setPointerCapture(pointerId);
+    } catch (e) {
+      // A pointer already gone: the drag goes on while the pointer stays over the diagram.
+    }
+  }
+
+  function startDrag(number, index, event) {
+    event.stopPropagation();
+    dragging = { number, index, x0: event.clientX, base: state.timetable, delta: 0, id: event.pointerId };
+    capture(event.pointerId);
+  }
+
+  function startDrawing() {
+    const line = currentLine();
+    if (line === null || line.stations.length < 2)
+      return;
+    drawing = { stops: [], type: drawing !== null ? drawing.type : '', deadhead: false };
+    hover = null;
+    state.selection = null;
+    render();
+  }
+
+  function addDrawnStop(point) {
+    const last = drawing.stops[drawing.stops.length - 1];
+    drawing.stops = rt.edit.drawStop(drawing.stops, point.station, point.second,
+      last === undefined ? null : running(last.station, point.station), state.settings.dwell, state.settings.snap);
+    renderInspector();
+    renderPreview();
+  }
+
+  function finishDrawing() {
+    if (drawing === null)
+      return;
+    const stops = rt.edit.finishDrawing(drawing.stops);
+    const line = currentLine();
+    const { type, deadhead } = drawing;
+    drawing = null;
+    hover = null;
+    if (stops === null || line === null) {
+      render();
+      return;
+    }
+    const number = rt.edit.nextNumber(state.timetable, deadhead);
+    state.selection = { kind: 'train', number };
+    change(rt.edit.addTrain(state.timetable, { number, line: line.id, type, deadhead, stops }));
+  }
+
+  function cancelDrawing() {
+    drawing = null;
+    hover = null;
+    render();
   }
 
   function bindDiagram() {
@@ -453,46 +601,90 @@
       renderDiagram();
     }, { passive: false });
 
-    let panning = null;
+    let gesture = null;
     svg.addEventListener('pointerdown', event => {
-      if (view === null || event.button !== 0)
+      if (view === null || event.button !== 0 || dragging !== null)
         return;
-      panning = { x: event.clientX, id: event.pointerId, moved: false };
-      svg.setPointerCapture(event.pointerId);
+      gesture = { x: event.clientX, startX: event.clientX, id: event.pointerId, moved: false };
+      capture(event.pointerId);
     });
     svg.addEventListener('pointermove', event => {
-      if (panning === null || event.pointerId !== panning.id)
+      if (dragging !== null && event.pointerId === dragging.id) {
+        const raw = (event.clientX - dragging.x0) / view.width * view.span;
+        const delta = rt.edit.snap(raw, state.settings.snap);
+        if (delta !== dragging.delta) {
+          dragging.delta = delta;
+          shown = delta === 0 ? null : dragging.index < 0
+            ? rt.edit.shiftTrain(dragging.base, dragging.number, delta)
+            : rt.edit.moveStop(dragging.base, dragging.number, dragging.index, delta);
+          renderDiagram();
+        }
         return;
-      const dx = event.clientX - panning.x;
-      if (Math.abs(dx) > 0) {
-        view.pan(dx);
-        panning.x = event.clientX;
-        panning.moved = true;
+      }
+      if (gesture !== null && event.pointerId === gesture.id) {
+        if (!gesture.moved && Math.abs(event.clientX - gesture.startX) < 4)
+          return;
+        gesture.moved = true;
+        view.pan(event.clientX - gesture.x);
+        gesture.x = event.clientX;
         renderDiagram();
+        return;
+      }
+      if (drawing !== null && drawn !== null) {
+        hover = pointAt(event);
+        renderPreview();
       }
     });
     const end = event => {
-      if (panning === null || event.pointerId !== panning.id)
+      if (dragging !== null && event.pointerId === dragging.id) {
+        const next = shown;
+        shown = null;
+        dragging = null;
+        if (next !== null && event.type === 'pointerup')
+          change(next);
+        else
+          renderDiagram();
         return;
-      if (!panning.moved && state.selection !== null)
+      }
+      if (gesture === null || event.pointerId !== gesture.id)
+        return;
+      const clicked = !gesture.moved && event.type === 'pointerup';
+      gesture = null;
+      if (!clicked)
+        return;
+      if (drawing !== null && drawn !== null)
+        addDrawnStop(pointAt(event));
+      else if (state.selection !== null)
         select(null);
-      panning = null;
     };
     svg.addEventListener('pointerup', end);
     svg.addEventListener('pointercancel', end);
+    svg.addEventListener('dblclick', () => finishDrawing());
+    svg.addEventListener('pointerleave', () => {
+      if (drawing !== null && hover !== null) {
+        hover = null;
+        renderPreview();
+      }
+    });
     new ResizeObserver(() => renderDiagram()).observe($('diagram-area'));
   }
 
   // ------------------------------------------------------------------ the inspector
 
+  function field(label, input) {
+    return h('div', { class: 'field' }, h('label', null, label), input);
+  }
+
   function renderInspector() {
     const panel = $('inspector');
     panel.replaceChildren();
+    if (drawing !== null) {
+      drawingInspector(panel);
+      return;
+    }
     const train = selectedTrain();
     if (train !== null) {
-      panel.append(h('h2', null, t('trains') + ' ' + train.number + (train.deadhead ? ' (' + t('deadhead') + ')' : '')));
-      const rows = train.stops.map(stop => h('tr', null, h('td', null, stop.station), h('td', null, timeText(stop.arrive)), h('td', null, timeText(stop.depart))));
-      panel.append(h('table', null, h('tbody', null, rows)));
+      trainInspector(panel, train);
       return;
     }
     const selection = state.selection;
@@ -502,8 +694,133 @@
         panel.append(h('h2', null, t('duties') + ' ' + duty.id));
         panel.append(h('p', null, duty.depot));
         panel.append(h('ol', null, duty.trains.map(number => h('li', null, number))));
+        return;
       }
     }
+    panel.append(h('p', { class: 'note' }, t('noSelection')));
+    settingsInspector(panel);
+  }
+
+  function drawingInspector(panel) {
+    panel.append(h('h2', null, t('drawing')));
+    panel.append(h('p', { class: 'note' }, t('drawHelp')));
+    panel.append(field(t('type'), h('input', {
+      type: 'text', value: drawing.type, spellcheck: 'false',
+      onchange: event => {
+        drawing.type = event.target.value.trim();
+        renderPreview();
+      },
+    })));
+    panel.append(field(t('deadhead'), h('span', null, h('input', {
+      type: 'checkbox', checked: drawing.deadhead,
+      onchange: event => {
+        drawing.deadhead = event.target.checked;
+      },
+    }))));
+    panel.append(h('ol', null, drawing.stops.map(stop =>
+      h('li', null, stop.station + ' ' + timeText(stop.arrive) + (stop.arrive !== rt.edit.NONE ? ' / ' : '') + timeText(stop.depart)))));
+    panel.append(h('div', { class: 'buttons' },
+      h('button', { type: 'button', class: 'primary', disabled: drawing.stops.length < 2, onclick: finishDrawing }, t('finish')),
+      h('button', { type: 'button', onclick: cancelDrawing }, t('cancel'))));
+  }
+
+  /** A text box for a time: empty for none. Badly written, it is marked and nothing changes. */
+  function timeInput(seconds, disabled, apply) {
+    const input = h('input', {
+      type: 'text', value: timeText(seconds), disabled, spellcheck: 'false',
+      onchange: event => {
+        const text = event.target.value.trim();
+        const read = text === '' ? rt.edit.NONE : time.parse(text);
+        if (read === null) {
+          event.target.classList.add('bad');
+          event.target.title = t('badTime');
+          return;
+        }
+        apply(read);
+      },
+    });
+    return input;
+  }
+
+  function trainInspector(panel, train) {
+    const number = train.number;
+    panel.append(h('h2', null, t('trains') + ' ' + number + (train.deadhead ? ' (' + t('deadhead') + ')' : '')));
+    const error = h('p', { class: 'error' });
+    panel.append(field(t('number'), h('input', {
+      type: 'text', value: number, spellcheck: 'false',
+      onchange: event => {
+        const next = event.target.value.trim();
+        if (next === '') {
+          error.textContent = t('numberEmpty');
+          return;
+        }
+        if (next !== number && state.timetable.trains.some(other => other.number === next)) {
+          error.textContent = t('numberTaken');
+          return;
+        }
+        state.selection = { kind: 'train', number: next };
+        change(rt.edit.setTrain(state.timetable, number, { number: next }));
+      },
+    })));
+    panel.append(field(t('type'), h('input', {
+      type: 'text', value: train.type, spellcheck: 'false',
+      onchange: event => change(rt.edit.setTrain(state.timetable, number, { type: event.target.value.trim() })),
+    })));
+    panel.append(field(t('deadhead'), h('span', null, h('input', {
+      type: 'checkbox', checked: train.deadhead,
+      onchange: event => change(rt.edit.setTrain(state.timetable, number, { deadhead: event.target.checked })),
+    }))));
+    panel.append(error);
+
+    const line = state.timetable.lines.find(each => each.id === train.line);
+    const stations = line === undefined ? [] : line.stations;
+    const last = train.stops.length - 1;
+    const rows = train.stops.map((stop, i) => {
+      const choices = stations.includes(stop.station) ? stations : [stop.station].concat(stations);
+      const select = h('select', {
+        onchange: event => change(rt.edit.setStopStation(state.timetable, number, i, event.target.value)),
+      }, choices.map(station => h('option', { value: station, selected: station === stop.station }, station)));
+      return h('tr', null,
+        h('td', null, select),
+        h('td', null, timeInput(stop.arrive, i === 0 && stop.arrive === rt.edit.NONE,
+          seconds => change(rt.edit.setStopTime(state.timetable, number, i, 'arrive', seconds)))),
+        h('td', null, timeInput(stop.depart, i === last && stop.depart === rt.edit.NONE,
+          seconds => change(rt.edit.setStopTime(state.timetable, number, i, 'depart', seconds)))),
+        h('td', null, h('button', {
+          type: 'button', title: t('removeStop'), disabled: train.stops.length <= 2,
+          onclick: () => change(rt.edit.removeStop(state.timetable, number, i)),
+        }, '×')));
+    });
+    panel.append(h('table', null,
+      h('thead', null, h('tr', null, h('th', null, t('station')), h('th', null, t('arrive')), h('th', null, t('depart')), h('th'))),
+      h('tbody', null, rows)));
+    panel.append(h('p', { class: 'note' }, t('dragHelp')));
+    panel.append(h('div', { class: 'buttons' }, h('button', {
+      type: 'button',
+      onclick: () => {
+        state.selection = null;
+        change(rt.edit.removeTrain(state.timetable, number));
+      },
+    }, t('removeTrain'))));
+  }
+
+  function settingsInspector(panel) {
+    panel.append(h('h2', null, t('settings')));
+    panel.append(field(t('dwell'), h('input', {
+      type: 'number', min: '0', max: '600', step: '1', value: String(state.settings.dwell),
+      onchange: event => {
+        const value = Math.round(Number(event.target.value));
+        state.settings.dwell = Number.isFinite(value) ? Math.max(0, Math.min(600, value)) : 20;
+        saveSoon();
+      },
+    })));
+    panel.append(h('p', { class: 'note' }, t('dwellHelp')));
+    panel.append(field(t('snap'), h('select', {
+      onchange: event => {
+        state.settings.snap = Number(event.target.value);
+        saveSoon();
+      },
+    }, [1, 5, 10, 15, 30, 60].map(step => h('option', { value: String(step), selected: step === state.settings.snap }, String(step))))));
   }
 
   // ------------------------------------------------------------------ dialogs
@@ -763,6 +1080,7 @@
     $('undo').addEventListener('click', undo);
     $('redo').addEventListener('click', redo);
     $('add-line').addEventListener('click', () => lineDialog(null));
+    $('draw-train').addEventListener('click', () => (drawing === null ? startDrawing() : cancelDrawing()));
     $('timetable-name').addEventListener('change', event => {
       if (event.target.value !== state.timetable.name)
         change(rt.edit.setName(state.timetable, event.target.value));
@@ -776,7 +1094,20 @@
       if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || $('dialog').open)
         return;
       const key = event.key.toLowerCase();
-      if ((event.ctrlKey || event.metaKey) && key === 'z' && !event.shiftKey) {
+      if (event.key === 'Enter' && drawing !== null) {
+        event.preventDefault();
+        finishDrawing();
+      } else if (event.key === 'Escape') {
+        if (drawing !== null)
+          cancelDrawing();
+        else if (state.selection !== null)
+          select(null);
+      } else if ((event.key === 'Delete' || event.key === 'Backspace') && drawing === null && selectedTrain() !== null) {
+        event.preventDefault();
+        const number = selectedTrain().number;
+        state.selection = null;
+        change(rt.edit.removeTrain(state.timetable, number));
+      } else if ((event.ctrlKey || event.metaKey) && key === 'z' && !event.shiftKey) {
         event.preventDefault();
         undo();
       } else if ((event.ctrlKey || event.metaKey) && (key === 'y' || key === 'z' && event.shiftKey)) {
@@ -791,4 +1122,7 @@
   renderWords();
   bind();
   render();
+
+  // For looking into the page from the browser's console.
+  window.rtEditor = { state, view: () => view, drawing: () => drawing };
 })();
