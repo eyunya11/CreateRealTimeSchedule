@@ -32,5 +32,20 @@
   "createrealtimeschedule.schedule.condition.real_time_of_day.rotation.every_1": "1 h",
   "createrealtimeschedule.schedule.condition.real_time_of_day.rotation.every_0_45": "45 min",
   "createrealtimeschedule.schedule.condition.real_time_of_day.rotation.every_0_30": "30 min",
-  "createrealtimeschedule.schedule.condition.real_time_of_day.rotation.every_0_15": "15 min"
+  "createrealtimeschedule.schedule.condition.real_time_of_day.rotation.every_0_15": "15 min",
+  "commands.createrealtimeschedule.rtdiagram.not_player": "Only a player can look at the diagram",
+  "commands.createrealtimeschedule.rtdiagram.none": "No timetable is being run, so there is no diagram",
+  "commands.createrealtimeschedule.rtdiagram.no_line": "The timetable has no line %1$s",
+  "commands.createrealtimeschedule.rtdiagram.refreshed": "Worked out the stations of %1$s lines from the track again",
+  "key.categories.createrealtimeschedule": "Create Real Time Schedule",
+  "key.createrealtimeschedule.diagram": "Open the diagram",
+  "screen.createrealtimeschedule.diagram.title": "Diagram",
+  "screen.createrealtimeschedule.diagram.waiting": "Asking the server for the diagram...",
+  "screen.createrealtimeschedule.diagram.too_large": "The timetable is too large to show",
+  "screen.createrealtimeschedule.diagram.none": "No timetable is being run",
+  "screen.createrealtimeschedule.diagram.no_axis": "The server has not sent the stations of this line",
+  "screen.createrealtimeschedule.diagram.today": "today",
+  "screen.createrealtimeschedule.diagram.day_before": "the day before",
+  "screen.createrealtimeschedule.diagram.now": "now",
+  "screen.createrealtimeschedule.diagram.help": "Wheel: zoom   Drag: move   Left/Right: line   PgUp/PgDn: day   Home: now"
 }

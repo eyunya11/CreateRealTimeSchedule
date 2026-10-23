@@ -62,19 +62,23 @@ The departure time is kept in the train as a clock value, so it survives saving 
 
 ## Running a timetable
 
-The mod can also run trains to a whole day's timetable by itself, without Create's schedules. The timetable is a JSON file of lines, trains and duties, in the format of [docs/proposal.md](docs/proposal.md) (version 2). A duty is what one train does in a day: it leaves its depot, runs a string of trains one after another, and comes back. Deadhead trains (`"deadhead": true`) take it from the depot to where its first train starts, and back, and are timed like any other train. The timetable editor and the diagram that will write such files are still to come.
+The mod can also run trains to a whole day's timetable by itself, without Create's schedules. The timetable is a JSON file of lines, trains and duties, in the format of [docs/proposal.md](docs/proposal.md) (version 2). A duty is what one train does in a day: it leaves its depot, runs a string of trains one after another, and comes back. Deadhead trains (`"deadhead": true`) take it from the depot to where its first train starts, and back, and are timed like any other train. The timetable editor that will write such files is still to come.
 
 | Command | Who | What it does |
 | --- | --- | --- |
 | `/rttimetable load` | operators | Reads `createrealtimeschedule/timetable.json` in the world folder and runs it. If anything is wrong with it, it says what and keeps running the timetable it had |
 | `/rttimetable status` | operators | Shows, for each duty, which train runs it, where it is and how late, or when it next leaves; and what went wrong lately |
 | `/rttimetable unload` | operators | Stops running the timetable |
+| `/rtdiagram` | anyone | Opens the diagram of the timetable's first line; `/rtdiagram line <id>` opens that of another |
+| `/rtdiagram refresh` | operators | Works the distances between the stations out from the track again, after it has changed |
 
 - `duty_lead_seconds` (60 by default) before a duty first leaves, it is given the train that has waited longest at its depot station. A train counts as waiting there if it stands at a station of the depot's name with no schedule of Create's and no duty.
 - At each departure time the train is sent to the next station the way Create's destination instruction sends one, and Create drives it. A train that arrives early waits for its time; one that arrives late stops for `default_minimum_stop_seconds` and goes, by the same rule as the wait condition.
 - The timetable runs every day. A duty that has no free train by the time it is to leave does not run that day. A duty whose train is removed, derails or is given a schedule of Create's is given up, and the train is left alone.
 - Trains with a schedule of Create's are never touched, so they can share the track with the timetable's trains.
 - Create's display boards and Display Links do not show the train number or destination of a train running a duty: it has no schedule of Create's for them to read.
+
+The diagram shows one line of the timetable: time across, the line's stations down, as far apart as the track between them. The timetable's trains are thin lines, coloured by type, with deadheads dashed; the duties of the service day are drawn over them in thick red as they really ran (purple for one given up). A key can open it too: bind "Open the diagram" in the controls. The wheel zooms, dragging moves, the left and right arrows change the line, Page Up and Page Down go to the service day before and back, and Home goes back to now. The server keeps the times of finished duties for today and the day before.
 
 ## Settings
 
@@ -90,7 +94,7 @@ The settings are per world, in `serverconfig/createrealtimeschedule-server.toml`
 
 ## What is and is not checked
 
-Checked by the tests (`./gradlew test` and `./gradlew runGameTestServer`): the clock arithmetic, saving and sending the clock, the sky sync, the commands, the condition's rule and how slots follow each other, saving a train that waits on the condition, and a real train running on real track through three stations in a row, arriving early and late. For running a timetable: loading and saving it, two trains at the depot of a loop line taking the duties in the order they leave and coming back, leaving every call on its time (recorded when the train has really left the platform), a late train making up time, a duty that has no train, and a train that is given a schedule being let go.
+Checked by the tests (`./gradlew test` and `./gradlew runGameTestServer`): the clock arithmetic, saving and sending the clock, the sky sync, the commands, the condition's rule and how slots follow each other, saving a train that waits on the condition, and a real train running on real track through three stations in a row, arriving early and late. For running a timetable: loading and saving it, two trains at the depot of a loop line taking the duties in the order they leave and coming back, leaving every call on its time (recorded when the train has really left the platform), a late train making up time, a duty that has no train, and a train that is given a schedule being let go. For the diagram: the distances between the stations from real track, the times sent to a client, and how the lines are worked out.
 
 Not checked yet:
 
@@ -99,7 +103,8 @@ Not checked yet:
 - several players on a dedicated server seeing the same time and sky;
 - that a client without the mod is refused by a server that has it;
 - that a client takes the server's `default_minimum_stop_seconds` when it joins. NeoForge's code sends the server's config files to a joining client, but this has not been tried with a real client;
-- running a timetable across a restart of the server (only saving its state and reading it back is tested), on track with signals where several trains share a line, and with a train that derails on the way.
+- running a timetable across a restart of the server (only saving its state and reading it back is tested), on track with signals where several trains share a line, and with a train that derails on the way;
+- each of the diagram's keys and mouse controls on a real client (the diagram itself has been looked at there: the timetable's lines and the real ones lie over each other, and its clock agrees with the server's).
 
 ## Building
 

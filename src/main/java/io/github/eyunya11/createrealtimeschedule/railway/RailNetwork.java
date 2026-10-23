@@ -1,6 +1,7 @@
 package io.github.eyunya11.createrealtimeschedule.railway;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -145,9 +146,20 @@ public final class RailNetwork {
      * order of {@link #names()}.
      */
     public List<Leg> legs() {
+        return legs(names());
+    }
+
+    /**
+     * The legs of {@link #legs()} from and to stations of the given names only, for which only those
+     * stations are searched from: much less work on a large network when a few stations are wanted.
+     */
+    public List<Leg> legs(Collection<String> among) {
+        Set<String> wanted = Set.copyOf(among);
         Map<List<String>, Leg> best = new LinkedHashMap<>();
         for (int source = 0; source < stations.size(); source++)
-            searchFrom(source, best);
+            if (wanted.contains(stations.get(source).name()))
+                searchFrom(source, best);
+        best.values().removeIf(leg -> !wanted.contains(leg.to()));
         List<String> names = names();
         List<Leg> legs = new ArrayList<>(best.values());
         legs.sort(Comparator.<Leg>comparingInt(leg -> names.indexOf(leg.from())).thenComparingInt(leg -> names.indexOf(leg.to())));

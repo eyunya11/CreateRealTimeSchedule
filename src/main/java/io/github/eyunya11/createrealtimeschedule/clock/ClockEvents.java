@@ -15,7 +15,7 @@ import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 
-/** Hooks the clock into the game: its start, its players, the sky each tick and its command. */
+/** Hooks the clock into the game: its start, its players, telling them when it changes and the sky each tick, and its command. */
 @EventBusSubscriber(modid = Createrealtimeschedule.MODID)
 public final class ClockEvents {
 
@@ -38,6 +38,7 @@ public final class ClockEvents {
 
     @SubscribeEvent
     public static void onServerTick(ServerTickEvent.Post event) {
+        ClockService.broadcastIfChanged(event.getServer());
         SkySync.apply(event.getServer(), ModSettings.syncSky());
     }
 
