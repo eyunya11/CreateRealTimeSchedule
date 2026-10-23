@@ -22,7 +22,9 @@ import org.jetbrains.annotations.Nullable;
  * does not have: it is the vertical axis of a diagram. A <em>train</em> is one run along a line under a
  * number such as {@code 101}, with the times it arrives at and leaves each of its stops. A
  * <em>duty</em> is what one set of rolling stock does in a day: trains one after another, each starting
- * where the one before ended.
+ * where the one before ended, from its depot and back. A <em>deadhead</em> train carries no passengers;
+ * it is how a duty gets from the depot to where its first train starts, and back again, and it is drawn
+ * on the diagram and timed like any other.
  *
  * <p>The records hold whatever they are given. {@link #problems()} says what is wrong with them.
  *
@@ -36,8 +38,8 @@ public record Timetable(String name, List<Line> lines, List<Train> trains, List<
     /** The {@code format} member of a timetable in JSON. */
     public static final String FORMAT = "createrealtimeschedule.timetable";
 
-    /** The newest version of the JSON this mod reads and the one it writes. */
-    public static final int VERSION = 1;
+    /** The newest version of the JSON this mod reads and the one it writes. Version 2 added deadhead trains. */
+    public static final int VERSION = 2;
 
     /** The longest line id, train number or duty id. */
     public static final int MAX_ID_LENGTH = 32;
@@ -68,14 +70,20 @@ public record Timetable(String name, List<Line> lines, List<Train> trains, List<
      * @param number the train number, such as {@code 101} or {@code 12A}; no other train has it
      * @param line   the id of the line it runs on
      * @param type   the kind of service, such as {@code local} or {@code rapid}, for display; may be empty
-     * @param stops  the stops in the order the train makes them, at least two
+     * @param stops    the stops in the order the train makes them, at least two
+     * @param deadhead whether it runs empty, such as from the depot to where the duty starts
      */
-    public record Train(String number, String line, String type, List<Stop> stops) {
+    public record Train(String number, String line, String type, List<Stop> stops, boolean deadhead) {
         public Train {
             Objects.requireNonNull(number, "number");
             Objects.requireNonNull(line, "line");
             Objects.requireNonNull(type, "type");
             stops = List.copyOf(stops);
+        }
+
+        /** A train that carries passengers. */
+        public Train(String number, String line, String type, List<Stop> stops) {
+            this(number, line, type, stops, false);
         }
     }
 
@@ -122,7 +130,8 @@ public record Timetable(String name, List<Line> lines, List<Train> trains, List<
 
     /**
      * @param id     the duty number, such as {@code 12A}; no other duty has it
-     * @param depot  the station where the trains for this duty wait when they are not running
+     * @param depot  the station where the trains for this duty wait when they are not running. The
+     *               first train of the duty leaves from it and the last arrives at it
      * @param trains the numbers of the trains the duty runs, in order, at least one. Each starts at the
      *               station where the one before ended, and after it arrived there
      */
@@ -149,8 +158,9 @@ public record Timetable(String name, List<Line> lines, List<Train> trains, List<
      * trains or duties with the same id; a train on a line that is not there, or stopping at a station
      * that is not on its line; stops that are not in order along a line, or the same station twice in a
      * row; times that are missing where they are needed, out of range, or not in order; and duties that
-     * name a train that is not there, use a train twice, or string trains together that do not meet
-     * (the next starts somewhere else, or before the one before has arrived).
+     * name a train that is not there, use a train twice, string trains together that do not meet
+     * (the next starts somewhere else, or before the one before has arrived), or do not start and end
+     * at their depot.
      */
     public List<String> problems() {
         List<String> problems = new ArrayList<>();
@@ -309,7 +319,23 @@ public record Timetable(String name, List<Line> lines, List<Train> trains, List<
                     checkHandover(label, previous, train, problems);
                 previous = train;
             }
+            if (isText(duty.depot()))
+                checkDepot(label, duty, trainByNumber, problems);
         }
+    }
+
+    /** The duty leaves the depot with its first train and comes back with its last; a deadhead train gets it there. */
+    private static void checkDepot(String label, Duty duty, Map<String, Train> trainByNumber, List<String> problems) {
+        if (duty.trains().isEmpty())
+            return;
+        Train first = trainByNumber.get(duty.trains().getFirst());
+        if (first != null && !first.stops().isEmpty() && !first.stops().getFirst().station().equals(duty.depot()))
+            problems.add(label + ": the first train, \"" + first.number() + "\", starts at \"" + first.stops().getFirst().station()
+                + "\", not at the depot \"" + duty.depot() + "\"");
+        Train last = trainByNumber.get(duty.trains().getLast());
+        if (last != null && !last.stops().isEmpty() && !last.stops().getLast().station().equals(duty.depot()))
+            problems.add(label + ": the last train, \"" + last.number() + "\", ends at \"" + last.stops().getLast().station()
+                + "\", not at the depot \"" + duty.depot() + "\"");
     }
 
     /** The train that goes on from where {@code before} ended must be at that station when it leaves. */

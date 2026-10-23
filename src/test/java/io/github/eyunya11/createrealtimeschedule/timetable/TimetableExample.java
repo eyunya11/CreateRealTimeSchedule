@@ -13,7 +13,10 @@ final class TimetableExample {
     private TimetableExample() {}
 
     static Timetable central() {
-        Line line = new Line("central", "Central Line", List.of("Central 1", "North Gate", "Harbor"), false);
+        Line line = new Line("central", "Central Line", List.of("Central Depot", "Central 1", "North Gate", "Harbor"), false);
+        Train out = new Train("D101", "central", "", List.of(
+            Stop.leaving("Central Depot", ServiceTime.of("08:02")),
+            Stop.arriving("Central 1", ServiceTime.of("08:06"))), true);
         Train down = new Train("101", "central", "local", List.of(
             Stop.leaving("Central 1", ServiceTime.of("08:10")),
             Stop.calling("North Gate", ServiceTime.of("08:25"), ServiceTime.of("08:26")),
@@ -22,7 +25,10 @@ final class TimetableExample {
             Stop.leaving("Harbor", ServiceTime.of("08:50")),
             Stop.calling("North Gate", ServiceTime.of("09:05"), ServiceTime.of("09:06")),
             Stop.arriving("Central 1", ServiceTime.of("09:21"))));
-        Duty duty = new Duty("1A", "Central 1", List.of("101", "102"));
-        return new Timetable("Central Line, weekdays", List.of(line), List.of(down, up), List.of(duty));
+        Train back = new Train("D102", "central", "", List.of(
+            Stop.leaving("Central 1", ServiceTime.of("09:25")),
+            Stop.arriving("Central Depot", ServiceTime.of("09:29"))), true);
+        Duty duty = new Duty("1A", "Central Depot", List.of("D101", "101", "102", "D102"));
+        return new Timetable("Central Line, weekdays", List.of(line), List.of(out, down, up, back), List.of(duty));
     }
 }
