@@ -90,7 +90,7 @@ The settings are per world, in `serverconfig/createrealtimeschedule-server.toml`
 
 ## What is and is not checked
 
-Checked by the tests (`./gradlew test` and `./gradlew runGameTestServer`): the clock arithmetic, saving and sending the clock, the sky sync, the commands, the condition's rule and how slots follow each other, saving a train that waits on the condition, and a real train running on real track through three stations in a row, arriving early and late. For running a timetable: loading and saving it, two trains at the depot of a loop line taking the duties in the order they leave and coming back, leaving every call on the timetable's tick, a late train making up time, a duty that has no train, and a train that is given a schedule being let go.
+Checked by the tests (`./gradlew test` and `./gradlew runGameTestServer`): the clock arithmetic, saving and sending the clock, the sky sync, the commands, the condition's rule and how slots follow each other, saving a train that waits on the condition, and a real train running on real track through three stations in a row, arriving early and late. For running a timetable: loading and saving it, two trains at the depot of a loop line taking the duties in the order they leave and coming back, leaving every call on its time (recorded when the train has really left the platform), a late train making up time, a duty that has no train, and a train that is given a schedule being let go.
 
 Not checked yet:
 
