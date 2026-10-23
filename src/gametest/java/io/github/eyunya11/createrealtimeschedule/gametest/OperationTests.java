@@ -98,6 +98,12 @@ public class OperationTests {
                     helper.assertTrue(TrainDriver.standsAt(line.train(), "Depot"), "a set is not back at the depot (" + line.describe() + ")");
                     helper.assertTrue(data.freeSince().containsKey(line.train().id), "a set back at the depot is not free again");
                 }
+                for (DutyRun run : List.of(first, second)) {
+                    TrackLine line = run == first ? north : south;
+                    helper.assertTrue(data.history().stream().anyMatch(record -> record.run() == run
+                            && record.ending() == OperationData.Ending.FINISHED && record.train().equals(line.train().name.getString())),
+                        "the times of duty " + run.duty() + " are not kept as finished by its train: " + data.history());
+                }
                 helper.assertTrue(newNotes(data).isEmpty(), "something went wrong: " + newNotes(data));
                 return true;
             }
@@ -151,6 +157,10 @@ public class OperationTests {
                 helper.assertTrue(notes.size() == 1 && notes.getFirst().what().equals("given up: the train has been given a schedule"),
                     "the duty is not noted as given up: " + notes);
                 helper.assertTrue(!data.freeSince().containsKey(train.id), "a set with a schedule of Create's is counted as free");
+                List<OperationData.Record> history = data.history();
+                helper.assertTrue(history.size() == 1 && history.getFirst().ending() == OperationData.Ending.GIVEN_UP
+                        && history.getFirst().run().departures().getFirst() != DutyRun.NOT_YET,
+                    "the times of the duty given up are not kept: " + history);
                 return true;
             }
         }.begin();

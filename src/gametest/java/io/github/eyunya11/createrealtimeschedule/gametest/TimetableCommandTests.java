@@ -5,11 +5,13 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
 import io.github.eyunya11.createrealtimeschedule.Createrealtimeschedule;
 import io.github.eyunya11.createrealtimeschedule.clock.ClockService;
+import io.github.eyunya11.createrealtimeschedule.clock.RealClock;
 import io.github.eyunya11.createrealtimeschedule.command.RtTimetableCommand;
 import io.github.eyunya11.createrealtimeschedule.operation.DutyRun;
 import io.github.eyunya11.createrealtimeschedule.operation.OperationData;
@@ -103,6 +105,9 @@ public class TimetableCommandTests {
         data.runs().put(train, run);
         data.freeSince().put(new UUID(3, 4), now - 100);
         data.note(now, "1A", 2, "did not run: no free set at the depot by its time");
+        DutyRun done = DutyRun.start("1A", RealClock.day(now), data.calls("1A"), now);
+        done.left(done.departure());
+        data.keep(done, "Train 7", OperationData.Ending.GIVEN_UP, now);
 
         CompoundTag saved = data.save(new CompoundTag(), server.registryAccess());
         OperationData again = OperationData.load(saved, server.registryAccess());
@@ -112,6 +117,39 @@ public class TimetableCommandTests {
         helper.assertTrue(again.freeSince().equals(data.freeSince()), "the free sets did not come back");
         helper.assertTrue(again.notes().equals(data.notes()), "the notes did not come back");
         helper.assertTrue(again.lastDay("1A") == data.lastDay("1A"), "the last day of the duty did not come back");
+        List<OperationData.Record> history = again.history();
+        helper.assertTrue(history.size() == 1 && history.getFirst().run().state().equals(done.state())
+                && history.getFirst().train().equals("Train 7") && history.getFirst().ending() == OperationData.Ending.GIVEN_UP,
+            "the record of the duty given up did not come back the same: " + history);
+        helper.succeed();
+    }
+
+    /**
+     * The records of a duty's times are kept for the service day of now and the one before, and dropped
+     * when a new timetable changes the duty.
+     */
+    @GameTest(template = EMPTY, batch = "realtimetimetable_records")
+    public static void recordsAreKeptForTwoDaysAndDroppedWhenTheDutyChanges(GameTestHelper helper) {
+        MinecraftServer server = helper.getLevel().getServer();
+        long now = ClockService.now(server);
+        long today = RealClock.day(now);
+        OperationData data = new OperationData();
+        data.loadTimetable(TIMETABLE, TimetableJson.parse(TIMETABLE).timetable(), now);
+        data.keep(DutyRun.start("1A", today - 2, data.calls("1A"), now), "", OperationData.Ending.GIVEN_UP, now);
+        data.keep(DutyRun.start("1A", today - 1, data.calls("1A"), now), "", OperationData.Ending.GIVEN_UP, now);
+        data.keep(DutyRun.start("1A", today, data.calls("1A"), now), "", OperationData.Ending.GIVEN_UP, now);
+        helper.assertTrue(data.history().stream().map(record -> record.run().day()).toList().equals(List.of(today - 1, today)),
+            "the records kept are not those of today and the day before: " + data.history());
+
+        data.forgetOld(now + RealClock.TICKS_PER_DAY);
+        helper.assertTrue(data.history().size() == 1 && data.history().getFirst().run().day() == today,
+            "a day on, the record of the day before yesterday is kept: " + data.history());
+
+        data.loadTimetable(TIMETABLE, TimetableJson.parse(TIMETABLE).timetable(), now);
+        helper.assertTrue(data.history().size() == 1, "the record of a duty that has not changed is dropped on a reload");
+        String changed = TIMETABLE.replace("\"depart\": \"12:00:20\"", "\"depart\": \"12:00:21\"");
+        data.loadTimetable(changed, TimetableJson.parse(changed).timetable(), now);
+        helper.assertTrue(data.history().isEmpty(), "the record of a duty whose times have changed is kept");
         helper.succeed();
     }
 

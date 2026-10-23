@@ -39,7 +39,8 @@ import net.minecraft.server.MinecraftServer;
  * <li>Each running duty is taken one step on by {@link TrainDriver}: a set whose time has come is sent
  * to the next station, one that has gone from the platform is running, and one that has arrived is
  * told when to leave. A duty whose train is gone, derailed or given a schedule of Create's is given
- * up. A set back at the end of its duty is free. This comes after the duties are given their sets, so
+ * up. A set back at the end of its duty is free. Either way, the duty's times are kept for the
+ * diagram ({@link OperationData#keep}). This comes after the duties are given their sets, so
  * that one given its set at its very time is sent on the same tick.</li>
  * </ol>
  *
@@ -61,8 +62,10 @@ public final class OperationService {
         if (timetable == null)
             return;
         long now = ClockService.now(server);
-        if (server.getTickCount() % FREE_CHECK_TICKS == 0)
+        if (server.getTickCount() % FREE_CHECK_TICKS == 0) {
             findFreeSets(data, timetable, now);
+            data.forgetOld(now);
+        }
         startDuties(data, timetable, now, ModSettings.dutyLeadSeconds() * (long) RealClock.TICKS_PER_SECOND);
         stepRuns(data, now, ModSettings.defaultMinimumStopSeconds() * (long) RealClock.TICKS_PER_SECOND);
     }
@@ -79,6 +82,7 @@ public final class OperationService {
                 runs.remove();
                 data.noWay().remove(id);
                 data.note(now, run.duty(), run.day(), "given up: " + letGo);
+                data.keep(run, train == null ? "" : train.name.getString(), OperationData.Ending.GIVEN_UP, now);
                 continue;
             }
             int call = run.call();
@@ -98,7 +102,7 @@ public final class OperationService {
                     runs.remove();
                     data.noWay().remove(id);
                     data.freeSince().put(id, now);
-                    data.setDirty();
+                    data.keep(run, train.name.getString(), OperationData.Ending.FINISHED, now);
                     LOGGER.info("Duty {} of service day {} is done; {} is free at {}", run.duty(), run.day(), train.name.getString(),
                         run.calls().getLast().station());
                 }
