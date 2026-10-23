@@ -74,6 +74,7 @@ The mod can also run trains to a whole day's timetable by itself, without Create
 - At each departure time the train is sent to the next station the way Create's destination instruction sends one, and Create drives it. A train that arrives early waits for its time; one that arrives late stops for `default_minimum_stop_seconds` and goes, by the same rule as the wait condition.
 - The timetable runs every day. A duty that has no free train by the time it is to leave does not run that day. A duty whose train is removed, derails or is given a schedule of Create's is given up, and the train is left alone.
 - Trains with a schedule of Create's are never touched, so they can share the track with the timetable's trains.
+- Create's display boards and Display Links do not show the train number or destination of a train running a duty: it has no schedule of Create's for them to read.
 
 ## Settings
 
@@ -97,7 +98,8 @@ Not checked yet:
 - how the settings line looks in the schedule window (it only compiles);
 - several players on a dedicated server seeing the same time and sky;
 - that a client without the mod is refused by a server that has it;
-- that a client takes the server's `default_minimum_stop_seconds` when it joins. NeoForge's code sends the server's config files to a joining client, but this has not been tried with a real client.
+- that a client takes the server's `default_minimum_stop_seconds` when it joins. NeoForge's code sends the server's config files to a joining client, but this has not been tried with a real client;
+- running a timetable across a restart of the server (only saving its state and reading it back is tested), on track with signals where several trains share a line, and with a train that derails on the way.
 
 ## Building
 
