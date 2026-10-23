@@ -1,0 +1,36 @@
+{
+  "about": "Members that have to be there and are not.",
+  "timetable": {
+    "format": "createrealtimeschedule.timetable",
+    "lines": [
+      {
+        "name": "No id"
+      }
+    ],
+    "trains": [
+      {
+        "stops": [
+          {
+            "depart": "08:00"
+          }
+        ]
+      }
+    ],
+    "duties": [
+      {
+        "trains": "1"
+      }
+    ]
+  },
+  "problems": [
+    "version: is missing",
+    "lines[0].id: is missing",
+    "lines[0].stations: is missing",
+    "trains[0].number: is missing",
+    "trains[0].line: is missing",
+    "trains[0].stops[0].station: is missing",
+    "duties[0].id: is missing",
+    "duties[0].depot: is missing",
+    "duties[0].trains: must be an array of strings"
+  ]
+}

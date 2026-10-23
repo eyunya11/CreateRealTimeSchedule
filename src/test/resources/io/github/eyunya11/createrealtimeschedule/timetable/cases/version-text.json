@@ -1,0 +1,13 @@
+{
+  "about": "A version written as text.",
+  "timetable": {
+    "format": "createrealtimeschedule.timetable",
+    "version": "2",
+    "lines": [],
+    "trains": [],
+    "duties": []
+  },
+  "problems": [
+    "version: must be a whole number"
+  ]
+}

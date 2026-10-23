@@ -1,0 +1,98 @@
+{
+  "about": "A loop line with a duty out of the depot and back, and a train that goes round and back to where it started.",
+  "timetable": {
+    "format": "createrealtimeschedule.timetable",
+    "version": 2,
+    "name": "Test loop",
+    "lines": [
+      {
+        "id": "loop",
+        "name": "Loop",
+        "stations": [
+          "Depot",
+          "A",
+          "B"
+        ],
+        "loop": true
+      }
+    ],
+    "trains": [
+      {
+        "number": "D1",
+        "line": "loop",
+        "deadhead": true,
+        "stops": [
+          {
+            "station": "Depot",
+            "depart": "12:00:05"
+          },
+          {
+            "station": "A",
+            "arrive": "12:00:07"
+          }
+        ]
+      },
+      {
+        "number": "1",
+        "line": "loop",
+        "stops": [
+          {
+            "station": "A",
+            "depart": "12:00:20"
+          },
+          {
+            "station": "B",
+            "arrive": "12:00:27"
+          }
+        ]
+      },
+      {
+        "number": "D2",
+        "line": "loop",
+        "deadhead": true,
+        "stops": [
+          {
+            "station": "B",
+            "depart": "12:00:35"
+          },
+          {
+            "station": "Depot",
+            "arrive": "12:01:00"
+          }
+        ]
+      },
+      {
+        "number": "9",
+        "line": "loop",
+        "type": "local",
+        "stops": [
+          {
+            "station": "A",
+            "depart": "13:00"
+          },
+          {
+            "station": "B",
+            "arrive": "13:05",
+            "depart": "13:06"
+          },
+          {
+            "station": "A",
+            "arrive": "13:10"
+          }
+        ]
+      }
+    ],
+    "duties": [
+      {
+        "id": "1A",
+        "depot": "Depot",
+        "trains": [
+          "D1",
+          "1",
+          "D2"
+        ]
+      }
+    ]
+  },
+  "problems": []
+}

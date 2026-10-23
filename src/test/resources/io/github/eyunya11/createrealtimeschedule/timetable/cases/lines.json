@@ -1,0 +1,45 @@
+{
+  "about": "Lines: a bad id, an empty name, too few stations, a station twice, a station name with a control character, an id taken.",
+  "timetable": {
+    "format": "createrealtimeschedule.timetable",
+    "version": 2,
+    "name": "",
+    "lines": [
+      {
+        "id": " l",
+        "name": "",
+        "stations": [
+          "A"
+        ]
+      },
+      {
+        "id": "m",
+        "name": "M",
+        "stations": [
+          "A",
+          "B",
+          "A",
+          "C\u0007"
+        ]
+      },
+      {
+        "id": "m",
+        "name": "M again",
+        "stations": [
+          "A",
+          "B"
+        ]
+      }
+    ],
+    "trains": [],
+    "duties": []
+  },
+  "problems": [
+    "line \" l\": the id must be 1 to 32 characters, with no space at either end and no control character",
+    "line \" l\": the name must not be empty, start or end with a space, or contain a control character",
+    "line \" l\": needs at least 2 stations",
+    "line \"m\": station \"A\" is listed twice",
+    "line \"m\": a station name must not be empty, start or end with a space, or contain a control character",
+    "line \"m\": another line has the same id"
+  ]
+}

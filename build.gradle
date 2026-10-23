@@ -170,6 +170,32 @@ tasks.named('test') {
     inputs.file('docs/proposal.md').withPathSensitivity(PathSensitivity.RELATIVE).withPropertyName('proposal')
 }
 
+// The timetable editor's own tests, in JavaScript (src/test/js), run with Node's test runner. Without
+// Node on the PATH they are skipped, with a line saying so; CI always has Node.
+def nodeOnPath = providers.environmentVariable('PATH').map { String path ->
+    path.split(File.pathSeparator).any { String dir -> new File(dir, 'node').isFile() || new File(dir, 'node.exe').isFile() }
+}.orElse(false)
+def editorTest = tasks.register('editorTest', Exec) {
+    group = 'verification'
+    description = "Runs the timetable editor's tests with Node."
+    def tests = fileTree('src/test/js') { include '**/*.test.js' }
+    inputs.files(tests).withPathSensitivity(PathSensitivity.RELATIVE).withPropertyName('tests')
+    inputs.dir('src/test/js').withPathSensitivity(PathSensitivity.RELATIVE).withPropertyName('helpers')
+    inputs.dir('src/main/resources/createrealtimeschedule/editor').withPathSensitivity(PathSensitivity.RELATIVE).withPropertyName('editor')
+    inputs.dir('src/test/resources').withPathSensitivity(PathSensitivity.RELATIVE).withPropertyName('cases')
+    def marker = layout.buildDirectory.file('editorTest/passed')
+    outputs.file(marker)
+    onlyIf('Node is on the PATH') {
+        boolean found = nodeOnPath.get()
+        if (!found)
+            System.err.println("Node is not on the PATH, so the timetable editor's tests are skipped")
+        found
+    }
+    commandLine(['node', '--test'] + tests.files.collect { it.path }.sort())
+    doLast { marker.get().asFile.text = 'passed\n' }
+}
+tasks.named('check') { dependsOn editorTest }
+
 // This block of code expands all declared replace properties in the specified resource targets.
 // A missing property will result in an error. Properties are expanded using ${} Groovy notation.
 var generateModMetadata = tasks.register("generateModMetadata", ProcessResources) {

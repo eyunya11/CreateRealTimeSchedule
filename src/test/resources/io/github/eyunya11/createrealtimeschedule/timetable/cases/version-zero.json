@@ -1,0 +1,13 @@
+{
+  "about": "A version before the first.",
+  "timetable": {
+    "format": "createrealtimeschedule.timetable",
+    "version": 0,
+    "lines": [],
+    "trains": [],
+    "duties": []
+  },
+  "problems": [
+    "version: must be 1 or more"
+  ]
+}

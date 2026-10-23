@@ -1,0 +1,11 @@
+{
+  "about": "JSON of something else: that is all there is to say.",
+  "timetable": {
+    "format": "something.else",
+    "version": 1,
+    "trains": "whatever"
+  },
+  "problems": [
+    "format: must be \"createrealtimeschedule.timetable\"; this is not a timetable of this mod"
+  ]
+}
