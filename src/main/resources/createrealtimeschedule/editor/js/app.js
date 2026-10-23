@@ -191,6 +191,10 @@
   function select(selection) {
     drawing = null;
     hover = null;
+    if (selection === null || selection.kind !== 'duty' || state.selection === null || state.selection.id !== selection.id) {
+      picking = false;
+      dutyNote = '';
+    }
     state.selection = selection;
     if (selection !== null && selection.kind === 'train') {
       const train = state.timetable.trains.find(each => each.number === selection.number);
@@ -198,6 +202,14 @@
         state.lineId = train.line;
     }
     render();
+  }
+
+  function selectedDuty() {
+    const selection = state.selection;
+    if (selection === null || selection.kind !== 'duty')
+      return null;
+    const duty = state.timetable.duties.find(each => each.id === selection.id);
+    return duty === undefined ? null : duty;
   }
 
   function selectedTrain() {
@@ -346,6 +358,10 @@
   let shown = null;
   /** The line's axis and the rows of its stations on the screen, as the diagram was last drawn. */
   let drawn = null;
+  /** Whether a click on a train adds it to the duty chosen, rather than choosing the train. */
+  let picking = false;
+  /** What the last change to a duty's deadheads had to say. */
+  let dutyNote = '';
 
   function lineAxis(line) {
     return rt.axis.of(line, state.network === null ? [] : state.network.legs);
@@ -450,16 +466,26 @@
     const plot = s('g', { 'clip-path': 'url(#plot)' });
     svg.append(plot);
     const selected = selectedTrain();
+    const duty = selectedDuty();
+    const inDuty = new Set(duty === null ? [] : duty.trains);
     for (const planned of rt.layout.plannedTrains(shownTimetable(), axisOfLine)) {
       const d = pathOf(planned.segments, length);
       const isSelected = selected !== null && selected.number === planned.number;
       const colour = planned.deadhead ? 'var(--deadhead)' : typeColour(planned.type);
-      const group = s('g', { class: 'train' + (planned.deadhead ? ' deadhead' : '') + (isSelected ? ' selected' : ''), 'data-number': planned.number });
+      const marks = (planned.deadhead ? ' deadhead' : '') + (isSelected ? ' selected' : '')
+        + (duty === null ? '' : inDuty.has(planned.number) ? ' in-duty' : ' dim');
+      const group = s('g', { class: 'train' + marks, 'data-number': planned.number });
       group.append(s('path', { class: 'shown', d, stroke: colour }));
       const hit = s('path', { class: 'hit', d });
       hit.addEventListener('pointerdown', event => {
         if (drawing !== null || event.button !== 0)
           return; // a click while drawing goes to the row under it
+        if (picking && duty !== null) {
+          event.stopPropagation();
+          dutyNote = '';
+          change(rt.duties.appendTrain(state.timetable, duty.id, planned.number));
+          return;
+        }
         if (isSelected && (event.ctrlKey || event.metaKey)) {
           startDrag(planned.number, -1, event);
           return;
@@ -687,15 +713,10 @@
       trainInspector(panel, train);
       return;
     }
-    const selection = state.selection;
-    if (selection !== null && selection.kind === 'duty') {
-      const duty = state.timetable.duties.find(each => each.id === selection.id);
-      if (duty !== undefined) {
-        panel.append(h('h2', null, t('duties') + ' ' + duty.id));
-        panel.append(h('p', null, duty.depot));
-        panel.append(h('ol', null, duty.trains.map(number => h('li', null, number))));
-        return;
-      }
+    const duty = selectedDuty();
+    if (duty !== null) {
+      dutyInspector(panel, duty);
+      return;
     }
     panel.append(h('p', { class: 'note' }, t('noSelection')));
     settingsInspector(panel);
@@ -802,6 +823,104 @@
         change(rt.edit.removeTrain(state.timetable, number));
       },
     }, t('removeTrain'))));
+  }
+
+  /** The stations a depot can be: those of the lines, and of the network. */
+  function depotChoices(current) {
+    const stations = [];
+    for (const line of state.timetable.lines)
+      stations.push(...line.stations);
+    if (state.network !== null)
+      stations.push(...state.network.stations);
+    if (current !== '')
+      stations.unshift(current);
+    return [...new Set(stations)];
+  }
+
+  function dutyInspector(panel, duty) {
+    const id = duty.id;
+    panel.append(h('h2', null, t('duties') + ' ' + id));
+    const error = h('p', { class: 'error' });
+    panel.append(field(t('dutyId'), h('input', {
+      type: 'text', value: id, spellcheck: 'false',
+      onchange: event => {
+        const next = event.target.value.trim();
+        if (next === '') {
+          error.textContent = t('numberEmpty');
+          return;
+        }
+        if (next !== id && state.timetable.duties.some(other => other.id === next)) {
+          error.textContent = t('dutyIdTaken');
+          return;
+        }
+        state.selection = { kind: 'duty', id: next };
+        change(rt.duties.setDuty(state.timetable, id, { id: next }));
+      },
+    })));
+    panel.append(field(t('depot'), h('select', {
+      onchange: event => change(rt.duties.setDuty(state.timetable, id, { depot: event.target.value })),
+    }, depotChoices(duty.depot).map(station => h('option', { value: station, selected: station === duty.depot }, station)))));
+    panel.append(error);
+
+    panel.append(h('h2', null, t('dutyTrains')));
+    const byNumber = new Map(state.timetable.trains.map(train => [train.number, train]));
+    panel.append(h('ol', { class: 'list duty-trains' }, duty.trains.map((number, i) => {
+      const train = byNumber.get(number);
+      const route = train === undefined || train.stops.length === 0 ? ''
+        : train.stops[0].station + ' ' + timeText(train.stops[0].depart) + ' → ' + train.stops[train.stops.length - 1].station + ' '
+          + timeText(train.stops[train.stops.length - 1].arrive);
+      return h('li', null, h('span', null, number, ' ', h('span', { class: 'sub' }, route)),
+        h('button', { type: 'button', title: t('remove'), onclick: () => change(rt.duties.removeTrainAt(state.timetable, id, i)) }, '×'));
+    })));
+
+    panel.append(h('div', { class: 'buttons' },
+      h('button', {
+        type: 'button', class: picking ? 'active' : null,
+        onclick: () => {
+          picking = !picking;
+          render();
+        },
+      }, picking ? t('done') : t('pickTrains'))));
+    if (picking)
+      panel.append(h('p', { class: 'note' }, t('picking')));
+
+    panel.append(h('h2', null, t('candidates')));
+    const next = rt.duties.candidates(state.timetable, id);
+    panel.append(next.length === 0 ? h('p', { class: 'note' }, t('noCandidates')) : h('ul', { class: 'list candidates' }, next.map(train =>
+      h('li', null, h('button', {
+        type: 'button',
+        onclick: () => {
+          dutyNote = '';
+          change(rt.duties.appendTrain(state.timetable, id, train.number));
+        },
+      }, '+'), ' ', train.number, ' ', h('span', { class: 'sub' }, train.stops[0].station + ' ' + timeText(train.stops[0].depart))))));
+
+    panel.append(h('div', { class: 'buttons' },
+      h('button', {
+        type: 'button', disabled: duty.trains.length === 0,
+        onclick: () => {
+          const result = rt.duties.addDepotDeadheads(state.timetable, id, running, state.settings.dwell, state.settings.snap);
+          const notes = result.missing.map(([from, to]) => t('noRunningTime', from, to));
+          if (result.added.length > 0)
+            notes.unshift(t('deadheadsAdded', result.added.length));
+          else if (result.missing.length === 0)
+            notes.push(t('noDeadheadNeeded'));
+          dutyNote = notes.join(' ');
+          if (result.added.length > 0)
+            change(result.timetable);
+          else
+            render();
+        },
+      }, t('addDeadheads')),
+      h('button', {
+        type: 'button',
+        onclick: () => {
+          state.selection = null;
+          change(rt.duties.removeDuty(state.timetable, id));
+        },
+      }, t('removeDuty'))));
+    if (dutyNote !== '')
+      panel.append(h('p', { class: 'note' }, dutyNote));
   }
 
   function settingsInspector(panel) {
@@ -1081,6 +1200,14 @@
     $('redo').addEventListener('click', redo);
     $('add-line').addEventListener('click', () => lineDialog(null));
     $('draw-train').addEventListener('click', () => (drawing === null ? startDrawing() : cancelDrawing()));
+    $('add-duty').addEventListener('click', () => {
+      const id = rt.duties.nextDutyId(state.timetable);
+      const line = currentLine();
+      state.selection = { kind: 'duty', id };
+      picking = true;
+      dutyNote = '';
+      change(rt.duties.addDuty(state.timetable, id, line === null || line.stations.length === 0 ? '' : line.stations[0]));
+    });
     $('timetable-name').addEventListener('change', event => {
       if (event.target.value !== state.timetable.name)
         change(rt.edit.setName(state.timetable, event.target.value));

@@ -235,8 +235,29 @@ input.bad {
   outline: 1px solid var(--danger);
 }
 
-#draw-train {
+#draw-train,
+#add-duty {
   margin-bottom: 6px;
+}
+
+#diagram .train.dim {
+  opacity: 0.3;
+}
+
+#diagram .train.in-duty .shown {
+  stroke-width: 3;
+}
+
+#inspector .duty-trains li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+}
+
+#inspector .duty-trains button,
+#inspector .candidates button {
+  padding: 0 6px;
 }
 
 #diagram .grid {
