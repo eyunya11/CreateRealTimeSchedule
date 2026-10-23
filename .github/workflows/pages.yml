@@ -1,0 +1,73 @@
+name: pages
+
+# Publishes the timetable editor on GitHub Pages: the files in src/main/resources/createrealtimeschedule/editor,
+# as they are, which are the same ones the mod's jar holds and /rteditor opens. It runs the editor's
+# tests first. GitHub publishes only from the default branch, so a pull request gets the tests alone.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/main/resources/createrealtimeschedule/editor/**'
+      - 'src/test/js/**'
+      - 'src/test/resources/io/github/eyunya11/createrealtimeschedule/**'
+      - '.github/workflows/pages.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/main/resources/createrealtimeschedule/editor/**'
+      - 'src/test/js/**'
+      - 'src/test/resources/io/github/eyunya11/createrealtimeschedule/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test the editor
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run the editor's tests
+        run: node --test src/test/js/*.test.js
+
+  publish:
+    name: Publish the editor
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    # One publication at a time, and one under way is let finish.
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      - name: Set up Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload the editor
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: src/main/resources/createrealtimeschedule/editor
+
+      - name: Publish it
+        id: deployment
+        uses: actions/deploy-pages@v4
