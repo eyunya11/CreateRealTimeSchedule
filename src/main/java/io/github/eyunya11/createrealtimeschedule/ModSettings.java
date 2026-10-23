@@ -6,7 +6,7 @@ import io.github.eyunya11.createrealtimeschedule.clock.RealClock;
 import net.neoforged.neoforge.common.ModConfigSpec;
 
 /**
- * The mod's per-world settings (the clock, the sky and the wait condition), in
+ * The mod's per-world settings (the clock, the sky, the wait condition and the operation), in
  * {@code serverconfig/createrealtimeschedule-server.toml} of the world.
  *
  * <p>NeoForge sends the server's config files to a client when it joins, so a client reads the
@@ -26,6 +26,10 @@ public final class ModSettings {
     public static final int DEFAULT_MINIMUM_STOP_SECONDS = 20;
     /** The longest minimum stop the schedule screen and the config allow. */
     public static final int MAX_MINIMUM_STOP_SECONDS = 600;
+    /** How long before a duty first leaves it is given a set, until the config says otherwise. */
+    public static final int DEFAULT_DUTY_LEAD_SECONDS = 60;
+    /** The longest such lead the config allows. */
+    public static final int MAX_DUTY_LEAD_SECONDS = 3600;
 
     private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
 
@@ -48,8 +52,14 @@ public final class ModSettings {
     private static final ModConfigSpec.IntValue DEFAULT_MINIMUM_STOP = BUILDER
         .comment("The minimum stop, in seconds, that a new real_time_of_day condition starts with in the schedule screen.",
             "It is only the starting value: a condition that has been made keeps the value it was given.",
-            "A train that arrives late stops for the minimum stop at least, however late it is.")
+            "A train that arrives late stops for the minimum stop at least, however late it is.",
+            "Trains that run the duties of a timetable loaded with /rttimetable stop for this long at the least too.")
         .defineInRange("default_minimum_stop_seconds", DEFAULT_MINIMUM_STOP_SECONDS, 0, MAX_MINIMUM_STOP_SECONDS);
+
+    private static final ModConfigSpec.IntValue DUTY_LEAD = BUILDER
+        .comment("How many seconds before a duty of the timetable loaded with /rttimetable first leaves its depot",
+            "it is given a free train waiting there. The train leaves at the timetable's time, not when it is given the duty.")
+        .defineInRange("duty_lead_seconds", DEFAULT_DUTY_LEAD_SECONDS, 0, MAX_DUTY_LEAD_SECONDS);
 
     public static final ModConfigSpec SPEC = BUILDER.build();
 
@@ -69,9 +79,14 @@ public final class ModSettings {
         return read(SPEC.isLoaded(), ALIGN_ON_START, false);
     }
 
-    /** The minimum stop, in seconds, that a new real_time_of_day condition starts with. */
+    /** The minimum stop, in seconds, that a new real_time_of_day condition starts with, and that a train running a duty stops for. */
     public static int defaultMinimumStopSeconds() {
         return read(SPEC.isLoaded(), DEFAULT_MINIMUM_STOP, DEFAULT_MINIMUM_STOP_SECONDS);
+    }
+
+    /** How many seconds before a duty first leaves it is given a set. */
+    public static int dutyLeadSeconds() {
+        return read(SPEC.isLoaded(), DUTY_LEAD, DEFAULT_DUTY_LEAD_SECONDS);
     }
 
     /**
