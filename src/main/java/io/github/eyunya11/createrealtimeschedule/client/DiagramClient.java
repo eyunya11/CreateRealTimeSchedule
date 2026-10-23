@@ -6,11 +6,13 @@ import java.util.Map;
 
 import org.jetbrains.annotations.Nullable;
 
+import io.github.eyunya11.createrealtimeschedule.diagram.DiagramModel;
 import io.github.eyunya11.createrealtimeschedule.diagram.DutyTimes;
 import io.github.eyunya11.createrealtimeschedule.diagram.LineAxis;
 import io.github.eyunya11.createrealtimeschedule.network.DiagramOpenPayload;
 import io.github.eyunya11.createrealtimeschedule.network.DiagramRequestPayload;
 import io.github.eyunya11.createrealtimeschedule.network.DiagramSnapshotPayload;
+import io.github.eyunya11.createrealtimeschedule.operation.Call;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable;
 import io.github.eyunya11.createrealtimeschedule.timetable.TimetableJson;
 import net.minecraft.client.Minecraft;
@@ -27,7 +29,10 @@ public final class DiagramClient {
 
     private static boolean received;
     private static int revision = -1;
+    private static int timesRevision = -1;
     private static @Nullable Timetable timetable;
+    /** The calls of each duty of the timetable, worked out once for each revision of it. */
+    private static Map<String, List<Call>> calls = Map.of();
     private static boolean tooLarge;
     private static Map<String, LineAxis> axes = Map.of();
     private static List<DutyTimes> duties = List.of();
@@ -54,6 +59,7 @@ public final class DiagramClient {
                 if (result.ok())
                     timetable = result.timetable();
             }
+            calls = timetable == null ? Map.of() : DiagramModel.calls(timetable);
             tooLarge = content.tooLarge();
             Map<String, LineAxis> byLine = new LinkedHashMap<>();
             for (LineAxis axis : content.axes())
@@ -61,7 +67,9 @@ public final class DiagramClient {
             axes = byLine;
         }
         revision = payload.revision();
-        duties = payload.duties();
+        if (payload.duties() != null)
+            duties = payload.duties();
+        timesRevision = payload.timesRevision();
         serverNow = payload.now();
         Minecraft minecraft = Minecraft.getInstance();
         receivedAt = minecraft.level == null ? 0 : minecraft.level.getGameTime();
@@ -76,7 +84,7 @@ public final class DiagramClient {
     }
 
     private static void request() {
-        PacketDistributor.sendToServer(new DiagramRequestPayload(revision));
+        PacketDistributor.sendToServer(new DiagramRequestPayload(revision, timesRevision));
     }
 
     /** Once a client tick: asks the server again while the diagram is open. */
@@ -89,7 +97,9 @@ public final class DiagramClient {
     public static void reset() {
         received = false;
         revision = -1;
+        timesRevision = -1;
         timetable = null;
+        calls = Map.of();
         tooLarge = false;
         axes = Map.of();
         duties = List.of();
@@ -105,6 +115,11 @@ public final class DiagramClient {
         return timetable;
     }
 
+    /** The calls of each duty of {@link #timetable()}, by its id. */
+    public static Map<String, List<Call>> calls() {
+        return calls;
+    }
+
     public static boolean tooLarge() {
         return tooLarge;
     }
@@ -118,13 +133,15 @@ public final class DiagramClient {
     }
 
     /**
-     * The clock now: the server's, as the last snapshot said, run on by the game ticks since. Not
-     * {@link ClientClock}, which the server sends only when the clock is set: anything that sets the
-     * offset without saying so, as the game tests do, would leave it wrong.
+     * The clock now: the client's own ({@link ClientClock}), which the server sends whenever it changes,
+     * or before the server has sent it, the server's as the last snapshot said, run on by the game
+     * ticks since.
      */
     public static long now() {
         Minecraft minecraft = Minecraft.getInstance();
-        return minecraft.level == null ? serverNow : serverNow + Math.max(0, minecraft.level.getGameTime() - receivedAt);
+        if (minecraft.level == null)
+            return serverNow;
+        return ClientClock.now(minecraft.level).orElse(serverNow + Math.max(0, minecraft.level.getGameTime() - receivedAt));
     }
 
     public static int version() {

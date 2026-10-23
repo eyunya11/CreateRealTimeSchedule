@@ -13,6 +13,7 @@ import io.github.eyunya11.createrealtimeschedule.Createrealtimeschedule;
 import io.github.eyunya11.createrealtimeschedule.clock.ClockService;
 import io.github.eyunya11.createrealtimeschedule.clock.RealClock;
 import io.github.eyunya11.createrealtimeschedule.command.RtTimetableCommand;
+import io.github.eyunya11.createrealtimeschedule.diagram.DutyTimes;
 import io.github.eyunya11.createrealtimeschedule.operation.DutyRun;
 import io.github.eyunya11.createrealtimeschedule.operation.OperationData;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable;
@@ -107,7 +108,7 @@ public class TimetableCommandTests {
         data.note(now, "1A", 2, "did not run: no free set at the depot by its time");
         DutyRun done = DutyRun.start("1A", RealClock.day(now), data.calls("1A"), now);
         done.left(done.departure());
-        data.keep(done, "Train 7", OperationData.Ending.GIVEN_UP, now);
+        data.keep(done, "Train 7", DutyTimes.Status.GIVEN_UP, now);
 
         CompoundTag saved = data.save(new CompoundTag(), server.registryAccess());
         OperationData again = OperationData.load(saved, server.registryAccess());
@@ -119,7 +120,7 @@ public class TimetableCommandTests {
         helper.assertTrue(again.lastDay("1A") == data.lastDay("1A"), "the last day of the duty did not come back");
         List<OperationData.Record> history = again.history();
         helper.assertTrue(history.size() == 1 && history.getFirst().run().state().equals(done.state())
-                && history.getFirst().train().equals("Train 7") && history.getFirst().ending() == OperationData.Ending.GIVEN_UP,
+                && history.getFirst().train().equals("Train 7") && history.getFirst().status() == DutyTimes.Status.GIVEN_UP,
             "the record of the duty given up did not come back the same: " + history);
         helper.succeed();
     }
@@ -135,9 +136,9 @@ public class TimetableCommandTests {
         long today = RealClock.day(now);
         OperationData data = new OperationData();
         data.loadTimetable(TIMETABLE, TimetableJson.parse(TIMETABLE).timetable(), now);
-        data.keep(DutyRun.start("1A", today - 2, data.calls("1A"), now), "", OperationData.Ending.GIVEN_UP, now);
-        data.keep(DutyRun.start("1A", today - 1, data.calls("1A"), now), "", OperationData.Ending.GIVEN_UP, now);
-        data.keep(DutyRun.start("1A", today, data.calls("1A"), now), "", OperationData.Ending.GIVEN_UP, now);
+        data.keep(DutyRun.start("1A", today - 2, data.calls("1A"), now), "", DutyTimes.Status.GIVEN_UP, now);
+        data.keep(DutyRun.start("1A", today - 1, data.calls("1A"), now), "", DutyTimes.Status.GIVEN_UP, now);
+        data.keep(DutyRun.start("1A", today, data.calls("1A"), now), "", DutyTimes.Status.GIVEN_UP, now);
         helper.assertTrue(data.history().stream().map(record -> record.run().day()).toList().equals(List.of(today - 1, today)),
             "the records kept are not those of today and the day before: " + data.history());
 

@@ -20,13 +20,15 @@ import net.minecraft.resources.ResourceLocation;
  * the same code as the server, so that both work out the duties' calls the same way.
  *
  * @param revision the server's {@code OperationData.revision()} the timetable and the axes are of
- * @param content  the timetable and its axes; null if the client already has those of {@code revision}
- * @param now       the clock on the server
- * @param duties    the times of the duties running and of those that stopped running on the service
- *                  day of now and the one before
+ * @param content       the timetable and its axes; null if the client already has those of {@code revision}
+ * @param timesRevision the server's {@code OperationData.timesRevision()} the duties' times are of
+ * @param duties        the times of the duties running and of those that stopped running on the
+ *                      service day of now and the one before; null if the client already has those of
+ *                      {@code timesRevision}
+ * @param now           the clock on the server
  */
-public record DiagramSnapshotPayload(int revision, @Nullable Content content, long now, List<DutyTimes> duties)
-    implements CustomPacketPayload {
+public record DiagramSnapshotPayload(int revision, @Nullable Content content, int timesRevision, @Nullable List<DutyTimes> duties,
+                                     long now) implements CustomPacketPayload {
 
     /**
      * The longest timetable sent, in characters. The payload may be larger than one packet holds,
@@ -55,7 +57,8 @@ public record DiagramSnapshotPayload(int revision, @Nullable Content content, lo
         StreamCodec.ofMember(DiagramSnapshotPayload::write, DiagramSnapshotPayload::read);
 
     public DiagramSnapshotPayload {
-        duties = List.copyOf(duties);
+        if (duties != null)
+            duties = List.copyOf(duties);
     }
 
     private void write(FriendlyByteBuf buf) {
@@ -66,8 +69,11 @@ public record DiagramSnapshotPayload(int revision, @Nullable Content content, lo
             buf.writeBoolean(content.tooLarge());
             buf.writeCollection(content.axes(), DiagramSnapshotPayload::writeAxis);
         }
+        buf.writeVarInt(timesRevision);
+        buf.writeBoolean(duties != null);
+        if (duties != null)
+            buf.writeCollection(duties, DiagramSnapshotPayload::writeDuty);
         buf.writeVarLong(now);
-        buf.writeCollection(duties, DiagramSnapshotPayload::writeDuty);
     }
 
     private static DiagramSnapshotPayload read(FriendlyByteBuf buf) {
@@ -75,8 +81,9 @@ public record DiagramSnapshotPayload(int revision, @Nullable Content content, lo
         Content content = null;
         if (buf.readBoolean())
             content = new Content(buf.readUtf(MAX_JSON_LENGTH), buf.readBoolean(), buf.readList(DiagramSnapshotPayload::readAxis));
-        long now = buf.readVarLong();
-        return new DiagramSnapshotPayload(revision, content, now, buf.readList(DiagramSnapshotPayload::readDuty));
+        int timesRevision = buf.readVarInt();
+        List<DutyTimes> duties = buf.readBoolean() ? buf.readList(DiagramSnapshotPayload::readDuty) : null;
+        return new DiagramSnapshotPayload(revision, content, timesRevision, duties, buf.readVarLong());
     }
 
     private static void writeAxis(FriendlyByteBuf buf, LineAxis axis) {
@@ -84,10 +91,16 @@ public record DiagramSnapshotPayload(int revision, @Nullable Content content, lo
         buf.writeBoolean(axis.loop());
         buf.writeCollection(axis.stations(), FriendlyByteBuf::writeUtf);
         buf.writeCollection(axis.positions(), FriendlyByteBuf::writeDouble);
+        buf.writeCollection(axis.ways(), (out, way) -> {
+            out.writeUtf(way.from());
+            out.writeUtf(way.to());
+            out.writeBoolean(way.down());
+        });
     }
 
     private static LineAxis readAxis(FriendlyByteBuf buf) {
-        return new LineAxis(buf.readUtf(), buf.readBoolean(), buf.readList(FriendlyByteBuf::readUtf), buf.readList(FriendlyByteBuf::readDouble));
+        return new LineAxis(buf.readUtf(), buf.readBoolean(), buf.readList(FriendlyByteBuf::readUtf), buf.readList(FriendlyByteBuf::readDouble),
+            buf.readList(in -> new LineAxis.Way(in.readUtf(), in.readUtf(), in.readBoolean())));
     }
 
     private static void writeDuty(FriendlyByteBuf buf, DutyTimes duty) {

@@ -3,8 +3,9 @@ package io.github.eyunya11.createrealtimeschedule.diagram;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
-import java.util.Optional;
+import java.util.Map;
 
 import io.github.eyunya11.createrealtimeschedule.clock.RealClock;
 import io.github.eyunya11.createrealtimeschedule.operation.Call;
@@ -64,6 +65,25 @@ public record DiagramModel(LineAxis axis, long day, List<PlannedTrain> planned, 
      * station is drawn standing there until now; one on the way, only as far as where it left.
      */
     public static DiagramModel of(Timetable timetable, LineAxis axis, long day, List<DutyTimes> times, long now) {
+        return of(timetable, calls(timetable), axis, day, times, now);
+    }
+
+    /** The calls of each duty of {@code timetable}, by its id, leaving out a duty whose trains are not all there. */
+    public static Map<String, List<Call>> calls(Timetable timetable) {
+        Map<String, List<Call>> calls = new HashMap<>();
+        for (Duty duty : timetable.duties()) {
+            try {
+                calls.put(duty.id(), DutyPlan.calls(timetable, duty));
+            } catch (IllegalArgumentException e) {
+                // left out, as the operation would not run it
+            }
+        }
+        return calls;
+    }
+
+    /** {@link #of(Timetable, LineAxis, long, List, long)}, with the duties' {@code calls} worked out already, as by {@link #calls}. */
+    public static DiagramModel of(Timetable timetable, Map<String, List<Call>> calls, LineAxis axis, long day, List<DutyTimes> times,
+                                  long now) {
         List<PlannedTrain> planned = new ArrayList<>();
         for (Train train : timetable.trains()) {
             if (!train.line().equals(axis.line()))
@@ -84,23 +104,15 @@ public record DiagramModel(LineAxis axis, long day, List<PlannedTrain> planned, 
         for (DutyTimes duty : times) {
             if (duty.day() != day)
                 continue;
-            Optional<Duty> found = timetable.duties().stream().filter(d -> d.id().equals(duty.duty())).findFirst();
-            if (found.isEmpty())
-                continue;
-            List<Call> calls;
-            try {
-                calls = DutyPlan.calls(timetable, found.get());
-            } catch (IllegalArgumentException e) {
-                continue;
-            }
-            if (calls.size() != duty.arrivals().size())
+            List<Call> dutyCalls = calls.get(duty.duty());
+            if (dutyCalls == null || dutyCalls.size() != duty.arrivals().size())
                 continue;
             List<Visit> visits = new ArrayList<>();
-            for (int i = 0; i < calls.size(); i++) {
-                Call call = calls.get(i);
+            for (int i = 0; i < dutyCalls.size(); i++) {
+                Call call = dutyCalls.get(i);
                 double arrive = clockSeconds(duty.arrivals().get(i), day);
                 double depart = clockSeconds(duty.departures().get(i), day);
-                if (!Double.isNaN(arrive) && Double.isNaN(depart) && duty.status() == DutyTimes.Status.RUNNING && i < calls.size() - 1)
+                if (!Double.isNaN(arrive) && Double.isNaN(depart) && duty.status() == DutyTimes.Status.RUNNING && i < dutyCalls.size() - 1)
                     depart = Math.max(arrive, clockSeconds(now, day)); // standing there now
                 boolean leavesOnLine = onLine(timetable, call.leavingTrain(), axis);
                 boolean down = timetable.train(call.leavingTrain())
@@ -137,7 +149,8 @@ public record DiagramModel(LineAxis axis, long day, List<PlannedTrain> planned, 
      * @param depart  when it leaves, or NaN
      * @param stay    whether its standing there is drawn
      * @param moveOn  whether its way to the next station is drawn
-     * @param down    whether it goes on down the axis or up it, on a loop line (see {@link LineAxis#down})
+     * @param down    whether it goes on down the axis or up it, on a loop line, where the track does not
+     *                show it (see {@link LineAxis#down(List)})
      */
     private record Visit(String station, double arrive, double depart, boolean stay, boolean moveOn, boolean down) {}
 
@@ -159,7 +172,8 @@ public record DiagramModel(LineAxis axis, long day, List<PlannedTrain> planned, 
         for (int k = 0; k + 1 < n; k++) {
             Visit from = visits.get(k);
             Visit to = visits.get(k + 1);
-            List<LineAxis.Hop> hops = axis.hops(from.station(), to.station(), from.down());
+            Boolean track = axis.down(from.station(), to.station());
+            List<LineAxis.Hop> hops = axis.hops(from.station(), to.station(), track != null ? track : from.down());
             if (hops.isEmpty())
                 continue;
             rowOut[k] = hops.getFirst().fromRow();

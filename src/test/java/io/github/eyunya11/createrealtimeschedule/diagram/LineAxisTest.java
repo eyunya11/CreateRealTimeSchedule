@@ -2,6 +2,7 @@ package io.github.eyunya11.createrealtimeschedule.diagram;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
@@ -100,5 +101,20 @@ class LineAxisTest {
         LineAxis straight = LineAxis.of(new Line("l", "Line", List.of("A", "B"), false), List.of());
         assertTrue(straight.down(List.of("B", "A")));
         assertEquals(List.of(new Hop(1, 0, 1)), straight.hops("B", "A", true));
+    }
+
+    @Test
+    void theTrackShowsWhichWayRoundATrainGoes() {
+        LineAxis axis = LineAxis.of(new Line("l", "Loop", List.of("Depot", "A", "B", "C"), true), List.of(
+            leg("Depot", "A", 30), leg("A", "B", 30), leg("B", "C", 30), leg("C", "Depot", 30),
+            new Leg("Depot", "B", 60, List.of(), List.of("A")), new Leg("B", "A", 90, List.of(), List.of("C", "Depot")),
+            new Leg("A", "C", 60, List.of(), List.of("Depot"))));
+        assertEquals(Boolean.TRUE, axis.down("Depot", "A"));
+        assertEquals(Boolean.TRUE, axis.down("Depot", "B"), "through A, down");
+        assertEquals(Boolean.TRUE, axis.down("B", "A"), "through C and the depot, down round the loop");
+        assertEquals(Boolean.FALSE, axis.down("A", "C"), "through the depot, up");
+        assertNull(axis.down("C", "B"), "no track from C to B");
+        LineAxis straight = LineAxis.of(new Line("l", "Line", List.of("A", "B"), false), List.of(leg("A", "B", 30)));
+        assertEquals(List.of(), straight.ways());
     }
 }

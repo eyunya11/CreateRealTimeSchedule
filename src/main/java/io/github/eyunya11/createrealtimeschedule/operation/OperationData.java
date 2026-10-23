@@ -17,6 +17,7 @@ import com.mojang.logging.LogUtils;
 
 import io.github.eyunya11.createrealtimeschedule.Createrealtimeschedule;
 import io.github.eyunya11.createrealtimeschedule.clock.RealClock;
+import io.github.eyunya11.createrealtimeschedule.diagram.DutyTimes;
 import io.github.eyunya11.createrealtimeschedule.diagram.LineAxis;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Duty;
@@ -60,22 +61,19 @@ public final class OperationData extends SavedData {
      */
     public record Note(long clock, String duty, long day, String what) {}
 
-    /** How a duty that is no longer running came to an end. */
-    public enum Ending {
-        /** It got back to the depot. */
-        FINISHED,
-        /** It was given up on the way. */
-        GIVEN_UP
-    }
-
     /**
      * A duty that has stopped running, kept for the diagram with the times it really made.
      *
      * @param run    the run as it was at the end
      * @param train  the name of the train that ran it, or empty if the train was gone
-     * @param ending how it ended
+     * @param status how it ended: {@link DutyTimes.Status#FINISHED} or {@link DutyTimes.Status#GIVEN_UP}
      */
-    public record Record(DutyRun run, String train, Ending ending) {}
+    public record Record(DutyRun run, String train, DutyTimes.Status status) {
+        public Record {
+            if (status == DutyTimes.Status.RUNNING)
+                throw new IllegalArgumentException("a record is of a duty that has stopped running");
+        }
+    }
 
     private static final String TAG_TIMETABLE = "Timetable";
     private static final String TAG_LAST_DAYS = "LastDays";
@@ -111,6 +109,8 @@ public final class OperationData extends SavedData {
     private long nextStart = Long.MIN_VALUE;
     /** Not saved: goes up whenever the timetable or the axes change, so that a client knows when its copy for the diagram is old. */
     private int revision;
+    /** Not saved: goes up whenever the duties' times change, as {@link #revision} does for the timetable. */
+    private int timesRevision;
     /** Not saved: the diagram's axis of each line, worked out from the track when it is first needed; null until then. */
     private @Nullable Map<String, LineAxis> axes;
 
@@ -159,6 +159,7 @@ public final class OperationData extends SavedData {
             return true;
         });
         history.removeIf(record -> !record.run().calls().equals(calls.get(record.run().duty())));
+        timesChanged();
         noWay.clear();
         nextStart = Long.MIN_VALUE;
         forgetAxes();
@@ -178,6 +179,7 @@ public final class OperationData extends SavedData {
         lastDays.clear();
         runs.clear();
         history.clear();
+        timesChanged();
         freeSince.clear();
         noWay.clear();
         nextStart = Long.MIN_VALUE;
@@ -261,6 +263,16 @@ public final class OperationData extends SavedData {
         this.axes = Map.copyOf(axes);
     }
 
+    /** How many times the duties' times have changed since the server started. */
+    public int timesRevision() {
+        return timesRevision;
+    }
+
+    /** Says that the duties' times have changed: a run has started, moved on or stopped. */
+    public void timesChanged() {
+        timesRevision++;
+    }
+
     /** Drops the axes, so that they are worked out again, as after the track has changed. */
     public void forgetAxes() {
         axes = null;
@@ -273,8 +285,9 @@ public final class OperationData extends SavedData {
      * Keeps the times of {@code run}, which has stopped running, for the diagram. Only the service day
      * of {@code now} and the one before are kept: a duty of the day before can run on past midnight.
      */
-    public void keep(DutyRun run, String train, Ending ending, long now) {
-        history.add(new Record(run, train, ending));
+    public void keep(DutyRun run, String train, DutyTimes.Status status, long now) {
+        history.add(new Record(run, train, status));
+        timesChanged();
         forgetOld(now);
         setDirty();
     }
@@ -282,8 +295,10 @@ public final class OperationData extends SavedData {
     /** Drops the records of service days before the one before that of {@code now}. */
     public void forgetOld(long now) {
         long first = RealClock.day(now) - 1;
-        if (history.removeIf(record -> record.run().day() < first))
+        if (history.removeIf(record -> record.run().day() < first)) {
+            timesChanged();
             setDirty();
+        }
     }
 
     /** The duties that have stopped running, in the order they stopped. */
@@ -312,7 +327,7 @@ public final class OperationData extends SavedData {
         for (Record record : history) {
             CompoundTag entry = saveRun(record.run());
             entry.putString(TAG_NAME, record.train());
-            entry.putString(TAG_ENDING, record.ending().name());
+            entry.putString(TAG_ENDING, record.status().name());
             historyList.add(entry);
         }
         tag.put(TAG_HISTORY, historyList);
@@ -392,9 +407,10 @@ public final class OperationData extends SavedData {
         for (Tag element : tag.getList(TAG_HISTORY, Tag.TAG_COMPOUND)) {
             CompoundTag entry = (CompoundTag) element;
             DutyRun run = data.loadRun(entry);
-            Ending ending = entry.getString(TAG_ENDING).equals(Ending.FINISHED.name()) ? Ending.FINISHED : Ending.GIVEN_UP;
+            DutyTimes.Status status = entry.getString(TAG_ENDING).equals(DutyTimes.Status.FINISHED.name())
+                ? DutyTimes.Status.FINISHED : DutyTimes.Status.GIVEN_UP;
             if (run != null)
-                data.history.add(new Record(run, entry.getString(TAG_NAME), ending));
+                data.history.add(new Record(run, entry.getString(TAG_NAME), status));
         }
         for (Tag element : tag.getList(TAG_FREE, Tag.TAG_COMPOUND)) {
             CompoundTag entry = (CompoundTag) element;

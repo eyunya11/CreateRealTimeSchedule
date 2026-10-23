@@ -184,4 +184,16 @@ class DiagramModelTest {
         assertEquals(List.of(new Segment(t("10:00"), 90, t("10:02"), 120), new Segment(t("10:02"), 0, t("10:04"), 30)),
             DiagramModel.of(timetable, axis, DAY, List.of(), 0).planned().getFirst().segments());
     }
+
+    @Test
+    void aDeadheadThatPassesStationsGoesTheWayTheTrackGoes() {
+        // Fewer stations are passed going up from the depot to B, but the track goes down through A.
+        Line loop = new Line("loop", "Loop", List.of("Depot", "A", "B"), true);
+        LineAxis axis = LineAxis.of(loop, List.of(new Leg("Depot", "A", 30, List.of(), List.of()), new Leg("A", "B", 30, List.of(), List.of()),
+            new Leg("B", "Depot", 40, List.of(), List.of()), new Leg("Depot", "B", 60, List.of(), List.of("A"))));
+        Train out = new Train("X", "loop", "", List.of(Stop.leaving("Depot", t("10:00")), Stop.arriving("B", t("10:02"))), true);
+        Timetable timetable = new Timetable("", List.of(loop), List.of(out), List.of());
+        assertEquals(List.of(new Segment(t("10:00"), 0, t("10:02"), 60)),
+            DiagramModel.of(timetable, axis, DAY, List.of(), 0).planned().getFirst().segments());
+    }
 }

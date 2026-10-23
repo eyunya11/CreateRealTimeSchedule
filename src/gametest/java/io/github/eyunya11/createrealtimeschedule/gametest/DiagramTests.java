@@ -81,10 +81,12 @@ public class DiagramTests {
             running.left(running.departure());
             data.runs().put(new UUID(7, 7), running);
             DutyRun done = DutyRun.start("1A", RealClock.day(now) - 1, data.calls("1A"), now);
-            data.keep(done, "Old set", OperationData.Ending.FINISHED, now);
+            data.keep(done, "Old set", DutyTimes.Status.FINISHED, now);
 
-            DiagramSnapshotPayload first = DiagramService.snapshot(server, -1);
-            helper.assertTrue(first.revision() == data.revision(), "the snapshot is not of the timetable's revision");
+            DiagramSnapshotPayload first = DiagramService.snapshot(server, -1, -1);
+            helper.assertTrue(first.revision() == data.revision() && first.timesRevision() == data.timesRevision(),
+                "the snapshot is not of the timetable's and the times' revisions");
+            helper.assertTrue(first.duties() != null, "the times are not sent to a client that has none");
             helper.assertTrue(first.content() != null && first.content().json().equals(json) && !first.content().tooLarge(),
                 "the timetable is not sent to a client that has none: " + first.content());
             helper.assertTrue(first.content().axes().size() == 1 && first.content().axes().getFirst().line().equals("loop"),
@@ -100,12 +102,22 @@ public class DiagramTests {
             DiagramSnapshotPayload read = DiagramSnapshotPayload.STREAM_CODEC.decode(buf);
             helper.assertTrue(read.equals(first) && buf.readableBytes() == 0, "the snapshot does not read back the same: " + read);
 
-            DiagramSnapshotPayload again = DiagramService.snapshot(server, data.revision());
-            helper.assertTrue(again.content() == null && again.duties().equals(first.duties()),
+            DiagramSnapshotPayload again = DiagramService.snapshot(server, data.revision(), -1);
+            helper.assertTrue(again.content() == null && first.duties().equals(again.duties()),
                 "a client that has the timetable is sent it again, or not the times: " + again);
+            DiagramSnapshotPayload same = DiagramService.snapshot(server, data.revision(), data.timesRevision());
+            helper.assertTrue(same.content() == null && same.duties() == null, "a client that has everything is sent some again: " + same);
+            int timesBefore = data.timesRevision();
+            data.keep(DutyRun.start("1A", RealClock.day(now), data.calls("1A"), now), "", DutyTimes.Status.GIVEN_UP, now);
+            DiagramSnapshotPayload changed = DiagramService.snapshot(server, data.revision(), timesBefore);
+            helper.assertTrue(changed.duties() != null && changed.duties().size() == 3,
+                "after a duty is given up, a client is not sent the times again: " + changed.duties());
+            FriendlyByteBuf small = new FriendlyByteBuf(Unpooled.buffer());
+            DiagramSnapshotPayload.STREAM_CODEC.encode(small, same);
+            helper.assertTrue(DiagramSnapshotPayload.STREAM_CODEC.decode(small).equals(same), "a snapshot with nothing new does not read back the same");
             int before = data.revision();
             data.forgetAxes();
-            helper.assertTrue(data.revision() != before && DiagramService.snapshot(server, before).content() != null,
+            helper.assertTrue(data.revision() != before && DiagramService.snapshot(server, before, -1).content() != null,
                 "after the axes are worked out again, a client is not sent them");
             helper.succeed();
         } finally {

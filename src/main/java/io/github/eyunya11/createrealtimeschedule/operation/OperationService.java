@@ -21,6 +21,7 @@ import com.simibubi.create.content.trains.station.GlobalStation;
 import io.github.eyunya11.createrealtimeschedule.ModSettings;
 import io.github.eyunya11.createrealtimeschedule.clock.ClockService;
 import io.github.eyunya11.createrealtimeschedule.clock.RealClock;
+import io.github.eyunya11.createrealtimeschedule.diagram.DutyTimes;
 import io.github.eyunya11.createrealtimeschedule.operation.DutyCalendar.Start;
 import io.github.eyunya11.createrealtimeschedule.operation.TrainDriver.Outcome;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable;
@@ -82,14 +83,16 @@ public final class OperationService {
                 runs.remove();
                 data.noWay().remove(id);
                 data.note(now, run.duty(), run.day(), "given up: " + letGo);
-                data.keep(run, train == null ? "" : train.name.getString(), OperationData.Ending.GIVEN_UP, now);
+                data.keep(run, train == null ? "" : train.name.getString(), DutyTimes.Status.GIVEN_UP, now);
                 continue;
             }
             int call = run.call();
             DutyRun.Phase phase = run.phase();
             Outcome outcome = TrainDriver.step(run, train, now, minimumStop);
-            if (run.call() != call || run.phase() != phase)
+            if (run.call() != call || run.phase() != phase) {
+                data.timesChanged();
                 data.setDirty();
+            }
             switch (outcome) {
                 case GOING -> data.noWay().remove(id);
                 case NO_WAY -> {
@@ -102,7 +105,7 @@ public final class OperationService {
                     runs.remove();
                     data.noWay().remove(id);
                     data.freeSince().put(id, now);
-                    data.keep(run, train.name.getString(), OperationData.Ending.FINISHED, now);
+                    data.keep(run, train.name.getString(), DutyTimes.Status.FINISHED, now);
                     LOGGER.info("Duty {} of service day {} is done; {} is free at {}", run.duty(), run.day(), train.name.getString(),
                         run.calls().getLast().station());
                 }
@@ -168,6 +171,7 @@ public final class OperationService {
             }
             UUID id = chosen.get();
             data.runs().put(id, DutyRun.start(duty.id(), start.day(), data.calls(duty.id()), now));
+            data.timesChanged();
             data.freeSince().remove(id);
             data.dealtWith(duty.id(), start.day());
             data.setDirty();

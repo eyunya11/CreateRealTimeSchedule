@@ -109,7 +109,7 @@ public final class DiagramScreen extends Screen {
         // Made again when a snapshot comes, the line or the day changes, or a second has gone by for a set standing until now.
         if (model == null || modelVersion != DiagramClient.version() || !modelLine.equals(axis.line()) || modelDay != day
             || now - modelNow >= RealClock.TICKS_PER_SECOND) {
-            model = DiagramModel.of(timetable, axis, day, DiagramClient.duties(), now);
+            model = DiagramModel.of(timetable, DiagramClient.calls(), axis, day, DiagramClient.duties(), now);
             modelVersion = DiagramClient.version();
             modelLine = axis.line();
             modelDay = day;
@@ -244,8 +244,14 @@ public final class DiagramScreen extends Screen {
             quad(graphics, cut[0], cut[1], cut[2], cut[3], thickness, colour);
             return;
         }
-        for (double from = 0; from < along; from += DASH + DASH_GAP) {
-            double to = Math.min(along, from + DASH);
+        // Dashes count from the segment's own start, not from where the view cuts it, so that they stay
+        // where they are while the view is moved.
+        double cutOff = Math.hypot(cut[0] - view.x(segment.fromSecond()), cut[1] - view.y(segment.fromPosition(), length));
+        for (double start = -(cutOff % (DASH + DASH_GAP)); start < along; start += DASH + DASH_GAP) {
+            double from = Math.max(0, start);
+            double to = Math.min(along, start + DASH);
+            if (to <= from)
+                continue;
             quad(graphics, cut[0] + dx * from / along, cut[1] + dy * from / along, cut[0] + dx * to / along, cut[1] + dy * to / along,
                 thickness, colour);
         }

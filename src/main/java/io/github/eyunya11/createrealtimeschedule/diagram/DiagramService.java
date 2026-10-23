@@ -1,9 +1,11 @@
 package io.github.eyunya11.createrealtimeschedule.diagram;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import org.slf4j.Logger;
@@ -34,16 +36,32 @@ public final class DiagramService {
 
     private static final Logger LOGGER = LogUtils.getLogger();
 
+    /**
+     * The least time between two answers to one player, in ticks: half the second a client waits
+     * between asks, so that one asking on time is always answered.
+     */
+    private static final int ANSWER_GAP = 10;
+
+    private static final RequestLimit LIMIT = new RequestLimit(ANSWER_GAP);
+
     private DiagramService() {}
 
-    /** Answers a client's {@link DiagramRequestPayload}. */
+    /** Answers a client's {@link DiagramRequestPayload}, unless it asked again too soon. */
     public static void onRequest(DiagramRequestPayload request, IPayloadContext context) {
-        if (context.player() instanceof ServerPlayer player)
-            PacketDistributor.sendToPlayer(player, snapshot(player.server, request.revision()));
+        if (context.player() instanceof ServerPlayer player && LIMIT.allow(player.getUUID(), player.server.getTickCount()))
+            PacketDistributor.sendToPlayer(player, snapshot(player.server, request.revision(), request.timesRevision()));
     }
 
-    /** What to send a client that has the timetable of {@code revision}. */
-    public static DiagramSnapshotPayload snapshot(MinecraftServer server, int revision) {
+    /** Forgets a player who has left, for the limit on answers. */
+    public static void forget(ServerPlayer player) {
+        LIMIT.forget(player.getUUID());
+    }
+
+    /**
+     * What to send a client that has the timetable of {@code revision} and the duties' times of
+     * {@code timesRevision}: what it has already is left out.
+     */
+    public static DiagramSnapshotPayload snapshot(MinecraftServer server, int revision, int timesRevision) {
         OperationData data = OperationData.get(server);
         Timetable timetable = data.timetable();
         DiagramSnapshotPayload.Content content = null;
@@ -58,14 +76,21 @@ public final class DiagramService {
                 content = new DiagramSnapshotPayload.Content(data.json(), false, List.copyOf(axes(data, timetable).values()));
             }
         }
-        return new DiagramSnapshotPayload(data.revision(), content, ClockService.now(server), duties(data));
+        List<DutyTimes> duties = timesRevision == data.timesRevision() ? null : duties(data);
+        return new DiagramSnapshotPayload(data.revision(), content, data.timesRevision(), duties, ClockService.now(server));
     }
 
-    /** The axis of each line of the timetable, worked out from the track the first time it is asked for. */
+    /**
+     * The axis of each line of the timetable, worked out from the track the first time it is asked for.
+     * Only the lines' stations are searched from, not every station of the network.
+     */
     public static Map<String, LineAxis> axes(OperationData data, Timetable timetable) {
         Map<String, LineAxis> axes = data.axes();
         if (axes == null) {
-            List<Leg> legs = CreateNetwork.read(Create.RAILWAYS.trackNetworks.values()).legs();
+            Set<String> stations = new HashSet<>();
+            for (Line line : timetable.lines())
+                stations.addAll(line.stations());
+            List<Leg> legs = CreateNetwork.read(Create.RAILWAYS.trackNetworks.values()).legs(stations);
             Map<String, LineAxis> made = new LinkedHashMap<>();
             for (Line line : timetable.lines())
                 made.put(line.id(), LineAxis.of(line, legs));
@@ -79,8 +104,7 @@ public final class DiagramService {
     public static List<DutyTimes> duties(OperationData data) {
         List<DutyTimes> duties = new ArrayList<>();
         for (OperationData.Record record : data.history())
-            duties.add(DutyTimes.of(record.run(), record.train(),
-                record.ending() == OperationData.Ending.FINISHED ? DutyTimes.Status.FINISHED : DutyTimes.Status.GIVEN_UP));
+            duties.add(DutyTimes.of(record.run(), record.train(), record.status()));
         for (Map.Entry<UUID, DutyRun> entry : data.runs().entrySet()) {
             Train train = Create.RAILWAYS.trains.get(entry.getKey());
             duties.add(DutyTimes.of(entry.getValue(), train == null ? "" : train.name.getString(), DutyTimes.Status.RUNNING));

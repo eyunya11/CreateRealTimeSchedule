@@ -62,8 +62,20 @@ public final class ClockService {
         return timeOfDay;
     }
 
+    /** Tells every client the offset. */
     public static void broadcast(MinecraftServer server) {
-        PacketDistributor.sendToAllPlayers(new ClockSyncPayload(data(server).offset()));
+        RealClockData data = data(server);
+        data.sent();
+        PacketDistributor.sendToAllPlayers(new ClockSyncPayload(data.offset()));
+    }
+
+    /**
+     * Tells every client the offset if it has changed since they were last told: however it was set,
+     * by {@link #setTimeOfDay} or straight on the data, as the game tests do.
+     */
+    public static void broadcastIfChanged(MinecraftServer server) {
+        if (data(server).unsent())
+            broadcast(server);
     }
 
     public static void sendTo(ServerPlayer player) {

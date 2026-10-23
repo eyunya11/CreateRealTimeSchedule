@@ -188,6 +188,15 @@ class RailNetworkTest {
     }
 
     @Test
+    void legsAmongSomeStationsAreThoseOfAllThatJoinThem() {
+        RailNetwork network = network(List.of(straight(30, 1), straight(30, 2), straight(30, 0)),
+            new Station("A", 0, 5), new Station("B", 1, 5), new Station("C", 2, 5));
+        List<Leg> among = network.legs(List.of("A", "C"));
+        assertEquals(network.legs().stream().filter(leg -> !leg.from().equals("B") && !leg.to().equals("B")).toList(), among);
+        assertEquals(List.of("B"), among.getFirst().via(), "a station not asked for is still passed on the way");
+    }
+
+    @Test
     void aStationBehindTheStartOnItsOwnEdgeIsNotReachedByGoingRound() {
         // Create's search, coming round to the edge the train started on, looks only at what lies
         // ahead of where the train stood, as a game test on a real loop showed: the train at B finds

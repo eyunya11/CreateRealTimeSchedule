@@ -15,6 +15,7 @@ import io.github.eyunya11.createrealtimeschedule.Createrealtimeschedule;
 import io.github.eyunya11.createrealtimeschedule.ModSettings;
 import io.github.eyunya11.createrealtimeschedule.clock.ClockService;
 import io.github.eyunya11.createrealtimeschedule.clock.RealClock;
+import io.github.eyunya11.createrealtimeschedule.diagram.DutyTimes;
 import io.github.eyunya11.createrealtimeschedule.gametest.TrackLine.Loop;
 import io.github.eyunya11.createrealtimeschedule.operation.DutyRun;
 import io.github.eyunya11.createrealtimeschedule.operation.OperationData;
@@ -101,7 +102,7 @@ public class OperationTests {
                 for (DutyRun run : List.of(first, second)) {
                     TrackLine line = run == first ? north : south;
                     helper.assertTrue(data.history().stream().anyMatch(record -> record.run() == run
-                            && record.ending() == OperationData.Ending.FINISHED && record.train().equals(line.train().name.getString())),
+                            && record.status() == DutyTimes.Status.FINISHED && record.train().equals(line.train().name.getString())),
                         "the times of duty " + run.duty() + " are not kept as finished by its train: " + data.history());
                 }
                 helper.assertTrue(newNotes(data).isEmpty(), "something went wrong: " + newNotes(data));
@@ -158,7 +159,7 @@ public class OperationTests {
                     "the duty is not noted as given up: " + notes);
                 helper.assertTrue(!data.freeSince().containsKey(train.id), "a set with a schedule of Create's is counted as free");
                 List<OperationData.Record> history = data.history();
-                helper.assertTrue(history.size() == 1 && history.getFirst().ending() == OperationData.Ending.GIVEN_UP
+                helper.assertTrue(history.size() == 1 && history.getFirst().status() == DutyTimes.Status.GIVEN_UP
                         && history.getFirst().run().departures().getFirst() != DutyRun.NOT_YET,
                     "the times of the duty given up are not kept: " + history);
                 return true;

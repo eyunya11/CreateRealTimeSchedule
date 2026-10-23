@@ -25,6 +25,8 @@ public final class RealClockData extends SavedData {
 
     private long offset;
     private boolean initialized;
+    /** Not saved: whether the clients have not been told the offset since it last changed. */
+    private boolean unsent = true;
     /** The value of doDaylightCycle from before the sky sync switched it off; null while nothing is remembered. */
     @Nullable
     private Boolean skyPreviousRule;
@@ -44,7 +46,18 @@ public final class RealClockData extends SavedData {
             return;
         this.offset = offset;
         this.initialized = true;
+        unsent = true;
         setDirty();
+    }
+
+    /** Whether the offset has changed since the clients were last told it. */
+    public boolean unsent() {
+        return unsent;
+    }
+
+    /** The clients have been told the offset. */
+    public void sent() {
+        unsent = false;
     }
 
     @Nullable

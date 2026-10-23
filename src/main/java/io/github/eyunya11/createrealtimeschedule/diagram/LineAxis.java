@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
+import org.jetbrains.annotations.Nullable;
+
 import io.github.eyunya11.createrealtimeschedule.railway.Leg;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Line;
 
@@ -20,14 +22,16 @@ import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Line;
  *
  * <p>On a loop line the first station comes again at the bottom, after the gap from the last station
  * round to it, so that a train running down past the end of the list goes on down to it, and one
- * running up past the first station comes in at the bottom.
+ * running up past the first station comes in at the bottom. Which way round a train goes between
+ * two of its stations is that of the track, where the track shows it (see {@link Way}).
  *
  * @param line      the line's id
  * @param loop      whether it is a loop line
  * @param stations  the stations from the top down; on a loop line the first is last again
  * @param positions the distance of each from the top, in blocks, in the same order; the first is 0
+ * @param ways      on a loop line, the ways round the track takes between two of its stations
  */
-public record LineAxis(String line, boolean loop, List<String> stations, List<Double> positions) {
+public record LineAxis(String line, boolean loop, List<String> stations, List<Double> positions, List<Way> ways) {
 
     /** The gap between two stations, in blocks, when no gap of the line is known. */
     public static final double UNKNOWN_GAP = 100;
@@ -42,10 +46,20 @@ public record LineAxis(String line, boolean loop, List<String> stations, List<Do
      */
     public record Hop(int fromRow, int toRow, double share) {}
 
+    /**
+     * The way round a loop line a train goes from one of its stations to another, as the track shows
+     * it: the shortest way a train can run between the two passes the line's stations in between one
+     * way round and not the other. On track a train can run round either way, it is the shorter.
+     *
+     * @param down whether it goes down the axis
+     */
+    public record Way(String from, String to, boolean down) {}
+
     public LineAxis {
         Objects.requireNonNull(line, "line");
         stations = List.copyOf(stations);
         positions = List.copyOf(positions);
+        ways = List.copyOf(ways);
         if (stations.size() != positions.size())
             throw new IllegalArgumentException(stations.size() + " stations and " + positions.size() + " positions");
         if (loop && (stations.size() < 2 || !stations.getFirst().equals(stations.getLast())))
@@ -76,7 +90,38 @@ public record LineAxis(String line, boolean loop, List<String> stations, List<Do
             at += Double.isNaN(gap) ? fill : gap;
             positions.add(at);
         }
-        return new LineAxis(line.id(), line.loop(), stations, positions);
+        return new LineAxis(line.id(), line.loop(), stations, positions, line.loop() ? ways(line.stations(), legs) : List.of());
+    }
+
+    /** The ways round of a loop line's {@code stations} that {@code legs} show. */
+    private static List<Way> ways(List<String> stations, List<Leg> legs) {
+        int n = stations.size();
+        List<Way> ways = new ArrayList<>();
+        for (Leg leg : legs) {
+            int i = stations.indexOf(leg.from());
+            int j = stations.indexOf(leg.to());
+            if (i < 0 || j < 0 || i == j)
+                continue;
+            List<String> passed = leg.via().stream().filter(stations::contains).toList();
+            List<String> down = new ArrayList<>();
+            for (int k = Math.floorMod(i + 1, n); k != j; k = Math.floorMod(k + 1, n))
+                down.add(stations.get(k));
+            List<String> up = new ArrayList<>();
+            for (int k = Math.floorMod(i - 1, n); k != j; k = Math.floorMod(k - 1, n))
+                up.add(stations.get(k));
+            boolean byDown = passed.equals(down);
+            if (byDown != passed.equals(up))
+                ways.add(new Way(leg.from(), leg.to(), byDown));
+        }
+        return ways;
+    }
+
+    /** Whether the track goes down the axis from {@code from} to {@code to}; null if it does not show which way. */
+    public @Nullable Boolean down(String from, String to) {
+        for (Way way : ways)
+            if (way.from().equals(from) && way.to().equals(to))
+                return way.down();
+        return null;
     }
 
     /**
@@ -114,8 +159,9 @@ public record LineAxis(String line, boolean loop, List<String> stations, List<Do
 
     /**
      * Whether a train making {@code stops} in order runs down a loop line, the way its stations are
-     * listed, rather than up it: the way round that passes fewer stations, over all its stops, and down
-     * if both pass as many. Always true on a line that is not a loop.
+     * listed, rather than up it, for where the track does not show it ({@link #down(String, String)}):
+     * the way round that passes fewer stations, over all its stops, and down if both pass as many.
+     * Always true on a line that is not a loop.
      */
     public boolean down(List<String> stops) {
         if (!loop)
