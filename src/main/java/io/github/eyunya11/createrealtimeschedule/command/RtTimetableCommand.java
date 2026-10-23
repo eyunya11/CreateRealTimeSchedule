@@ -4,17 +4,25 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.SecureRandom;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import org.jetbrains.annotations.Nullable;
+import org.slf4j.Logger;
+
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.context.CommandContext;
+import com.mojang.logging.LogUtils;
 import com.simibubi.create.Create;
 import com.simibubi.create.content.trains.entity.Train;
 
 import io.github.eyunya11.createrealtimeschedule.clock.ClockService;
 import io.github.eyunya11.createrealtimeschedule.clock.RealClock;
+import io.github.eyunya11.createrealtimeschedule.network.ClipboardPayload;
+import io.github.eyunya11.createrealtimeschedule.network.ClipboardRequestPayload;
+import io.github.eyunya11.createrealtimeschedule.network.TimetablePastePayload;
 import io.github.eyunya11.createrealtimeschedule.operation.Call;
 import io.github.eyunya11.createrealtimeschedule.operation.DutyCalendar;
 import io.github.eyunya11.createrealtimeschedule.operation.DutyPlan;
@@ -27,7 +35,10 @@ import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.storage.LevelResource;
+import net.neoforged.neoforge.network.PacketDistributor;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 /**
  * {@code /rttimetable}: the timetable the operation runs (see {@link OperationData}). The name is
@@ -39,17 +50,30 @@ import net.minecraft.world.level.storage.LevelResource;
  * <li>{@code status} says, for each duty, where its set is and how late, or when it next starts, and
  * what has gone wrong lately.</li>
  * <li>{@code unload} stops running the timetable.</li>
+ * <li>{@code copy} puts the timetable being run on the player's clipboard, for the timetable editor.</li>
+ * <li>{@code paste} loads the timetable on the player's clipboard, as {@code load} does the file. The
+ * server asks the player's client for it, and takes only the answer to that ask, in time.</li>
  * </ul>
  */
 public final class RtTimetableCommand {
 
     private static final String KEY = "commands.createrealtimeschedule.rttimetable.";
 
+    /** The messages that {@code /rtnetwork copy} shares. */
+    static final String CLIPBOARD_KEY = "commands.createrealtimeschedule.clipboard.";
+
+    private static final Logger LOGGER = LogUtils.getLogger();
+
     /** The most problems of a refused timetable said in the chat; all of them go to the log. */
     private static final int PROBLEMS_SHOWN = 10;
 
     /** The most notes {@code status} shows, the latest. */
     private static final int NOTES_SHOWN = 5;
+
+    /** How long the server waits for a client's clipboard after {@code paste}, in ticks. */
+    private static final int PASTE_TIMEOUT_TICKS = 10 * 20;
+
+    private static final PasteRequests PASTES = new PasteRequests(PASTE_TIMEOUT_TICKS, new SecureRandom());
 
     private RtTimetableCommand() {}
 
@@ -61,7 +85,11 @@ public final class RtTimetableCommand {
             .then(Commands.literal("status")
                 .executes(RtTimetableCommand::status))
             .then(Commands.literal("unload")
-                .executes(RtTimetableCommand::unload)));
+                .executes(RtTimetableCommand::unload))
+            .then(Commands.literal("copy")
+                .executes(RtTimetableCommand::copy))
+            .then(Commands.literal("paste")
+                .executes(RtTimetableCommand::paste)));
     }
 
     /** Where {@code load} reads the timetable from. */
@@ -86,12 +114,22 @@ public final class RtTimetableCommand {
                 "Could not read %1$s: %2$s", file.toString(), String.valueOf(e.getMessage())));
             return 0;
         }
+        return loadText(source, json, Component.literal(file.toString()));
+    }
 
+    /**
+     * Runs the timetable that {@code json} is the text of, read from {@code from}, if nothing is wrong
+     * with it; if anything is, says what and keeps the timetable that was run before.
+     *
+     * @return the number of duties loaded, or 0 if the timetable was refused
+     */
+    public static int loadText(CommandSourceStack source, String json, Component from) {
+        MinecraftServer server = source.getServer();
         TimetableJson.Result result = TimetableJson.parse(json);
         if (!result.ok()) {
             List<String> problems = result.problems();
             source.sendFailure(Component.translatableWithFallback(KEY + "refused",
-                "The timetable in %1$s was not loaded; what is wrong with it (%2$s):", file.toString(), problems.size()));
+                "The timetable in %1$s was not loaded; what is wrong with it (%2$s):", from, problems.size()));
             for (String problem : problems.subList(0, Math.min(PROBLEMS_SHOWN, problems.size())))
                 source.sendFailure(Component.literal("- " + problem));
             return 0;
@@ -114,6 +152,81 @@ public final class RtTimetableCommand {
         source.sendSuccess(() -> Component.translatableWithFallback(KEY + "unloaded",
             "Stopped running the timetable; %1$s running duties were given up", running), true);
         return running;
+    }
+
+    private static int copy(CommandContext<CommandSourceStack> context) {
+        CommandSourceStack source = context.getSource();
+        ServerPlayer player = player(source);
+        if (player == null)
+            return 0;
+        OperationData data = OperationData.get(source.getServer());
+        Timetable timetable = data.timetable();
+        if (timetable == null) {
+            source.sendFailure(Component.translatableWithFallback(KEY + "none", "No timetable is being run"));
+            return 0;
+        }
+        if (data.json().length() > ClipboardPayload.MAX_LENGTH) {
+            source.sendFailure(tooLarge(data.json().length()));
+            return 0;
+        }
+        PacketDistributor.sendToPlayer(player, new ClipboardPayload(data.json()));
+        source.sendSuccess(() -> Component.translatableWithFallback(KEY + "copied", "Copied the timetable %1$s to your clipboard",
+            name(timetable)), false);
+        return 1;
+    }
+
+    private static int paste(CommandContext<CommandSourceStack> context) {
+        CommandSourceStack source = context.getSource();
+        ServerPlayer player = player(source);
+        if (player == null)
+            return 0;
+        long token = PASTES.ask(player.getUUID(), source.getServer().getTickCount());
+        PacketDistributor.sendToPlayer(player, new ClipboardRequestPayload(token));
+        return 1;
+    }
+
+    /**
+     * A client's answer to {@code paste}: the timetable on its player's clipboard, loaded as {@code load}
+     * loads the file. An answer that was not asked for, comes too late, or comes from a player who may
+     * no longer load a timetable is dropped.
+     */
+    public static void onPaste(TimetablePastePayload paste, IPayloadContext context) {
+        if (!(context.player() instanceof ServerPlayer player))
+            return;
+        if (!PASTES.take(player.getUUID(), paste.token(), player.server.getTickCount())) {
+            LOGGER.warn("{} sent a timetable to paste that was not asked for, or too late, and it was dropped", player.getName().getString());
+            return;
+        }
+        CommandSourceStack source = player.createCommandSourceStack();
+        if (!source.hasPermission(2)) {
+            LOGGER.warn("{} may no longer load a timetable, and the paste was dropped", player.getName().getString());
+            return;
+        }
+        Component from = Component.translatableWithFallback(KEY + "clipboard", "your clipboard");
+        if (paste.tooLong()) {
+            source.sendFailure(Component.translatableWithFallback(KEY + "paste_too_long",
+                "%1$s holds more than the %2$s characters a timetable is sent in", from, ClipboardPayload.MAX_LENGTH));
+            return;
+        }
+        if (paste.text().isBlank()) {
+            source.sendFailure(Component.translatableWithFallback(KEY + "paste_empty", "There is no text in %1$s", from));
+            return;
+        }
+        loadText(source, paste.text(), from);
+    }
+
+    /** The player who ran the command, or null after saying that only a player has a clipboard. */
+    static @Nullable ServerPlayer player(CommandSourceStack source) {
+        if (source.getEntity() instanceof ServerPlayer player)
+            return player;
+        source.sendFailure(Component.translatableWithFallback(CLIPBOARD_KEY + "not_player", "Only a player has a clipboard"));
+        return null;
+    }
+
+    /** That {@code length} characters are more than the clipboard is sent. */
+    static Component tooLarge(int length) {
+        return Component.translatableWithFallback(CLIPBOARD_KEY + "too_large",
+            "That is %1$s characters, more than the %2$s the clipboard is sent", length, ClipboardPayload.MAX_LENGTH);
     }
 
     private static int status(CommandContext<CommandSourceStack> context) {

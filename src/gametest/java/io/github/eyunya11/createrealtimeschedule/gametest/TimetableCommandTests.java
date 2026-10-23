@@ -9,6 +9,8 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
+import com.mojang.brigadier.ParseResults;
+
 import io.github.eyunya11.createrealtimeschedule.Createrealtimeschedule;
 import io.github.eyunya11.createrealtimeschedule.clock.ClockService;
 import io.github.eyunya11.createrealtimeschedule.clock.RealClock;
@@ -18,9 +20,11 @@ import io.github.eyunya11.createrealtimeschedule.operation.DutyRun;
 import io.github.eyunya11.createrealtimeschedule.operation.OperationData;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable;
 import io.github.eyunya11.createrealtimeschedule.timetable.TimetableJson;
+import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
@@ -189,6 +193,47 @@ public class TimetableCommandTests {
         helper.assertTrue(data.notes().size() == 2 && data.notes().getLast().what().equals("given up: the new timetable changes duty 1A"),
             "the run of the changed duty is not noted as such: " + data.notes());
         helper.succeed();
+    }
+
+    /**
+     * What {@code /rttimetable load} and {@code paste} share: text with nothing wrong in it is run, and
+     * text with a mistake is refused while the timetable run before goes on.
+     */
+    @GameTest(template = EMPTY, batch = "realtimetimetable_text")
+    public static void aTimetableAsTextIsRunOrRefusedAsAFileIs(GameTestHelper helper) {
+        MinecraftServer server = helper.getLevel().getServer();
+        try {
+            CommandSourceStack source = server.createCommandSourceStack().withSuppressedOutput();
+            helper.assertTrue(RtTimetableCommand.loadText(source, TIMETABLE, Component.literal("a test")) == 1,
+                "the timetable of one duty was not loaded from text");
+            Timetable timetable = OperationData.get(server).timetable();
+            helper.assertTrue(timetable != null && timetable.name().equals("Test loop"), "the timetable run is " + timetable);
+            String broken = TIMETABLE.replace("\"depart\": \"12:00:20\"", "\"depart\": \"12:00:99\"");
+            helper.assertTrue(RtTimetableCommand.loadText(source, broken, Component.literal("a test")) == 0, "a timetable with a bad time was loaded");
+            helper.assertTrue(OperationData.get(server).timetable() == timetable, "the timetable run before is not run any more");
+            helper.succeed();
+        } finally {
+            cleanUp(server);
+        }
+    }
+
+    /** The clipboard is a player's: run by the server itself, the commands are there and refuse. */
+    @GameTest(template = EMPTY, batch = "realtimetimetable_clipboard")
+    public static void theClipboardCommandsAreThereAndNeedAPlayer(GameTestHelper helper) {
+        MinecraftServer server = helper.getLevel().getServer();
+        try {
+            OperationData.get(server).loadTimetable(TIMETABLE, TimetableJson.parse(TIMETABLE).timetable(), ClockService.now(server));
+            CommandSourceStack source = server.createCommandSourceStack().withSuppressedOutput();
+            for (String command : List.of("rttimetable copy", "rttimetable paste", "rtnetwork copy")) {
+                ParseResults<CommandSourceStack> parsed = server.getCommands().getDispatcher().parse(command, source);
+                helper.assertTrue(parsed.getExceptions().isEmpty() && !parsed.getReader().canRead() && parsed.getContext().getCommand() != null,
+                    "/" + command + " is not a command");
+                helper.assertTrue(run(server, command) == 0, "/" + command + " did something when the server ran it");
+            }
+            helper.succeed();
+        } finally {
+            cleanUp(server);
+        }
     }
 
     private static void write(MinecraftServer server, String json) {

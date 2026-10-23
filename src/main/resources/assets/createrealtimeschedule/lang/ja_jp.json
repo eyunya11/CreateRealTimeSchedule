@@ -47,5 +47,14 @@
   "screen.createrealtimeschedule.diagram.today": "当日",
   "screen.createrealtimeschedule.diagram.day_before": "前日",
   "screen.createrealtimeschedule.diagram.now": "現在",
-  "screen.createrealtimeschedule.diagram.help": "ホイール: 拡大縮小   ドラッグ: 移動   左右: 路線   PgUp/PgDn: 日   Home: 現在"
+  "screen.createrealtimeschedule.diagram.help": "ホイール: 拡大縮小   ドラッグ: 移動   左右: 路線   PgUp/PgDn: 日   Home: 現在",
+  "commands.createrealtimeschedule.clipboard.not_player": "クリップボードを使えるのはプレイヤーだけです",
+  "commands.createrealtimeschedule.clipboard.too_large": "%1$s 文字あり、クリップボードに送れる %2$s 文字を超えています",
+  "commands.createrealtimeschedule.rtnetwork.copied": "%1$s 駅、%2$s 区間をクリップボードに写しました",
+  "commands.createrealtimeschedule.rttimetable.copied": "ダイヤ %1$s をクリップボードに写しました",
+  "commands.createrealtimeschedule.rttimetable.clipboard": "クリップボード",
+  "commands.createrealtimeschedule.rttimetable.paste_empty": "%1$s に文字がありません",
+  "commands.createrealtimeschedule.rttimetable.paste_too_long": "%1$s の文字が、ダイヤとして送れる %2$s 文字を超えています",
+  "commands.createrealtimeschedule.rteditor.opened": "ダイヤの編集ページをブラウザで開きました: %1$s",
+  "commands.createrealtimeschedule.rteditor.failed": "ダイヤの編集ページを開けませんでした: %1$s"
 }
