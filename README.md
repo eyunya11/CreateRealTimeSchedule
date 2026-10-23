@@ -62,13 +62,17 @@ The departure time is kept in the train as a clock value, so it survives saving 
 
 ## Running a timetable
 
-The mod can also run trains to a whole day's timetable by itself, without Create's schedules. The timetable is a JSON file of lines, trains and duties, in the format of [docs/proposal.md](docs/proposal.md) (version 2). A duty is what one train does in a day: it leaves its depot, runs a string of trains one after another, and comes back. Deadhead trains (`"deadhead": true`) take it from the depot to where its first train starts, and back, and are timed like any other train. The timetable editor that will write such files is still to come.
+The mod can also run trains to a whole day's timetable by itself, without Create's schedules. The timetable is a JSON file of lines, trains and duties, in the format of [docs/proposal.md](docs/proposal.md) (version 2). A duty is what one train does in a day: it leaves its depot, runs a string of trains one after another, and comes back. Deadhead trains (`"deadhead": true`) take it from the depot to where its first train starts, and back, and are timed like any other train. The timetable editor, a web page, makes such files by drawing the trains on a diagram (see below).
 
 | Command | Who | What it does |
 | --- | --- | --- |
 | `/rttimetable load` | operators | Reads `createrealtimeschedule/timetable.json` in the world folder and runs it. If anything is wrong with it, it says what and keeps running the timetable it had |
 | `/rttimetable status` | operators | Shows, for each duty, which train runs it, where it is and how late, or when it next leaves; and what went wrong lately |
 | `/rttimetable unload` | operators | Stops running the timetable |
+| `/rttimetable copy` | operators | Puts the timetable being run on your clipboard, for the editor |
+| `/rttimetable paste` | operators | Loads the timetable on your clipboard, as `load` does the file |
+| `/rtnetwork copy` | operators | Puts the track network (stations and running times) on your clipboard, for the editor; `/rtnetwork export` writes it to `createrealtimeschedule/network.json` |
+| `/rteditor` | anyone | Opens the timetable editor in your browser (a command of the client) |
 | `/rtdiagram` | anyone | Opens the diagram of the timetable's first line; `/rtdiagram line <id>` opens that of another |
 | `/rtdiagram refresh` | operators | Works the distances between the stations out from the track again, after it has changed |
 
@@ -79,6 +83,18 @@ The mod can also run trains to a whole day's timetable by itself, without Create
 - Create's display boards and Display Links do not show the train number or destination of a train running a duty: it has no schedule of Create's for them to read.
 
 The diagram shows one line of the timetable: time across, the line's stations down, as far apart as the track between them. The timetable's trains are thin lines, coloured by type, with deadheads dashed; the duties of the service day are drawn over them in thick red as they really ran (purple for one given up). A key can open it too: bind "Open the diagram" in the controls. The wheel zooms, dragging moves, the left and right arrows change the line, Page Up and Page Down go to the service day before and back, and Home goes back to now. The server keeps the times of finished duties for today and the day before.
+
+### The timetable editor
+
+The editor is a web page. `/rteditor` copies it out of the mod into `createrealtimeschedule/editor` in the game folder and opens it, so it is always the one of your version of the mod; the same page is also at https://eyunya11.github.io/CreateRealTimeSchedule/ for anyone without the mod. To make a timetable:
+
+1. Run `/rtnetwork copy` in the game and paste it into "Load network": the editor then knows the stations and the running time between them.
+2. Add a line, picking its stations top down (tick "Loop line" for one that goes round).
+3. Press "Draw a train" and click a station's row for each stop. The line follows the running time of the track, and a click further right arrives later; each stop stands for the dwell (20 seconds by default). Double-click or press Enter to finish. Drag a stop's point to move it, hold Ctrl to drag the whole train, and put times right in the table on the right.
+4. Add a duty, click its trains in order on the diagram (or pick from the trains that can come next), and press "Add deadheads to and from the depot".
+5. When the problems list is empty, "Export" and "Copy to clipboard", then run `/rttimetable paste` in the game. A timetable being run can be brought back into the editor with `/rttimetable copy`.
+
+The editor checks a timetable by the same rules as the mod and words its problems the same way, undoes and redoes, keeps the draft in the browser, and speaks Japanese and English.
 
 ## Settings
 
@@ -94,7 +110,7 @@ The settings are per world, in `serverconfig/createrealtimeschedule-server.toml`
 
 ## What is and is not checked
 
-Checked by the tests (`./gradlew test` and `./gradlew runGameTestServer`): the clock arithmetic, saving and sending the clock, the sky sync, the commands, the condition's rule and how slots follow each other, saving a train that waits on the condition, and a real train running on real track through three stations in a row, arriving early and late. For running a timetable: loading and saving it, two trains at the depot of a loop line taking the duties in the order they leave and coming back, leaving every call on its time (recorded when the train has really left the platform), a late train making up time, a duty that has no train, and a train that is given a schedule being let go. For the diagram: the distances between the stations from real track, the times sent to a client, and how the lines are worked out.
+Checked by the tests (`./gradlew test` and `./gradlew runGameTestServer`): the clock arithmetic, saving and sending the clock, the sky sync, the commands, the condition's rule and how slots follow each other, saving a train that waits on the condition, and a real train running on real track through three stations in a row, arriving early and late. For running a timetable: loading and saving it, two trains at the depot of a loop line taking the duties in the order they leave and coming back, leaving every call on its time (recorded when the train has really left the platform), a late train making up time, a duty that has no train, and a train that is given a schedule being let go. For the diagram: the distances between the stations from real track, the times sent to a client, and how the lines are worked out. For the editor: that it finds the same problems as the mod (shared cases read by both the Java and the Node tests), writes the same JSON, draws lines as the game does, and that a timetable made with its own code runs on real track on time; and, on the server's side, the clipboard commands.
 
 Not checked yet:
 
@@ -104,7 +120,8 @@ Not checked yet:
 - that a client without the mod is refused by a server that has it;
 - that a client takes the server's `default_minimum_stop_seconds` when it joins. NeoForge's code sends the server's config files to a joining client, but this has not been tried with a real client;
 - running a timetable across a restart of the server (only saving its state and reading it back is tested), on track with signals where several trains share a line, and with a train that derails on the way;
-- each of the diagram's keys and mouse controls on a real client (the diagram itself has been looked at there: the timetable's lines and the real ones lie over each other, and its clock agrees with the server's).
+- each of the diagram's keys and mouse controls on a real client (the diagram itself has been looked at there: the timetable's lines and the real ones lie over each other, and its clock agrees with the server's);
+- the clipboard commands and `/rteditor` on a real client, and the editor opened from a `file://` address (it has been used in a Chromium browser from `http://localhost`), and the GitHub Pages site, which is published once Pages is switched on and the work is on main.
 
 ## Building
 
