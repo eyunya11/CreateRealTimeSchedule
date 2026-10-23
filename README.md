@@ -104,7 +104,7 @@ Not checked yet:
 - that a client without the mod is refused by a server that has it;
 - that a client takes the server's `default_minimum_stop_seconds` when it joins. NeoForge's code sends the server's config files to a joining client, but this has not been tried with a real client;
 - running a timetable across a restart of the server (only saving its state and reading it back is tested), on track with signals where several trains share a line, and with a train that derails on the way;
-- how the diagram looks and how its keys and mouse work on a real client (what the server sends it is tested, and how its lines are worked out, but the screen only compiles).
+- each of the diagram's keys and mouse controls on a real client (the diagram itself has been looked at there: the timetable's lines and the real ones lie over each other, and its clock agrees with the server's).
 
 ## Building
 
