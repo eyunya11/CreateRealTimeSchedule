@@ -69,10 +69,11 @@ public record DiagramModel(LineAxis axis, long day, List<PlannedTrain> planned, 
             if (!train.line().equals(axis.line()))
                 continue;
             List<Visit> visits = new ArrayList<>();
+            boolean down = axis.down(train.stops().stream().map(Stop::station).toList());
             for (Stop stop : train.stops()) {
                 // A stop with only a departure is a short one: the train comes in then too.
                 double arrive = seconds(stop.hasArrive() || stop == train.stops().getFirst() ? stop.arrive() : stop.depart());
-                visits.add(new Visit(stop.station(), arrive, seconds(stop.depart()), true, true));
+                visits.add(new Visit(stop.station(), arrive, seconds(stop.depart()), true, true, down));
             }
             Path path = path(axis, visits);
             planned.add(new PlannedTrain(train.number(), train.type(), train.deadhead(), path.segments,
@@ -102,7 +103,10 @@ public record DiagramModel(LineAxis axis, long day, List<PlannedTrain> planned, 
                 if (!Double.isNaN(arrive) && Double.isNaN(depart) && duty.status() == DutyTimes.Status.RUNNING && i < calls.size() - 1)
                     depart = Math.max(arrive, clockSeconds(now, day)); // standing there now
                 boolean leavesOnLine = onLine(timetable, call.leavingTrain(), axis);
-                visits.add(new Visit(call.station(), arrive, depart, leavesOnLine || onLine(timetable, call.arrivingTrain(), axis), leavesOnLine));
+                boolean down = timetable.train(call.leavingTrain())
+                    .map(train -> axis.down(train.stops().stream().map(Stop::station).toList())).orElse(true);
+                visits.add(new Visit(call.station(), arrive, depart, leavesOnLine || onLine(timetable, call.arrivingTrain(), axis), leavesOnLine,
+                    down));
             }
             List<Segment> segments = path(axis, visits).segments;
             if (!segments.isEmpty())
@@ -133,14 +137,16 @@ public record DiagramModel(LineAxis axis, long day, List<PlannedTrain> planned, 
      * @param depart  when it leaves, or NaN
      * @param stay    whether its standing there is drawn
      * @param moveOn  whether its way to the next station is drawn
+     * @param down    whether it goes on down the axis or up it, on a loop line (see {@link LineAxis#down})
      */
-    private record Visit(String station, double arrive, double depart, boolean stay, boolean moveOn) {}
+    private record Visit(String station, double arrive, double depart, boolean stay, boolean moveOn, boolean down) {}
 
     private record Path(List<Segment> segments, double firstPosition) {}
 
     /**
-     * The segments of a train's way through {@code visits}. The rows of each way between two stations
-     * are chosen by {@link LineAxis#rows}; standing is drawn at the row the train came in at, and also
+     * The segments of a train's way through {@code visits}. The way between two stations is that of
+     * {@link LineAxis#hops}; one across the ends of a loop line's axis is two segments, with the time
+     * shared between them by their lengths. Standing is drawn at the row the train came in at, and also
      * at the row it goes out from if that is another (the first station of a loop line).
      */
     private static Path path(LineAxis axis, List<Visit> visits) {
@@ -153,13 +159,19 @@ public record DiagramModel(LineAxis axis, long day, List<PlannedTrain> planned, 
         for (int k = 0; k + 1 < n; k++) {
             Visit from = visits.get(k);
             Visit to = visits.get(k + 1);
-            int[] rows = axis.rows(from.station(), to.station());
-            if (rows.length == 0)
+            List<LineAxis.Hop> hops = axis.hops(from.station(), to.station(), from.down());
+            if (hops.isEmpty())
                 continue;
-            rowOut[k] = rows[0];
-            rowIn[k + 1] = rows[1];
-            if (from.moveOn() && !Double.isNaN(from.depart()) && !Double.isNaN(to.arrive()))
-                segments.add(new Segment(from.depart(), axis.position(rows[0]), to.arrive(), axis.position(rows[1])));
+            rowOut[k] = hops.getFirst().fromRow();
+            rowIn[k + 1] = hops.getLast().toRow();
+            if (!from.moveOn() || Double.isNaN(from.depart()) || Double.isNaN(to.arrive()))
+                continue;
+            double at = from.depart();
+            for (LineAxis.Hop hop : hops) {
+                double until = hop == hops.getLast() ? to.arrive() : at + (to.arrive() - from.depart()) * hop.share();
+                segments.add(new Segment(at, axis.position(hop.fromRow()), until, axis.position(hop.toRow())));
+                at = until;
+            }
         }
         for (int k = 0; k < n; k++) {
             Visit visit = visits.get(k);

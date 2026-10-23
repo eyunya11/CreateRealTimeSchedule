@@ -173,4 +173,15 @@ class DiagramModelTest {
             new Segment(t("10:05"), 0, t("10:06"), 0),
             new Segment(t("10:06"), 0, t("10:08"), 30)), DiagramModel.of(timetable, axis, DAY, List.of(), 0).planned().getFirst().segments());
     }
+
+    @Test
+    void aWayAcrossTheFirstStationOfALoopIsDrawnToTheBottomAndOnFromTheTop() {
+        Line loop = new Line("loop", "Loop", List.of("Depot", "A", "B", "C"), true);
+        LineAxis axis = LineAxis.of(loop, List.of(new Leg("Depot", "A", 30, List.of(), List.of()), new Leg("A", "B", 30, List.of(), List.of()),
+            new Leg("B", "C", 30, List.of(), List.of()), new Leg("C", "Depot", 30, List.of(), List.of())));
+        Train past = new Train("X", "loop", "", List.of(Stop.leaving("C", t("10:00")), Stop.arriving("A", t("10:04"))), true);
+        Timetable timetable = new Timetable("", List.of(loop), List.of(past), List.of());
+        assertEquals(List.of(new Segment(t("10:00"), 90, t("10:02"), 120), new Segment(t("10:02"), 0, t("10:04"), 30)),
+            DiagramModel.of(timetable, axis, DAY, List.of(), 0).planned().getFirst().segments());
+    }
 }
