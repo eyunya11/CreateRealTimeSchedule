@@ -32,5 +32,20 @@
   "createrealtimeschedule.schedule.condition.real_time_of_day.rotation.every_1": "1時間",
   "createrealtimeschedule.schedule.condition.real_time_of_day.rotation.every_0_45": "45分",
   "createrealtimeschedule.schedule.condition.real_time_of_day.rotation.every_0_30": "30分",
-  "createrealtimeschedule.schedule.condition.real_time_of_day.rotation.every_0_15": "15分"
+  "createrealtimeschedule.schedule.condition.real_time_of_day.rotation.every_0_15": "15分",
+  "commands.createrealtimeschedule.rtdiagram.not_player": "運行図を見られるのはプレイヤーだけです",
+  "commands.createrealtimeschedule.rtdiagram.none": "運行中のダイヤがないので、運行図はありません",
+  "commands.createrealtimeschedule.rtdiagram.no_line": "ダイヤに路線 %1$s はありません",
+  "commands.createrealtimeschedule.rtdiagram.refreshed": "%1$s 路線の駅の間隔を、線路から求め直しました",
+  "key.categories.createrealtimeschedule": "Create Real Time Schedule",
+  "key.createrealtimeschedule.diagram": "運行図を開く",
+  "screen.createrealtimeschedule.diagram.title": "運行図",
+  "screen.createrealtimeschedule.diagram.waiting": "サーバーに運行図を問い合わせています...",
+  "screen.createrealtimeschedule.diagram.too_large": "ダイヤが大きすぎて表示できません",
+  "screen.createrealtimeschedule.diagram.none": "運行中のダイヤはありません",
+  "screen.createrealtimeschedule.diagram.no_axis": "この路線の駅を、サーバーがまだ送っていません",
+  "screen.createrealtimeschedule.diagram.today": "当日",
+  "screen.createrealtimeschedule.diagram.day_before": "前日",
+  "screen.createrealtimeschedule.diagram.now": "現在",
+  "screen.createrealtimeschedule.diagram.help": "ホイール: 拡大縮小   ドラッグ: 移動   左右: 路線   PgUp/PgDn: 日   Home: 現在"
 }

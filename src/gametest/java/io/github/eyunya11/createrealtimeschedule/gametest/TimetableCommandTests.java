@@ -39,7 +39,7 @@ public class TimetableCommandTests {
     private static final String EMPTY = "empty";
 
     /** The depot, A and B, as in {@link DutyRunTests}, written as a player would. */
-    private static final String TIMETABLE = """
+    static final String TIMETABLE = """
         {
           "format": "createrealtimeschedule.timetable",
           "version": 2,

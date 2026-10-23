@@ -17,6 +17,7 @@ import com.mojang.logging.LogUtils;
 
 import io.github.eyunya11.createrealtimeschedule.Createrealtimeschedule;
 import io.github.eyunya11.createrealtimeschedule.clock.RealClock;
+import io.github.eyunya11.createrealtimeschedule.diagram.LineAxis;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Duty;
 import io.github.eyunya11.createrealtimeschedule.timetable.TimetableJson;
@@ -108,6 +109,10 @@ public final class OperationData extends SavedData {
     private final Map<UUID, Integer> noWay = new HashMap<>();
     /** Not saved: no duty starts before this clock value, so there is nothing to look for until a lead before it. */
     private long nextStart = Long.MIN_VALUE;
+    /** Not saved: goes up whenever the timetable or the axes change, so that a client knows when its copy for the diagram is old. */
+    private int revision;
+    /** Not saved: the diagram's axis of each line, worked out from the track when it is first needed; null until then. */
+    private @Nullable Map<String, LineAxis> axes;
 
     public static OperationData get(MinecraftServer server) {
         return server.overworld().getDataStorage().computeIfAbsent(FACTORY, NAME);
@@ -117,6 +122,11 @@ public final class OperationData extends SavedData {
 
     public @Nullable Timetable timetable() {
         return timetable;
+    }
+
+    /** The text of the timetable, as it was loaded; empty if there is none. */
+    public String json() {
+        return json;
     }
 
     /** The calls of the timetable's duty {@code id}, or null if it has none of that id. */
@@ -151,6 +161,7 @@ public final class OperationData extends SavedData {
         history.removeIf(record -> !record.run().calls().equals(calls.get(record.run().duty())));
         noWay.clear();
         nextStart = Long.MIN_VALUE;
+        forgetAxes();
         setDirty();
     }
 
@@ -170,6 +181,7 @@ public final class OperationData extends SavedData {
         freeSince.clear();
         noWay.clear();
         nextStart = Long.MIN_VALUE;
+        forgetAxes();
         setDirty();
     }
 
@@ -231,6 +243,28 @@ public final class OperationData extends SavedData {
     /** The notes, oldest first. */
     public List<Note> notes() {
         return List.copyOf(notes);
+    }
+
+    // ------------------------------------------------------------------ the diagram
+
+    /** How many times the timetable or the axes have changed since the server started. */
+    public int revision() {
+        return revision;
+    }
+
+    /** The axis of each line, by its id; null if it has not been worked out since the timetable or the track last changed. */
+    public @Nullable Map<String, LineAxis> axes() {
+        return axes;
+    }
+
+    public void axes(Map<String, LineAxis> axes) {
+        this.axes = Map.copyOf(axes);
+    }
+
+    /** Drops the axes, so that they are worked out again, as after the track has changed. */
+    public void forgetAxes() {
+        axes = null;
+        revision++;
     }
 
     // ------------------------------------------------------------------ the records
