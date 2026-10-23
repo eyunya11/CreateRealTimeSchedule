@@ -1,8 +1,6 @@
 package io.github.eyunya11.createrealtimeschedule.operation;
 
 import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -83,6 +81,10 @@ public final class OperationData extends SavedData {
     private final Map<UUID, DutyRun> runs = new LinkedHashMap<>();
     private final Map<UUID, Long> freeSince = new HashMap<>();
     private final Deque<Note> notes = new ArrayDeque<>();
+    /** Not saved: the call at which each running train was last found to have no way on, so that it is logged once a call. */
+    private final Map<UUID, Integer> noWay = new HashMap<>();
+    /** Not saved: no duty starts before this clock value, so there is nothing to look for until a lead before it. */
+    private long nextStart = Long.MIN_VALUE;
 
     public static OperationData get(MinecraftServer server) {
         return server.overworld().getDataStorage().computeIfAbsent(FACTORY, NAME);
@@ -115,11 +117,16 @@ public final class OperationData extends SavedData {
         lastDays.keySet().retainAll(calls.keySet());
         runs.entrySet().removeIf(entry -> {
             DutyRun run = entry.getValue();
-            if (run.calls().equals(calls.get(run.duty())))
+            List<Call> loaded = calls.get(run.duty());
+            if (run.calls().equals(loaded))
                 return false;
-            note(now, run.duty(), run.day(), "given up: the new timetable has another duty " + run.duty());
+            note(now, run.duty(), run.day(), loaded == null
+                ? "given up: the new timetable has no duty " + run.duty()
+                : "given up: the new timetable changes duty " + run.duty());
             return true;
         });
+        noWay.clear();
+        nextStart = Long.MIN_VALUE;
         setDirty();
     }
 
@@ -133,6 +140,8 @@ public final class OperationData extends SavedData {
         lastDays.clear();
         runs.clear();
         freeSince.clear();
+        noWay.clear();
+        nextStart = Long.MIN_VALUE;
         setDirty();
     }
 
@@ -153,6 +162,20 @@ public final class OperationData extends SavedData {
     public void dealtWith(String id, long day) {
         if (!Long.valueOf(day).equals(lastDays.put(id, day)))
             setDirty();
+    }
+
+    /** No duty starts before this clock value; {@link Long#MIN_VALUE} if that is not known. */
+    public long nextStart() {
+        return nextStart;
+    }
+
+    public void nextStart(long clock) {
+        nextStart = clock;
+    }
+
+    /** The call at which each running train was last found to have no way on. */
+    public Map<UUID, Integer> noWay() {
+        return noWay;
     }
 
     /** The running duties, by the train that runs each. Whoever changes a run calls {@link #setDirty()}. */
@@ -179,7 +202,7 @@ public final class OperationData extends SavedData {
 
     /** The notes, oldest first. */
     public List<Note> notes() {
-        return Collections.unmodifiableList(new ArrayList<>(notes));
+        return List.copyOf(notes);
     }
 
     // ------------------------------------------------------------------ saving
@@ -250,9 +273,9 @@ public final class OperationData extends SavedData {
             if (!entry.hasUUID(TAG_TRAIN) || calls == null)
                 continue;
             try {
-                DutyRun.State state = new DutyRun.State(duty, entry.getLong(TAG_DAY), entry.getInt(TAG_CALL),
+                DutyRun.State state = DutyRun.State.of(duty, entry.getLong(TAG_DAY), entry.getInt(TAG_CALL),
                     DutyRun.Phase.valueOf(entry.getString(TAG_PHASE)), entry.getLong(TAG_DEPARTURE),
-                    boxed(entry.getLongArray(TAG_ARRIVALS)), boxed(entry.getLongArray(TAG_DEPARTURES)));
+                    entry.getLongArray(TAG_ARRIVALS), entry.getLongArray(TAG_DEPARTURES));
                 data.runs.put(entry.getUUID(TAG_TRAIN), DutyRun.restore(state, calls));
             } catch (IllegalArgumentException e) {
                 LOGGER.error("The saved run of duty {} does not fit the timetable, and is given up", duty, e);
@@ -268,12 +291,5 @@ public final class OperationData extends SavedData {
             data.notes.addLast(new Note(entry.getLong(TAG_CLOCK), entry.getString(TAG_DUTY), entry.getLong(TAG_DAY), entry.getString(TAG_WHAT)));
         }
         return data;
-    }
-
-    private static List<Long> boxed(long[] values) {
-        List<Long> list = new ArrayList<>(values.length);
-        for (long value : values)
-            list.add(value);
-        return list;
     }
 }

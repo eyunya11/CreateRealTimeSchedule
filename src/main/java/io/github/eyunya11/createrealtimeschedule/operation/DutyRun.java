@@ -30,6 +30,11 @@ public final class DutyRun {
     public enum Phase {
         /** At {@link #call()}, to leave at {@link #departure()}. */
         STANDING,
+        /**
+         * Still at {@link #call()}, but sent on to the next: Create holds a train at the platform until
+         * the signal ahead lets it go, so it has not left yet.
+         */
+        DEPARTING,
         /** On the way to {@link #call()}. */
         RUNNING,
         /** At the last call: the duty is done. */
@@ -43,7 +48,7 @@ public final class DutyRun {
      * @param day        the service day, as {@link RealClock#day} counts days
      * @param call       the index of the call the set is at or running to
      * @param phase      what it is doing
-     * @param departure  when it is to leave, while it is {@link Phase#STANDING}
+     * @param departure  when it is to leave, while it is {@link Phase#STANDING} or {@link Phase#DEPARTING}
      * @param arrivals   when it arrived at each call, or {@link #NOT_YET}
      * @param departures when it left each call, or {@link #NOT_YET}
      */
@@ -53,6 +58,11 @@ public final class DutyRun {
             Objects.requireNonNull(phase, "phase");
             arrivals = List.copyOf(arrivals);
             departures = List.copyOf(departures);
+        }
+
+        /** A state with the times as arrays, as they are saved. */
+        public static State of(String duty, long day, int call, Phase phase, long departure, long[] arrivals, long[] departures) {
+            return new State(duty, day, call, phase, departure, boxed(arrivals), boxed(departures));
         }
     }
 
@@ -109,7 +119,7 @@ public final class DutyRun {
     }
 
     public State state() {
-        return new State(duty, day, call, phase, departure, boxed(arrivals), boxed(departures));
+        return State.of(duty, day, call, phase, departure, arrivals, departures);
     }
 
     private static List<Long> boxed(long[] values) {
@@ -126,10 +136,17 @@ public final class DutyRun {
         return phase == Phase.STANDING && now >= departure;
     }
 
-    /** The set has left the call it stood at, and is running to the next. */
-    public void left(long now) {
+    /** The set has been sent on to the next call, and has not left yet. */
+    public void sent() {
         if (phase != Phase.STANDING)
             throw new IllegalStateException("duty " + duty + " is not standing at a call but " + phase);
+        phase = Phase.DEPARTING;
+    }
+
+    /** The set has left the call it stood at, and is running to the next. */
+    public void left(long now) {
+        if (phase != Phase.STANDING && phase != Phase.DEPARTING)
+            throw new IllegalStateException("duty " + duty + " is not at a call but " + phase);
         departures[call] = now;
         call++;
         phase = Phase.RUNNING;
@@ -175,14 +192,14 @@ public final class DutyRun {
         return phase == Phase.FINISHED;
     }
 
-    /** When the set is to leave the call it stands at; meaningful only while it is {@link Phase#STANDING}. */
+    /** When the set is to leave the call it stands at; meaningful only while it is {@link Phase#STANDING} or {@link Phase#DEPARTING}. */
     public long departure() {
         return departure;
     }
 
     /** The station the set goes to next: the call it is running to, or the one after the call it stands at. */
     public String nextStation() {
-        return calls.get(phase == Phase.STANDING ? call + 1 : call).station();
+        return calls.get(phase == Phase.STANDING || phase == Phase.DEPARTING ? call + 1 : call).station();
     }
 
     /** The clock value of the timetable's departure from call {@code index}. */
@@ -210,12 +227,14 @@ public final class DutyRun {
     }
 
     /**
-     * How many ticks behind the timetable the set is: at the call it stands at, by when it is to leave;
-     * on the way, by when it left; at the end, by when it arrived. Less than 0 when it is early.
+     * How many ticks behind the timetable the set is at {@code now}: at the call it stands at, by when it
+     * is to leave, or by now if it has been held there past that; on the way, by when it left; at the
+     * end, by when it arrived. Less than 0 when it is early.
      */
-    public long delay() {
+    public long delay(long now) {
         return switch (phase) {
             case STANDING -> departure - plannedDeparture(call);
+            case DEPARTING -> Math.max(departure, now) - plannedDeparture(call);
             case RUNNING -> departures[call - 1] - plannedDeparture(call - 1);
             case FINISHED -> calls.get(call).hasArrive() ? arrivals[call] - plannedArrival(call) : 0;
         };

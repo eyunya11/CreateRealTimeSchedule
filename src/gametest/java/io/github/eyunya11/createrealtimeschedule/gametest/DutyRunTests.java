@@ -32,6 +32,9 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
  * and back to the depot, as the timetable has it. The line is a loop (see {@link TrackLine}), because
  * the test's train only runs forwards; the way back to the depot is round it.
  *
+ * <p>A departure is when the train really left the platform. Create moves a train it has been sent
+ * on its next tick, so a set sent on its time leaves {@link #SENT_TO_GONE} ticks after it.
+ *
  * <p>Each test has a batch of its own (see {@link TrackLine}).
  */
 @GameTestHolder(Createrealtimeschedule.MODID)
@@ -47,20 +50,23 @@ public class DutyRunTests {
     private static final int[] STATION_X = {20, 50, 80};
     /** The clock when the set is given the duty. */
     private static final long START = TestTimes.clock(10, 12, 0, 0);
+    /** How many ticks after it is sent on a train leaves the platform, when nothing holds it. */
+    static final long SENT_TO_GONE = 1;
 
     /**
      * Out of the depot to A, as train 1 to B, and back round the loop to the depot. Each leg takes the
      * train less time than the timetable gives it (about 6, 6 and 19 seconds), so it is early
-     * everywhere and leaves every call on the tick the timetable says.
+     * everywhere and leaves every call on the timetable's time.
      */
     @GameTest(template = TURN, batch = "realtimeduty_on_time", timeoutTicks = TIMEOUT_TICKS)
     public static void aDutyRunsByTheTimetableFromTheDepotAndBack(GameTestHelper helper) {
         Timetable timetable = timetable("12:00:20", "12:00:35");
         new DutyTrip(helper, timetable, 0, (run, minimumStop) -> {
             for (int call = 0; call < run.calls().size() - 1; call++)
-                helper.assertTrue(run.departures().get(call) == run.plannedDeparture(call),
-                    "left " + run.calls().get(call).station() + " at " + TestTimes.show(run.departures().get(call))
-                        + ", not at " + TestTimes.show(run.plannedDeparture(call)));
+                helper.assertTrue(run.departures().get(call) == run.plannedDeparture(call) + SENT_TO_GONE,
+                    "left " + run.calls().get(call).station() + " at " + TestTimes.show(run.departures().get(call)) + " + "
+                        + run.departures().get(call) % RealClock.TICKS_PER_SECOND + " ticks, not on its time "
+                        + TestTimes.show(run.plannedDeparture(call)));
         }).begin();
     }
 
@@ -75,10 +81,10 @@ public class DutyRunTests {
         new DutyTrip(helper, timetable, minimumStop, (run, stop) -> {
             long arrivedAtA = run.arrivals().get(1);
             helper.assertTrue(arrivedAtA > run.plannedDeparture(1), "the set was not late at A, arriving at " + TestTimes.show(arrivedAtA));
-            helper.assertTrue(run.departures().get(1) == arrivedAtA + stop,
+            helper.assertTrue(run.departures().get(1) == arrivedAtA + stop + SENT_TO_GONE,
                 "the set left A at " + TestTimes.show(run.departures().get(1)) + ", not the minimum stop after it arrived at "
                     + TestTimes.show(arrivedAtA));
-            helper.assertTrue(run.departures().get(2) == run.plannedDeparture(2), "the set did not leave B on time");
+            helper.assertTrue(run.departures().get(2) == run.plannedDeparture(2) + SENT_TO_GONE, "the set did not leave B on time");
         }).begin();
     }
 
@@ -150,6 +156,11 @@ public class DutyRunTests {
             Outcome outcome = TrainDriver.step(run, train, now, minimumStop);
             if (outcome == Outcome.NO_WAY)
                 helper.fail("no way to " + run.nextStation() + " (" + line.describe() + ")");
+            // A departure is recorded once the train has gone: it is not at the platform any more.
+            for (int call = 0; call < run.call(); call++)
+                if (run.departures().get(call) == now)
+                    helper.assertTrue(train.getCurrentStation() == null, "the set is recorded as gone from "
+                        + run.calls().get(call).station() + " while the train is still there");
             if (outcome != Outcome.FINISHED)
                 return;
             for (int call = 0; call < run.calls().size(); call++)

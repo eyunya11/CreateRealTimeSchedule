@@ -144,11 +144,11 @@ public final class RtTimetableCommand {
                 continue;
             Train train = Create.RAILWAYS.trains.get(entry.getKey());
             String set = train == null ? entry.getKey().toString() : train.name.getString();
-            if (run.phase() == DutyRun.Phase.STANDING)
+            if (run.phase() == DutyRun.Phase.STANDING || run.phase() == DutyRun.Phase.DEPARTING)
                 return Component.translatableWithFallback(KEY + "standing", "%1$s: %2$s at %3$s, leaves at %4$s (%5$s)",
-                    duty.id(), set, run.calls().get(run.call()).station(), TimeText.clock(run.departure()), TimeText.delay(run.delay()));
+                    duty.id(), set, run.calls().get(run.call()).station(), TimeText.clock(run.departure()), TimeText.delay(run.delay(now)));
             return Component.translatableWithFallback(KEY + "running", "%1$s: %2$s on the way to %3$s (%4$s)",
-                duty.id(), set, run.nextStation(), TimeText.delay(run.delay()));
+                duty.id(), set, run.nextStation(), TimeText.delay(run.delay(now)));
         }
         List<Call> calls = data.calls(duty.id());
         int first = DutyPlan.firstDeparture(calls);
@@ -164,7 +164,7 @@ public final class RtTimetableCommand {
     /** Clock values and delays as the chat shows them. */
     private static final class TimeText {
         static String clock(long clock) {
-            return "day " + RealClock.day(clock) + " " + RealClock.format(clock);
+            return RealClock.show(clock);
         }
 
         static String delay(long ticks) {

@@ -6,8 +6,6 @@ import io.github.eyunya11.createrealtimeschedule.Createrealtimeschedule;
 import io.github.eyunya11.createrealtimeschedule.ModSettings;
 import io.github.eyunya11.createrealtimeschedule.command.RtClockCommand;
 import io.github.eyunya11.createrealtimeschedule.command.RtNetworkCommand;
-import io.github.eyunya11.createrealtimeschedule.command.RtTimetableCommand;
-import io.github.eyunya11.createrealtimeschedule.operation.OperationService;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -17,7 +15,7 @@ import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 
-/** Hooks the clock into the game: its start, its players, the sky and the operation each tick, and the commands. */
+/** Hooks the clock into the game: its start, its players, the sky each tick and its command. */
 @EventBusSubscriber(modid = Createrealtimeschedule.MODID)
 public final class ClockEvents {
 
@@ -41,13 +39,11 @@ public final class ClockEvents {
     @SubscribeEvent
     public static void onServerTick(ServerTickEvent.Post event) {
         SkySync.apply(event.getServer(), ModSettings.syncSky());
-        OperationService.tick(event.getServer());
     }
 
     @SubscribeEvent
     public static void onRegisterCommands(RegisterCommandsEvent event) {
         RtClockCommand.register(event.getDispatcher());
         RtNetworkCommand.register(event.getDispatcher());
-        RtTimetableCommand.register(event.getDispatcher());
     }
 }

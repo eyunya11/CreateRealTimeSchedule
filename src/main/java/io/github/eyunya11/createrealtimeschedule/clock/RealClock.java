@@ -85,6 +85,11 @@ public final class RealClock {
         return String.format("%02d:%02d:%02d", seconds / 3600, seconds / 60 % 60, seconds % 60);
     }
 
+    /** A clock value as a person reads it: the day of the clock and the time of day, such as {@code day 3 08:10:00}. */
+    public static String show(long clockTicks) {
+        return "day " + day(clockTicks) + " " + format(clockTicks);
+    }
+
     /** The offset that makes the clock read {@code clockTicks} at {@code gameTime}. */
     public static long offsetFor(long gameTime, long clockTicks) {
         return clockTicks - gameTime;

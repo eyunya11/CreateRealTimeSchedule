@@ -66,6 +66,16 @@ class DutyCalendarTest {
     }
 
     @Test
+    void theNextStartIsTheFirstNotDealtWith() {
+        assertEquals(at(5, "07:50"), DutyCalendar.nextStart(t("07:50"), 4, at(5, "07:00")));
+        assertEquals(at(6, "07:50"), DutyCalendar.nextStart(t("07:50"), 5, at(5, "07:00")), "day 5 was dealt with");
+        // Not dealt with for days, the next is the last start gone by: the one due() reports as missed.
+        assertEquals(at(9, "07:50"), DutyCalendar.nextStart(t("07:50"), 4, at(9, "12:00")));
+        assertEquals(DutyCalendar.due("1A", t("07:50"), 4, at(9, "12:00"), LEAD).getFirst().at(),
+            DutyCalendar.nextStart(t("07:50"), 4, at(9, "12:00")));
+    }
+
+    @Test
     void theSetThatHasWaitedLongestIsChosen() {
         UUID early = new UUID(0, 9);
         UUID late = new UUID(0, 1);

@@ -11,14 +11,16 @@ import com.simibubi.create.content.trains.station.GlobalStation;
 
 /**
  * Takes a Create train through a {@link DutyRun}, by Create's own path finding and driving and not by
- * a schedule: when the run says the set is to leave, the train is sent to the next station, and when
- * it stands there, the run is told it has arrived.
+ * a schedule: when the run says the set is to leave, the train is sent to the next station; when it
+ * has really left the platform, the run is told so; and when it stands at the next station, the run is
+ * told it has arrived.
  *
  * <p>A train is sent the way Create's destination instruction sends one: to whichever station of the
  * name it finds the best path to ({@code Navigation.findPathTo} over all of them, which keeps away from
  * platforms with a train at them), by {@code Navigation.startNavigation}. Create then drives it, and
- * leaves the station itself once the train moves. Create cancels a journey when the train loses its
- * driver or overshoots; the train is then sent again.
+ * leaves the station itself once the train moves, which is on a later tick, and later still when the
+ * signal ahead is not yet green: that is when the run records the departure. Create cancels a journey
+ * when the train loses its driver or overshoots; the train is then sent again.
  */
 public final class TrainDriver {
 
@@ -58,8 +60,17 @@ public final class TrainDriver {
                     return Outcome.GOING;
                 if (!sendTo(train, run.nextStation()))
                     return Outcome.NO_WAY;
-                run.left(now);
+                run.sent();
                 return Outcome.GOING;
+            case DEPARTING:
+                if (train.getCurrentStation() == null) {
+                    run.left(now);
+                    return Outcome.GOING;
+                }
+                // Still at the platform: held by a signal, or the journey was cancelled before it moved.
+                if (train.navigation.destination != null)
+                    return Outcome.GOING;
+                return sendTo(train, run.nextStation()) ? Outcome.GOING : Outcome.NO_WAY;
             case RUNNING:
             default:
                 if (train.navigation.destination != null)

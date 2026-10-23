@@ -14,6 +14,6 @@ final class TestTimes {
 
     /** A clock value as a person reads it: the day and the time. */
     static String show(long clockTicks) {
-        return "day " + RealClock.day(clockTicks) + " " + RealClock.format(clockTicks);
+        return RealClock.show(clockTicks);
     }
 }

@@ -85,6 +85,13 @@ class RealClockTest {
     }
 
     @Test
+    void showsTheDayAndTheTime() {
+        assertEquals("day 0 00:00:00", RealClock.show(0L));
+        assertEquals("day 3 08:10:00", RealClock.show(3 * RealClock.TICKS_PER_DAY + RealClock.ticksOf(8, 10, 0)));
+        assertEquals("day -1 23:59:59", RealClock.show(-20L));
+    }
+
+    @Test
     void parseAndFormatAgree() {
         for (String text : new String[] {"00:00:00", "06:00:00", "12:34:56", "23:59:59"})
             assertEquals(text, RealClock.format(RealClock.parseTimeOfDay(text).getAsLong()));

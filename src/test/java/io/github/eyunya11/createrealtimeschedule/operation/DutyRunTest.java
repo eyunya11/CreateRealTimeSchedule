@@ -45,7 +45,7 @@ class DutyRunTest {
     void aSetGivenTheDutyLateLeavesTheDepotAtOnce() {
         DutyRun run = DutyRun.start("1A", DAY, CALLS, at("07:51"));
         assertEquals(at("07:51"), run.departure());
-        assertEquals(60 * SECOND, run.delay());
+        assertEquals(60 * SECOND, run.delay(at("07:51")));
     }
 
     @Test
@@ -67,7 +67,7 @@ class DutyRunTest {
         run.left(at("07:50"));
         run.arrived(at("08:00"), MINIMUM);
         assertEquals(at("08:00") + MINIMUM, run.departure());
-        assertEquals(MINIMUM, run.delay());
+        assertEquals(MINIMUM, run.delay(at("08:00")));
     }
 
     @Test
@@ -79,7 +79,24 @@ class DutyRunTest {
         }
         assertTrue(run.finished());
         assertEquals(CALLS.size() - 1, run.call());
-        assertEquals(0, run.delay());
+        assertEquals(0, run.delay(at("09:00")));
+    }
+
+    /** Create holds a train at the platform until the signal ahead is green; the set has left only when the train has. */
+    @Test
+    void aSetSentOnButHeldAtThePlatformHasNotLeftYet() {
+        DutyRun run = started();
+        run.sent();
+        assertEquals(Phase.DEPARTING, run.phase());
+        assertEquals("A", run.nextStation());
+        assertFalse(run.dueToLeave(at("07:51")), "a set already sent on is not sent again");
+        assertEquals(0, run.delay(at("07:50")));
+        assertEquals(2 * RealClock.TICKS_PER_MINUTE, run.delay(at("07:52")), "held for two minutes, it is two minutes late");
+        run.left(at("07:52"));
+        assertEquals(at("07:52"), run.departures().get(0));
+        assertEquals(Phase.RUNNING, run.phase());
+        assertEquals(2 * RealClock.TICKS_PER_MINUTE, run.delay(at("07:53")));
+        assertThrows(IllegalStateException.class, run::sent);
     }
 
     @Test

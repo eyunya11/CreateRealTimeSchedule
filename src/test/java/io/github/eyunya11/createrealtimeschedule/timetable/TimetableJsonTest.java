@@ -141,6 +141,20 @@ class TimetableJsonTest {
         assertTrue(TimetableJson.write(timetable).contains("\"number\": \"D101\",\n      \"line\": \"central\",\n      \"deadhead\": true,"));
     }
 
+    /**
+     * The rule that a duty starts and ends at its depot holds for version 1 too: nothing ran a version 1
+     * duty, and the operation cannot run one that does not come back.
+     */
+    @Test
+    void aVersionOneDutyHasToComeBackToItsDepotToo() {
+        String one = "{\"format\": \"createrealtimeschedule.timetable\", \"version\": 1, "
+            + "\"lines\": [{\"id\": \"l\", \"stations\": [\"A\", \"B\"]}], "
+            + "\"trains\": [{\"number\": \"1\", \"line\": \"l\", \"stops\": ["
+            + "{\"station\": \"A\", \"depart\": \"08:00\"}, {\"station\": \"B\", \"arrive\": \"08:10\"}]}], "
+            + "\"duties\": [{\"id\": \"1A\", \"depot\": \"A\", \"trains\": [\"1\"]}]}";
+        assertOnlyProblem(one, "duty \"1A\": the last train, \"1\", ends at \"B\", not at the depot \"A\"");
+    }
+
     /** Version 1 had no deadhead trains; it reads as it did, with none. */
     @Test
     void readsVersionOne() {

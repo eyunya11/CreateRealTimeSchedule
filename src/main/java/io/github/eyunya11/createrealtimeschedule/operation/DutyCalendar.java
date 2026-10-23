@@ -46,6 +46,18 @@ public final class DutyCalendar {
     }
 
     /**
+     * The first start of a duty not dealt with yet, as a clock value: the day after {@code lastDay},
+     * or the last start gone by at {@code now} if that is later (see {@link #due}).
+     */
+    public static long nextStart(int firstDeparture, long lastDay, long now) {
+        return startOf(firstDay(firstDeparture, lastDay, now), firstDeparture);
+    }
+
+    private static long firstDay(int firstDeparture, long lastDay, long now) {
+        return Math.max(lastDay + 1, lastDayStartedBy(now, firstDeparture));
+    }
+
+    /**
      * The starts of a duty that are due by {@code now}: those within {@code lead} ticks from now, and
      * those gone by, which are missed. Days up to {@code lastDay}, the last the duty was dealt with, are
      * not looked at again, and nor are days before the last start gone by: after a long stop of the
@@ -53,8 +65,7 @@ public final class DutyCalendar {
      */
     public static List<Start> due(String duty, int firstDeparture, long lastDay, long now, long lead) {
         List<Start> due = new ArrayList<>();
-        long day = Math.max(lastDay + 1, lastDayStartedBy(now, firstDeparture));
-        for (; startOf(day, firstDeparture) <= now + lead; day++)
+        for (long day = firstDay(firstDeparture, lastDay, now); startOf(day, firstDeparture) <= now + lead; day++)
             due.add(new Start(duty, day, startOf(day, firstDeparture)));
         return due;
     }

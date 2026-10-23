@@ -5,6 +5,7 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Set;
 import java.util.UUID;
 
 import io.github.eyunya11.createrealtimeschedule.Createrealtimeschedule;
@@ -111,6 +112,43 @@ public class TimetableCommandTests {
         helper.assertTrue(again.freeSince().equals(data.freeSince()), "the free sets did not come back");
         helper.assertTrue(again.notes().equals(data.notes()), "the notes did not come back");
         helper.assertTrue(again.lastDay("1A") == data.lastDay("1A"), "the last day of the duty did not come back");
+        helper.succeed();
+    }
+
+    @GameTest(template = EMPTY, batch = "realtimetimetable_reloaded")
+    public static void aReloadKeepsARunWhoseDutyIsTheSameAndGivesUpTheOthers(GameTestHelper helper) {
+        MinecraftServer server = helper.getLevel().getServer();
+        String two = TIMETABLE
+            .replace("\"duties\": [{\"id\": \"1A\", \"depot\": \"Depot\", \"trains\": [\"D1\", \"1\", \"D2\"]}]",
+                "\"duties\": [{\"id\": \"1A\", \"depot\": \"Depot\", \"trains\": [\"D1\", \"1\", \"D2\"]}, "
+                    + "{\"id\": \"2A\", \"depot\": \"Depot\", \"trains\": [\"D3\", \"2\", \"D4\"]}]")
+            .replace("\"trains\": [\n", "\"trains\": [\n"
+                + "    {\"number\": \"D3\", \"line\": \"loop\", \"deadhead\": true, \"stops\": [\n"
+                + "      {\"station\": \"Depot\", \"depart\": \"13:00:05\"}, {\"station\": \"A\", \"arrive\": \"13:00:07\"}]},\n"
+                + "    {\"number\": \"2\", \"line\": \"loop\", \"stops\": [\n"
+                + "      {\"station\": \"A\", \"depart\": \"13:00:20\"}, {\"station\": \"B\", \"arrive\": \"13:00:27\"}]},\n"
+                + "    {\"number\": \"D4\", \"line\": \"loop\", \"deadhead\": true, \"stops\": [\n"
+                + "      {\"station\": \"B\", \"depart\": \"13:00:35\"}, {\"station\": \"Depot\", \"arrive\": \"13:01:00\"}]},\n");
+        Timetable both = TimetableJson.parse(two).timetable();
+        helper.assertTrue(both != null, "the timetable of two duties does not read: " + TimetableJson.parse(two).problems());
+        long now = ClockService.now(server);
+        OperationData data = new OperationData();
+        data.loadTimetable(two, both, now);
+        UUID kept = new UUID(1, 1);
+        UUID dropped = new UUID(2, 2);
+        data.runs().put(kept, DutyRun.start("1A", 3, data.calls("1A"), now));
+        data.runs().put(dropped, DutyRun.start("2A", 3, data.calls("2A"), now));
+
+        data.loadTimetable(TIMETABLE, TimetableJson.parse(TIMETABLE).timetable(), now);
+        helper.assertTrue(data.runs().keySet().equals(Set.of(kept)), "the runs after the reload are " + data.runs().keySet());
+        helper.assertTrue(data.notes().size() == 1 && data.notes().getFirst().what().equals("given up: the new timetable has no duty 2A"),
+            "the run of the duty that is gone is not noted as such: " + data.notes());
+
+        String changed = TIMETABLE.replace("\"depart\": \"12:00:20\"", "\"depart\": \"12:00:21\"");
+        data.loadTimetable(changed, TimetableJson.parse(changed).timetable(), now);
+        helper.assertTrue(data.runs().isEmpty(), "a run of a duty whose times have changed is kept");
+        helper.assertTrue(data.notes().size() == 2 && data.notes().getLast().what().equals("given up: the new timetable changes duty 1A"),
+            "the run of the changed duty is not noted as such: " + data.notes());
         helper.succeed();
     }
 

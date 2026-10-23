@@ -208,9 +208,10 @@ public class OperationTests {
         return String.format("%02d:%02d:%02d", total / 3600, total / 60 % 60, total % 60);
     }
 
+    /** Every call left on the timetable's time: the tick after it, when Create moves the train it was sent (see {@link DutyRunTests}). */
     private static void assertOnTime(DutyRun run) {
         for (int call = 0; call < run.calls().size() - 1; call++)
-            if (run.departures().get(call) != run.plannedDeparture(call))
+            if (run.departures().get(call) != run.plannedDeparture(call) + DutyRunTests.SENT_TO_GONE)
                 throw new GameTestAssertException("duty " + run.duty() + " left "
                     + run.calls().get(call).station() + " at " + TestTimes.show(run.departures().get(call)) + ", not at "
                     + TestTimes.show(run.plannedDeparture(call)));
