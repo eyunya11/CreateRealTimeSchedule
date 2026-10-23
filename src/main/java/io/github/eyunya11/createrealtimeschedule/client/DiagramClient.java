@@ -32,6 +32,8 @@ public final class DiagramClient {
     private static Map<String, LineAxis> axes = Map.of();
     private static List<DutyTimes> duties = List.of();
     private static long serverNow;
+    /** The level's game time when the last snapshot came, from which the server's clock is run on. */
+    private static long receivedAt;
     /** Goes up with every snapshot, so that the screen knows to draw it again. */
     private static int version;
     private static String lastLine = "";
@@ -61,6 +63,8 @@ public final class DiagramClient {
         revision = payload.revision();
         duties = payload.duties();
         serverNow = payload.now();
+        Minecraft minecraft = Minecraft.getInstance();
+        receivedAt = minecraft.level == null ? 0 : minecraft.level.getGameTime();
         received = true;
         version++;
     }
@@ -113,10 +117,14 @@ public final class DiagramClient {
         return duties;
     }
 
-    /** The clock now: the client's own, which runs smoothly between snapshots, or else the server's last. */
+    /**
+     * The clock now: the server's, as the last snapshot said, run on by the game ticks since. Not
+     * {@link ClientClock}, which the server sends only when the clock is set: anything that sets the
+     * offset without saying so, as the game tests do, would leave it wrong.
+     */
     public static long now() {
         Minecraft minecraft = Minecraft.getInstance();
-        return minecraft.level == null ? serverNow : ClientClock.now(minecraft.level).orElse(serverNow);
+        return minecraft.level == null ? serverNow : serverNow + Math.max(0, minecraft.level.getGameTime() - receivedAt);
     }
 
     public static int version() {
