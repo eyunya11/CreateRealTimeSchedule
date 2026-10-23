@@ -110,15 +110,22 @@ final class TrackLine {
     record Signal(int x, boolean eastward) {}
 
     /**
-     * A loop that a train goes round and comes back to where it started: the first row from
-     * {@code radius} to {@code eastX}, a quarter turn south at each end of it, lines south on x = 0
-     * and x = {@code eastX + radius}, and a row back along z = {@code southZ}, joined to them by two
-     * more quarter turns. All four turns have the radius {@code radius}.
+     * A loop that a train goes round and comes back to where it started: the first row, along
+     * z = {@code northZ}, from {@code radius} to {@code eastX}, a quarter turn south at each end of it,
+     * lines south on x = 0 and x = {@code eastX + radius}, and a row back along z = {@code southZ},
+     * joined to them by two more quarter turns. All four turns have the radius {@code radius}. Two
+     * loops side by side, one south of the other, are two track graphs.
      */
-    record Loop(int eastX, int radius, int southZ) {
+    record Loop(int eastX, int radius, int northZ, int southZ) {
         Loop {
-            if (!(radius > 0 && eastX > radius && southZ > TRACK_Z + 2 * radius))
-                throw new IllegalArgumentException("not a loop: east to " + eastX + ", turns of " + radius + ", back along z = " + southZ);
+            if (!(radius > 0 && eastX > radius && northZ >= TRACK_Z && southZ > northZ + 2 * radius))
+                throw new IllegalArgumentException("not a loop: east to " + eastX + ", turns of " + radius + ", along z = " + northZ
+                    + " and back along z = " + southZ);
+        }
+
+        /** A loop whose first row is the line's usual one. */
+        Loop(int eastX, int radius, int southZ) {
+            this(eastX, radius, TRACK_Z, southZ);
         }
     }
 
@@ -180,6 +187,11 @@ final class TrackLine {
         this(helper, loop.eastX(), onTheLoop(stationX, loop), names, OptionalLong.empty(), null, null, List.of(), loop);
     }
 
+    /** A loop that puts the clock at {@code startClock} when it is built, with stations on its first row. */
+    TrackLine(GameTestHelper helper, Loop loop, int[] stationX, String[] names, long startClock) {
+        this(helper, loop.eastX(), onTheLoop(stationX, loop), names, OptionalLong.of(startClock), null, null, List.of(), loop);
+    }
+
     /**
      * A line that turns south, which leaves the clock alone, with two stations: the first on the row
      * before the turn at {@code firstX}, where the train is built, and the second on the line south of
@@ -237,7 +249,10 @@ final class TrackLine {
         for (int x : stationX)
             if (!(x > loop.radius() && x < loop.eastX()))
                 throw new IllegalArgumentException("a station at x = " + x + " is not on the first row of " + loop);
-        return onTheRow(stationX, null);
+        BlockPos[] tracks = new BlockPos[stationX.length];
+        for (int i = 0; i < stationX.length; i++)
+            tracks[i] = new BlockPos(stationX[i], TRACK_Y, loop.northZ());
+        return tracks;
     }
 
     /** The track blocks of the two stations of a line that turns south: one on the row, one on the line south of the turn. */
@@ -317,6 +332,8 @@ final class TrackLine {
     }
 
     private int rowZ(int x) {
+        if (loop != null)
+            return loop.northZ();
         return bend != null && x >= bend.toX() ? TRACK_Z + bend.shift() : TRACK_Z;
     }
 
@@ -405,7 +422,7 @@ final class TrackLine {
     private void buildTheRestOfTheLoop(Loop loop, BlockState alongX, BlockState alongXCurveEnd) {
         int r = loop.radius();
         int eastLine = loop.eastX() + r;
-        int northZ = TRACK_Z + r;
+        int northZ = loop.northZ() + r;
         int southLineZ = loop.southZ() - r;
         BlockState alongZ = AllBlocks.TRACK.getDefaultState().setValue(TrackBlock.SHAPE, TrackShape.ZO);
         for (int z = northZ; z <= southLineZ; z++) {
@@ -598,7 +615,7 @@ final class TrackLine {
             if (turn != null)
                 clear(turn.fromX(), turn.toX(), TRACK_Z, turn.toZ());
             if (loop != null)
-                clear(0, loop.eastX() + loop.radius(), TRACK_Z, loop.southZ());
+                clear(0, loop.eastX() + loop.radius(), loop.northZ(), loop.southZ());
         } catch (RuntimeException e) {
             LOGGER.warn("[{}] could not clean up after the track test", helper.testInfo.getTestName(), e);
         } finally {

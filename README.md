@@ -4,7 +4,7 @@ A [Create](https://modrinth.com/mod/create) addon for Minecraft 1.21.1 (NeoForge
 
 It adds a clock that runs at real-world speed, and a schedule wait condition, Real Time of Day, that follows it. A train that is early waits for its departure time. A train that is late stops for a minimum time only, so it makes up the delay by stopping less.
 
-Status: early (0.1.0-SNAPSHOT). The clock, the sky and the wait condition work and are tested; see [what is and is not checked](#what-is-and-is-not-checked). Command names may still change. What is planned next (travel time estimates, a time-distance diagram, train duties, overtaking waits) is in [docs/proposal.md](docs/proposal.md), which is written in Japanese.
+Status: early (0.1.0-SNAPSHOT). The clock, the sky, the wait condition and [running a timetable](#running-a-timetable) work and are tested; see [what is and is not checked](#what-is-and-is-not-checked). Command names may still change. What is planned next (a time-distance diagram, a timetable editor, overtaking waits) is in [docs/proposal.md](docs/proposal.md), which is written in Japanese.
 
 日本語: [README.ja.md](README.ja.md)
 
@@ -60,6 +60,22 @@ The slot is not simply the next 08:10 on the clock. It follows the slot the trai
 
 The departure time is kept in the train as a clock value, so it survives saving the world and follows `/rtclock set`. While a train waits, its status text, which Create's Display Link can show, reads "Departs at HH:MM:SS".
 
+## Running a timetable
+
+The mod can also run trains to a whole day's timetable by itself, without Create's schedules. The timetable is a JSON file of lines, trains and duties, in the format of [docs/proposal.md](docs/proposal.md) (version 2). A duty is what one train does in a day: it leaves its depot, runs a string of trains one after another, and comes back. Deadhead trains (`"deadhead": true`) take it from the depot to where its first train starts, and back, and are timed like any other train. The timetable editor and the diagram that will write such files are still to come.
+
+| Command | Who | What it does |
+| --- | --- | --- |
+| `/rttimetable load` | operators | Reads `createrealtimeschedule/timetable.json` in the world folder and runs it. If anything is wrong with it, it says what and keeps running the timetable it had |
+| `/rttimetable status` | operators | Shows, for each duty, which train runs it, where it is and how late, or when it next leaves; and what went wrong lately |
+| `/rttimetable unload` | operators | Stops running the timetable |
+
+- `duty_lead_seconds` (60 by default) before a duty first leaves, it is given the train that has waited longest at its depot station. A train counts as waiting there if it stands at a station of the depot's name with no schedule of Create's and no duty.
+- At each departure time the train is sent to the next station the way Create's destination instruction sends one, and Create drives it. A train that arrives early waits for its time; one that arrives late stops for `default_minimum_stop_seconds` and goes, by the same rule as the wait condition.
+- The timetable runs every day. A duty that has no free train by the time it is to leave does not run that day. A duty whose train is removed, derails or is given a schedule of Create's is given up, and the train is left alone.
+- Trains with a schedule of Create's are never touched, so they can share the track with the timetable's trains.
+- Create's display boards and Display Links do not show the train number or destination of a train running a duty: it has no schedule of Create's for them to read.
+
 ## Settings
 
 The settings are per world, in `serverconfig/createrealtimeschedule-server.toml` of the world folder. A client uses the server's values while it is connected.
@@ -69,11 +85,12 @@ The settings are per world, in `serverconfig/createrealtimeschedule-server.toml`
 | `sync_sky` | `true` | Makes the sky follow the clock (see above) |
 | `start_time` | `"06:00"` | The time of day the clock starts at in a world that has no saved clock |
 | `align_on_start` | `false` | Sets the clock to the server's own time of day whenever the server starts |
-| `default_minimum_stop_seconds` | `20` | The minimum stop (0 to 600) a new Real Time of Day condition starts with in the schedule window. Conditions that already exist keep their own value |
+| `default_minimum_stop_seconds` | `20` | The minimum stop (0 to 600) a new Real Time of Day condition starts with in the schedule window. Conditions that already exist keep their own value. Trains running a duty of the timetable stop this long at the least |
+| `duty_lead_seconds` | `60` | How long (0 to 3600 seconds) before a duty of the timetable first leaves it is given a train |
 
 ## What is and is not checked
 
-Checked by the tests (`./gradlew test` and `./gradlew runGameTestServer`): the clock arithmetic, saving and sending the clock, the sky sync, the commands, the condition's rule and how slots follow each other, saving a train that waits on the condition, and a real train running on real track through three stations in a row, arriving early and late.
+Checked by the tests (`./gradlew test` and `./gradlew runGameTestServer`): the clock arithmetic, saving and sending the clock, the sky sync, the commands, the condition's rule and how slots follow each other, saving a train that waits on the condition, and a real train running on real track through three stations in a row, arriving early and late. For running a timetable: loading and saving it, two trains at the depot of a loop line taking the duties in the order they leave and coming back, leaving every call on its time (recorded when the train has really left the platform), a late train making up time, a duty that has no train, and a train that is given a schedule being let go.
 
 Not checked yet:
 
@@ -81,7 +98,8 @@ Not checked yet:
 - how the settings line looks in the schedule window (it only compiles);
 - several players on a dedicated server seeing the same time and sky;
 - that a client without the mod is refused by a server that has it;
-- that a client takes the server's `default_minimum_stop_seconds` when it joins. NeoForge's code sends the server's config files to a joining client, but this has not been tried with a real client.
+- that a client takes the server's `default_minimum_stop_seconds` when it joins. NeoForge's code sends the server's config files to a joining client, but this has not been tried with a real client;
+- running a timetable across a restart of the server (only saving its state and reading it back is tested), on track with signals where several trains share a line, and with a train that derails on the way.
 
 ## Building
 

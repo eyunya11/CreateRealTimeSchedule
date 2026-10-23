@@ -25,7 +25,7 @@ class TimetableJsonTest {
 
     private static final String EXAMPLE = resource("example.json");
 
-    private static final String HEAD = "{\"format\": \"createrealtimeschedule.timetable\", \"version\": 1";
+    private static final String HEAD = "{\"format\": \"createrealtimeschedule.timetable\", \"version\": 2";
 
     private static String resource(String name) {
         try (InputStream in = TimetableJsonTest.class.getResourceAsStream(name)) {
@@ -96,7 +96,8 @@ class TimetableJsonTest {
         Train train = new Train("N1", "loop", "night", List.of(
             Stop.leaving("A", ServiceTime.of("23:50")),
             Stop.calling("B", ServiceTime.of("24:05:30"), ServiceTime.of("24:06")),
-            Stop.arriving("C", ServiceTime.of("24:20"))));
+            Stop.calling("C", ServiceTime.of("24:20"), ServiceTime.of("24:21")),
+            Stop.arriving("A", ServiceTime.of("24:35"))));
         return new Timetable("Night", List.of(loop), List.of(train), List.of(new Duty("N", "A", List.of("N1"))));
     }
 
@@ -119,6 +120,7 @@ class TimetableJsonTest {
         String json = TimetableJson.write(new Timetable("", List.of(line), List.of(train), List.of()));
         assertFalse(json.contains("\"loop\""), json);
         assertFalse(json.contains("\"type\""), json);
+        assertFalse(json.contains("\"deadhead\""), json);
         assertTrue(json.contains("{\"station\": \"A\", \"depart\": \"08:00\"}"), json);
         assertTrue(json.contains("{\"station\": \"B\", \"arrive\": \"08:10\"}"), json);
     }
@@ -132,10 +134,42 @@ class TimetableJsonTest {
     }
 
     @Test
+    void readsAndWritesADeadheadTrain() {
+        Timetable timetable = accepted(EXAMPLE);
+        assertTrue(timetable.train("D101").orElseThrow().deadhead());
+        assertFalse(timetable.train("101").orElseThrow().deadhead());
+        assertTrue(TimetableJson.write(timetable).contains("\"number\": \"D101\",\n      \"line\": \"central\",\n      \"deadhead\": true,"));
+    }
+
+    /**
+     * The rule that a duty starts and ends at its depot holds for version 1 too: nothing ran a version 1
+     * duty, and the operation cannot run one that does not come back.
+     */
+    @Test
+    void aVersionOneDutyHasToComeBackToItsDepotToo() {
+        String one = "{\"format\": \"createrealtimeschedule.timetable\", \"version\": 1, "
+            + "\"lines\": [{\"id\": \"l\", \"stations\": [\"A\", \"B\"]}], "
+            + "\"trains\": [{\"number\": \"1\", \"line\": \"l\", \"stops\": ["
+            + "{\"station\": \"A\", \"depart\": \"08:00\"}, {\"station\": \"B\", \"arrive\": \"08:10\"}]}], "
+            + "\"duties\": [{\"id\": \"1A\", \"depot\": \"A\", \"trains\": [\"1\"]}]}";
+        assertOnlyProblem(one, "duty \"1A\": the last train, \"1\", ends at \"B\", not at the depot \"A\"");
+    }
+
+    /** Version 1 had no deadhead trains; it reads as it did, with none. */
+    @Test
+    void readsVersionOne() {
+        Timetable timetable = accepted("{\"format\": \"createrealtimeschedule.timetable\", \"version\": 1, "
+            + "\"lines\": [{\"id\": \"l\", \"stations\": [\"A\", \"B\"]}], "
+            + "\"trains\": [{\"number\": \"1\", \"line\": \"l\", \"stops\": ["
+            + "{\"station\": \"A\", \"depart\": \"08:00\"}, {\"station\": \"B\", \"arrive\": \"08:10\"}]}]}");
+        assertFalse(timetable.trains().get(0).deadhead());
+    }
+
+    @Test
     void writesAnEmptyTimetable() {
         assertEquals("{\n"
             + "  \"format\": \"createrealtimeschedule.timetable\",\n"
-            + "  \"version\": 1,\n"
+            + "  \"version\": 2,\n"
             + "  \"name\": \"\",\n"
             + "  \"lines\": [],\n"
             + "  \"trains\": [],\n"
@@ -233,22 +267,22 @@ class TimetableJsonTest {
 
     @Test
     void refusesAMemberThatAppearsTwice() {
-        assertProblem(edit("\"version\": 1,", "\"version\": 1,\n  \"version\": 1,"), "version: appears more than once");
+        assertProblem(edit("\"version\": 2,", "\"version\": 2,\n  \"version\": 2,"), "version: appears more than once");
         assertProblem(edit("{\"station\": \"Central 1\", \"depart\": \"08:10\"}",
             "{\"station\": \"Central 1\", \"station\": \"x\", \"depart\": \"08:10\"}"),
-            "trains[0].stops[0].station: appears more than once");
+            "trains[1].stops[0].station: appears more than once");
     }
 
     @Test
     void namesAMemberTheFormatDoesNotHaveWhereverItIs() {
         List<String> problems = problems(edit("\"type\": \"local\",", "\"type\": \"local\", \"colour\": \"red\","));
-        assertTrue(problems.contains("trains[0].colour: is not a member of this format"), problems.toString());
         assertTrue(problems.contains("trains[1].colour: is not a member of this format"), problems.toString());
+        assertTrue(problems.contains("trains[2].colour: is not a member of this format"), problems.toString());
         assertProblem(edit("\"duties\": [", "\"extra\": 1, \"duties\": ["), "extra: is not a member of this format");
         assertProblem(edit("\"id\": \"central\",", "\"id\": \"central\", \"colour\": 1,"), "lines[0].colour: is not a member");
         assertProblem(edit("{\"station\": \"Harbor\", \"arrive\": \"08:41\"}", "{\"station\": \"Harbor\", \"arrive\": \"08:41\", \"track\": 2}"),
-            "trains[0].stops[2].track: is not a member");
-        assertProblem(edit("\"depot\": \"Central 1\",", "\"depot\": \"Central 1\", \"shift\": \"early\","), "duties[0].shift: is not a member");
+            "trains[1].stops[2].track: is not a member");
+        assertProblem(edit("\"depot\": \"Central Depot\",", "\"depot\": \"Central Depot\", \"shift\": \"early\","), "duties[0].shift: is not a member");
     }
 
     @Test
@@ -257,11 +291,12 @@ class TimetableJsonTest {
         assertProblem(edit("\"lines\": [", "\"lines\": {}, \"x\": ["), "lines: must be an array");
         assertProblem(HEAD + ", \"lines\": [5]}", "lines[0]: must be an object");
         assertProblem(edit("\"id\": \"central\",", "\"id\": \"central\", \"loop\": \"yes\","), "lines[0].loop: must be true or false");
-        assertProblem(edit("\"stations\": [\"Central 1\", \"North Gate\", \"Harbor\"]", "\"stations\": \"Central 1\""),
+        assertProblem(edit("\"stations\": [\"Central Depot\", \"Central 1\", \"North Gate\", \"Harbor\"]", "\"stations\": \"Central 1\""),
             "lines[0].stations: must be an array of strings");
-        assertProblem(edit("\"stations\": [\"Central 1\", \"North Gate\", \"Harbor\"]", "\"stations\": [\"Central 1\", 5]"),
+        assertProblem(edit("\"stations\": [\"Central Depot\", \"Central 1\", \"North Gate\", \"Harbor\"]", "\"stations\": [\"Central 1\", 5]"),
             "lines[0].stations[1]: must be a string");
-        assertProblem(edit("\"number\": \"101\"", "\"number\": 101"), "trains[0].number: must be a string");
+        assertProblem(edit("\"number\": \"101\"", "\"number\": 101"), "trains[1].number: must be a string");
+        assertProblem(edit("\"deadhead\": true", "\"deadhead\": \"yes\""), "trains[0].deadhead: must be true or false");
         assertProblem(HEAD + ", \"trains\": [{\"number\": \"1\", \"line\": \"l\", \"stops\": {}}]}", "trains[0].stops: must be an array");
     }
 
@@ -309,21 +344,21 @@ class TimetableJsonTest {
         for (String version : List.of("0", "-1"))
             assertOnlyProblem("{\"format\": \"createrealtimeschedule.timetable\", \"version\": " + version + "}", "version: must be 1 or more");
         // A newer version may have members this one has never heard of; they are not worth listing.
-        assertOnlyProblem("{\"format\": \"createrealtimeschedule.timetable\", \"version\": 2, \"colours\": [1, 2]}",
-            "version: is 2, but this mod reads timetables up to version 1");
+        assertOnlyProblem("{\"format\": \"createrealtimeschedule.timetable\", \"version\": 3, \"colours\": [1, 2]}",
+            "version: is 3, but this mod reads timetables up to version 2");
     }
 
     @Test
     void refusesATimeThatIsNotATimeAndSaysWhere() {
         assertProblem(edit("\"depart\": \"08:26\"", "\"depart\": \"8:26pm\""),
-            "trains[0].stops[1].depart: must be a time such as \"08:10\" or \"08:10:30\", up to 47:59:59");
-        assertProblem(edit("\"arrive\": \"09:21\"", "\"arrive\": \"25:99\""), "trains[1].stops[2].arrive: must be a time");
-        assertProblem(edit("\"depart\": \"08:26\"", "\"depart\": 826"), "trains[0].stops[1].depart: must be a string");
+            "trains[1].stops[1].depart: must be a time such as \"08:10\" or \"08:10:30\", up to 47:59:59");
+        assertProblem(edit("\"arrive\": \"09:21\"", "\"arrive\": \"25:99\""), "trains[2].stops[2].arrive: must be a time");
+        assertProblem(edit("\"depart\": \"08:26\"", "\"depart\": 826"), "trains[1].stops[1].depart: must be a string");
     }
 
     @Test
     void collectsTheProblemsOfTheWholeTextNotJustTheFirst() {
-        String text = edit("\"version\": 1,", "\"version\": 1, \"colour\": 1,")
+        String text = edit("\"version\": 2,", "\"version\": 2, \"colour\": 1,")
             .replace("\"depart\": \"08:26\"", "\"depart\": \"late\"")
             .replace("\"number\": \"102\"", "\"number\": 102");
         List<String> problems = problems(text);
@@ -350,7 +385,7 @@ class TimetableJsonTest {
 
     @Test
     void doesNotLookAtWhatTheTimetableFindsWhileTheShapeIsWrong() {
-        String text = edit("\"depart\": \"08:26\"", "\"depart\": \"08:20\"").replace("\"version\": 1,", "\"version\": 1, \"colour\": 1,");
+        String text = edit("\"depart\": \"08:26\"", "\"depart\": \"08:20\"").replace("\"version\": 2,", "\"version\": 2, \"colour\": 1,");
         assertOnlyProblem(text, "colour: is not a member of this format");
     }
 

@@ -204,11 +204,12 @@ public final class TimetableJson {
         String number = orEmpty(f.string("number", true));
         String line = orEmpty(f.string("line", true));
         String type = orEmpty(f.string("type", false));
+        boolean deadhead = f.bool("deadhead", false);
         List<Timetable.Stop> stops = new ArrayList<>();
         for (Fields stop : f.objects("stops", true))
             stops.add(readStop(stop));
         f.finish();
-        return new Timetable.Train(number, line, type, stops);
+        return new Timetable.Train(number, line, type, stops, deadhead);
     }
 
     private static Timetable.Stop readStop(Fields f) {
@@ -379,7 +380,7 @@ public final class TimetableJson {
     /**
      * The timetable as JSON, laid out the same way every time: two spaces of indent, the members in a
      * fixed order, and a stop or a list of names on one line. Members that have their default value
-     * ({@code loop} false, {@code type} empty, a time a stop does not have) are left out. A timetable that
+     * ({@code loop} and {@code deadhead} false, {@code type} empty, a time a stop does not have) are left out. A timetable that
      * {@link Timetable#problems()} finds fault with is written as it is, and is refused when read back;
      * a time outside the service day is written as {@link ServiceTime#show} has it, which is no time.
      */
@@ -408,6 +409,8 @@ public final class TimetableJson {
             node.put("line", text(train.line()));
             if (!train.type().isEmpty())
                 node.put("type", text(train.type()));
+            if (train.deadhead())
+                node.put("deadhead", raw("true"));
             ListNode stops = new ListNode();
             for (Timetable.Stop stop : train.stops()) {
                 MapNode stopNode = new MapNode();

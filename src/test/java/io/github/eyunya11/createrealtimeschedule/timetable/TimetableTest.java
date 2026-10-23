@@ -295,8 +295,8 @@ class TimetableTest {
 
     @Test
     void aDutyStringsTrainsTogether() {
-        List<Train> trains = List.of(ab("1", "08:00", "08:10"), ba("2", "08:20", "08:30"), ab("3", "08:40", "08:50"));
-        assertNoProblems(running(trains, duty("1A", "1", "2", "3")));
+        List<Train> trains = List.of(ab("1", "08:00", "08:10"), ba("2", "08:20", "08:30"), ab("3", "08:40", "08:50"), ba("4", "09:00", "09:10"));
+        assertNoProblems(running(trains, duty("1A", "1", "2", "3", "4")));
     }
 
     @Test
@@ -307,8 +307,8 @@ class TimetableTest {
 
     @Test
     void dutyIdsAreUnique() {
-        List<Train> trains = List.of(ab("1", "08:00", "08:10"), ab("2", "09:00", "09:10"));
-        assertOnlyProblem(running(trains, duty("1A", "1"), duty("1A", "2")), "another duty has the same id");
+        List<Train> trains = List.of(ab("1", "08:00", "08:10"), ba("2", "08:20", "08:30"), ab("3", "09:00", "09:10"), ba("4", "09:20", "09:30"));
+        assertOnlyProblem(running(trains, duty("1A", "1", "2"), duty("1A", "3", "4")), "another duty has the same id");
     }
 
     @Test
@@ -329,8 +329,8 @@ class TimetableTest {
 
     @Test
     void aTrainBelongsToOneDutyOnly() {
-        List<Train> trains = List.of(ab("1", "08:00", "08:10"));
-        assertOnlyProblem(running(trains, duty("1A", "1"), duty("2B", "1")), "train \"1\" is also in duty \"1A\"");
+        List<Train> trains = List.of(ab("1", "08:00", "08:10"), ba("2", "08:20", "08:30"), ba("3", "09:20", "09:30"));
+        assertOnlyProblem(running(trains, duty("1A", "1", "2"), duty("2B", "1", "3")), "train \"1\" is also in duty \"1A\"");
     }
 
     @Test
@@ -340,8 +340,8 @@ class TimetableTest {
 
     @Test
     void theNextTrainStartsWhereTheOneBeforeEnded() {
-        List<Train> trains = List.of(ab("1", "08:00", "08:10"), ab("2", "08:20", "08:30"));
-        assertOnlyProblem(running(trains, duty("1A", "1", "2")),
+        List<Train> trains = List.of(ab("1", "08:00", "08:10"), ab("2", "08:20", "08:30"), ba("3", "08:40", "08:50"));
+        assertOnlyProblem(running(trains, duty("1A", "1", "2", "3")),
             "train \"2\" starts at \"A\" but the train before it, \"1\", ends at \"B\"");
     }
 
@@ -356,8 +356,8 @@ class TimetableTest {
 
     @Test
     void aMissingTrainDoesNotMakeTheTrainsAroundItLookLikeTheyDoNotMeet() {
-        List<Train> trains = List.of(ab("1", "08:00", "08:10"), ab("2", "08:20", "08:30"));
-        assertOnlyProblem(running(trains, duty("1A", "1", "9", "2")), "there is no train \"9\"");
+        List<Train> trains = List.of(ab("1", "08:00", "08:10"), ab("2", "08:20", "08:30"), ba("3", "08:40", "08:50"));
+        assertOnlyProblem(running(trains, duty("1A", "1", "9", "2", "3")), "there is no train \"9\"");
     }
 
     @Test
@@ -366,6 +366,27 @@ class TimetableTest {
         Line second = new Line("second", "Second", List.of("B", "C"), false);
         Train out = new Train("1", "first", "", List.of(leave("A", "08:00"), arrive("B", "08:10")));
         Train on = new Train("2", "second", "", List.of(leave("B", "08:15"), arrive("C", "08:25")));
-        assertNoProblems(new Timetable("", List.of(first, second), List.of(out, on), List.of(duty("1A", "1", "2"))));
+        Train back = new Train("3", "second", "", List.of(leave("C", "08:35"), arrive("B", "08:45")));
+        Train home = new Train("4", "first", "", List.of(leave("B", "08:50"), arrive("A", "09:00")));
+        assertNoProblems(new Timetable("", List.of(first, second), List.of(out, on, back, home), List.of(duty("1A", "1", "2", "3", "4"))));
+    }
+
+    @Test
+    void aDutyStartsAndEndsAtItsDepot() {
+        assertOnlyProblem(running(List.of(ab("1", "08:00", "08:10")), duty("1A", "1")),
+            "duty \"1A\": the last train, \"1\", ends at \"B\", not at the depot \"A\"");
+        assertOnlyProblem(running(List.of(ba("1", "08:00", "08:10")), duty("1A", "1")),
+            "duty \"1A\": the first train, \"1\", starts at \"B\", not at the depot \"A\"");
+    }
+
+    @Test
+    void aDeadheadTrainTakesADutyFromItsDepotAndBack() {
+        Line line = new Line("l", "Line", List.of("Depot", "A", "B"), false);
+        Train out = new Train("D1", "l", "", List.of(leave("Depot", "07:50"), arrive("A", "07:55")), true);
+        Train there = new Train("1", "l", "", List.of(leave("A", "08:00"), arrive("B", "08:05")));
+        Train again = new Train("2", "l", "", List.of(leave("B", "08:10"), arrive("A", "08:15")));
+        Train back = new Train("D2", "l", "", List.of(leave("A", "08:20"), arrive("Depot", "08:25")), true);
+        assertNoProblems(new Timetable("", List.of(line), List.of(out, there, again, back),
+            List.of(new Duty("1A", "Depot", List.of("D1", "1", "2", "D2")))));
     }
 }

@@ -20,6 +20,7 @@ class ModSettingsTest {
         assertFalse(ModSettings.alignOnStart());
         assertEquals(RealClock.ticksOf(6, 0, 0), ModSettings.startTimeTicks());
         assertEquals(20, ModSettings.defaultMinimumStopSeconds());
+        assertEquals(60, ModSettings.dutyLeadSeconds());
     }
 
     @Test
@@ -27,6 +28,8 @@ class ModSettingsTest {
         assertEquals("06:00", ModSettings.DEFAULT_START_TIME);
         assertEquals(20, ModSettings.DEFAULT_MINIMUM_STOP_SECONDS);
         assertEquals(600, ModSettings.MAX_MINIMUM_STOP_SECONDS);
+        assertEquals(60, ModSettings.DEFAULT_DUTY_LEAD_SECONDS);
+        assertEquals(3600, ModSettings.MAX_DUTY_LEAD_SECONDS);
     }
 
     @Test
