@@ -109,6 +109,8 @@
    * gets none at that end; nor does a way the network has no running time for.
    *
    * @param running the seconds from one station to another, or null if not known
+   * @param dwell   the seconds a train stands at a station: a number for every station, or a
+   *   function of the station's name
    * @returns {{timetable: object, added: string[], missing: Array<[string, string]>}} the new
    *   timetable, the numbers of the deadheads added, and the ways with no running time
    */
@@ -121,6 +123,7 @@
     const start = byNumber.get(duty.trains[0]);
     const end = byNumber.get(duty.trains[duty.trains.length - 1]);
     const down = seconds => (step > 1 ? Math.floor(seconds / step) * step : Math.floor(seconds));
+    const dwellAt = typeof dwell === 'function' ? dwell : () => dwell;
 
     if (start !== undefined && start.stops.length > 0 && first(start).station !== duty.depot) {
       const to = first(start).station;
@@ -128,7 +131,7 @@
       if (seconds === null) {
         missing.push([duty.depot, to]);
       } else {
-        const arrive = down(first(start).depart - dwell);
+        const arrive = down(first(start).depart - dwellAt(to));
         const depart = down(arrive - seconds);
         const number = edit.nextNumber(next, true);
         next = edit.addTrain(next, { number, line: start.line, type: '', deadhead: true,
@@ -143,7 +146,7 @@
       if (seconds === null) {
         missing.push([from, duty.depot]);
       } else {
-        const depart = edit.snapUp(last(end).arrive + dwell, step);
+        const depart = edit.snapUp(last(end).arrive + dwellAt(from), step);
         const arrive = edit.snapUp(depart + seconds, step);
         const number = edit.nextNumber(next, true);
         next = edit.addTrain(next, { number, line: end.line, type: '', deadhead: true,

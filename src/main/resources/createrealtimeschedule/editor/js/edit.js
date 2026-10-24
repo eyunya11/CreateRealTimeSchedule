@@ -12,15 +12,25 @@
 
   const NONE = check.NONE;
 
+  /** A stop as it is, with a minimumStop only if it has one of its own. */
+  function copyStop(stop) {
+    const made = { station: stop.station, arrive: stop.arrive, depart: stop.depart };
+    if (stop.minimumStop !== undefined && stop.minimumStop !== NONE)
+      made.minimumStop = stop.minimumStop;
+    return made;
+  }
+
+  /** A copy to change; a timetable from before version 3 gets its (empty) stations. */
   function copy(timetable) {
     return {
       name: timetable.name,
       lines: timetable.lines.map(line => ({ id: line.id, name: line.name, stations: line.stations.slice(), loop: line.loop })),
+      stations: (timetable.stations || []).map(station => ({ name: station.name, dwell: station.dwell, minimumStop: station.minimumStop })),
       trains: timetable.trains.map(train => ({
         number: train.number,
         line: train.line,
         type: train.type,
-        stops: train.stops.map(stop => ({ station: stop.station, arrive: stop.arrive, depart: stop.depart })),
+        stops: train.stops.map(copyStop),
         deadhead: train.deadhead,
       })),
       duties: timetable.duties.map(duty => ({ id: duty.id, depot: duty.depot, trains: duty.trains.slice() })),
@@ -63,6 +73,31 @@
     next.trains = next.trains.filter(train => train.line !== id);
     for (const duty of next.duties)
       duty.trains = duty.trains.filter(number => !gone.has(number));
+    return next;
+  }
+
+  // ------------------------------------------------------------------ the stations' times
+
+  /** The times a station has of its own, {name, dwell, minimumStop}; none (NONE) for a station not listed. */
+  function stationTimes(timetable, name) {
+    const found = (timetable.stations || []).find(station => station.name === name);
+    return found === undefined ? { name, dwell: NONE, minimumStop: NONE } : found;
+  }
+
+  /** The dwell a train drawn at the station gets: the station's own, or else fallback. */
+  function dwellAt(timetable, name, fallback) {
+    const dwell = stationTimes(timetable, name).dwell;
+    return dwell === NONE ? fallback : dwell;
+  }
+
+  /**
+   * Gives the stations the times in list ({name, dwell, minimumStop}, NONE for none), in the order
+   * the list has them; a station with neither time is left out, as it has none of its own.
+   */
+  function setStations(timetable, list) {
+    const next = copy(timetable);
+    next.stations = list.filter(station => station.dwell !== NONE || station.minimumStop !== NONE)
+      .map(station => ({ name: station.name, dwell: station.dwell, minimumStop: station.minimumStop }));
     return next;
   }
 
@@ -156,13 +191,34 @@
     return next;
   }
 
+  /** Has the train stand seconds at one of its stops: it leaves that long after it arrives. */
+  function setDwell(timetable, number, index, seconds) {
+    const next = copy(timetable);
+    const stop = trainAt(next, number).stops[index];
+    if (stop.arrive === NONE)
+      throw new Error('stop ' + index + ' of train ' + number + ' has no arrival to stand from');
+    stop.depart = stop.arrive + seconds;
+    return next;
+  }
+
+  /** Sets the minimum stop of one stop of a train, in seconds; NONE leaves it to the station's. */
+  function setStopMinimum(timetable, number, index, seconds) {
+    const next = copy(timetable);
+    const stop = trainAt(next, number).stops[index];
+    if (seconds === NONE)
+      delete stop.minimumStop;
+    else
+      stop.minimumStop = seconds;
+    return next;
+  }
+
   function setStopStation(timetable, number, index, station) {
     const next = copy(timetable);
     trainAt(next, number).stops[index].station = station;
     return next;
   }
 
-  /** Takes a stop out of a train; the stops at the ends lose the time an end does not have. */
+  /** Takes a stop out of a train; the stops at the ends lose the time an end does not have, and the last its minimum stop. */
   function removeStop(timetable, number, index) {
     const next = copy(timetable);
     const stops = trainAt(next, number).stops;
@@ -170,6 +226,7 @@
     if (stops.length > 0) {
       stops[0].arrive = NONE;
       stops[stops.length - 1].depart = NONE;
+      delete stops[stops.length - 1].minimumStop;
     }
     return next;
   }
@@ -220,8 +277,8 @@
   }
 
   return {
-    NONE, copy, setName, putLine, removeLine,
-    nextNumber, addTrain, removeTrain, setTrain, moveStop, shiftTrain, setStopTime, setStopStation, removeStop,
+    NONE, copy, setName, putLine, removeLine, stationTimes, dwellAt, setStations,
+    nextNumber, addTrain, removeTrain, setTrain, moveStop, shiftTrain, setStopTime, setDwell, setStopMinimum, setStopStation, removeStop,
     snap, snapUp, drawStop, finishDrawing,
   };
 });

@@ -121,3 +121,30 @@ test('a train is drawn stop by stop, at the running time or later, standing the 
     [['X', NONE, t('08:00')], ['Y', t('08:01:10'), t('08:01:30')], ['Z', t('08:05'), NONE]]);
   assert.equal(edit.finishDrawing([stops[0]]), null);
 });
+
+test('a station\'s own dwell is the one a train drawn there gets, and the setting\'s where it has none', () => {
+  const tt = edit.setStations(timetable(), [
+    { name: 'Y', dwell: 45, minimumStop: NONE }, { name: 'Z', dwell: NONE, minimumStop: 30 }, { name: 'X', dwell: NONE, minimumStop: NONE }]);
+  assert.deepEqual(tt.stations, [{ name: 'Y', dwell: 45, minimumStop: NONE }, { name: 'Z', dwell: NONE, minimumStop: 30 }],
+    'a station with neither time is left out');
+  assert.equal(edit.dwellAt(tt, 'Y', 20), 45);
+  assert.equal(edit.dwellAt(tt, 'Z', 20), 20);
+  assert.equal(edit.dwellAt(timetable(), 'Y', 20), 20, 'a timetable from before version 3 has no stations');
+  assert.deepEqual(edit.stationTimes(tt, 'Z'), { name: 'Z', dwell: NONE, minimumStop: 30 });
+  assert.deepEqual(edit.stationTimes(tt, 'Q'), { name: 'Q', dwell: NONE, minimumStop: NONE });
+  assert.deepEqual(edit.copy(tt).stations, tt.stations, 'a copy keeps the stations\' times');
+});
+
+test('a stop is given its dwell and its own minimum stop, and the last stop loses its minimum stop when it becomes the last', () => {
+  const three = edit.addTrain(timetable(), { number: '3', line: 'a', type: '', deadhead: false, stops: [
+    { station: 'X', arrive: NONE, depart: t('09:00') }, { station: 'Y', arrive: t('09:05'), depart: t('09:06') }, { station: 'Z', arrive: t('09:10'), depart: NONE }] });
+  const dwelt = edit.setDwell(three, '3', 1, 90);
+  assert.deepEqual(dwelt.trains[2].stops[1], { station: 'Y', arrive: t('09:05'), depart: t('09:06:30') });
+  assert.throws(() => edit.setDwell(three, '3', 0, 30), 'the first stop has no arrival to stand from');
+  const held = edit.setStopMinimum(dwelt, '3', 1, 15);
+  assert.deepEqual(held.trains[2].stops[1], { station: 'Y', arrive: t('09:05'), depart: t('09:06:30'), minimumStop: 15 });
+  assert.deepEqual(edit.copy(held).trains[2].stops[1], held.trains[2].stops[1], 'a copy keeps a stop\'s minimum stop');
+  assert.deepEqual(edit.setStopMinimum(held, '3', 1, NONE).trains[2].stops[1], dwelt.trains[2].stops[1]);
+  const shortened = edit.removeStop(held, '3', 2);
+  assert.deepEqual(shortened.trains[2].stops[1], { station: 'Y', arrive: t('09:05'), depart: NONE });
+});

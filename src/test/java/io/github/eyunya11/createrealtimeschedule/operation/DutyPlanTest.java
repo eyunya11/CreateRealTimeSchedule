@@ -41,6 +41,26 @@ class DutyPlanTest {
             DutyPlan.calls(timetable, one));
     }
 
+    /**
+     * A call's minimum stop is the stop's own, or else the station's; where one train hands over to the
+     * next, it is the stop the set leaves from, and at the end, where the set does not leave, there is none.
+     */
+    @Test
+    void aCallHasTheMinimumStopOfTheStopItLeavesFromOrElseOfItsStation() {
+        Timetable shuttle = OperationTimetables.shuttle();
+        List<Timetable.Train> trains = shuttle.trains().stream().map(train -> switch (train.number()) {
+            case "1" -> new Timetable.Train("1", "l", "local", List.of(
+                new Stop("A", Stop.NONE, t("08:00"), 45), new Stop("M", t("08:05"), t("08:06"), 5), Stop.arriving("B", t("08:10"))));
+            default -> train;
+        }).toList();
+        Timetable timetable = new Timetable("", shuttle.lines(),
+            List.of(new Timetable.Station("A", 30, 15), new Timetable.Station("B", Stop.NONE, 10), new Timetable.Station("M", 40, Stop.NONE)),
+            trains, shuttle.duties());
+        assertEquals(List.of(), timetable.problems());
+        assertEquals(List.of(Stop.NONE, 45, 5, 10, 15, Stop.NONE),
+            DutyPlan.calls(timetable, timetable.duties().getFirst()).stream().map(Call::minimumStop).toList());
+    }
+
     @Test
     void aTrainThatIsNotThereIsAnError() {
         Timetable timetable = OperationTimetables.shuttle();

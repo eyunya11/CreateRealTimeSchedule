@@ -67,10 +67,38 @@ test('a timetable not of the right shape is not read', () => {
 });
 
 test('a newer version is not read, and says the editor needs updating', () => {
-  const result = timetable.read('{"format": "createrealtimeschedule.timetable", "version": 3, "whatever": 1}');
+  const result = timetable.read('{"format": "createrealtimeschedule.timetable", "version": 4, "whatever": 1}');
   assert.equal(result.timetable, null);
   assert.deepEqual(result.problems,
-    ['version: is 3, but this editor reads timetables up to version 2; the editor needs updating to read this one']);
+    ['version: is 4, but this editor reads timetables up to version 3; the editor needs updating to read this one']);
+});
+
+test('the stations\' times and the stops\' minimum stops are read and written back as the mod writes them, as version 3', () => {
+  const text = readText(path.join(RESOURCES, 'timetable', 'example-stop-times.json'));
+  const result = timetable.read(text);
+  assert.deepEqual(result.problems, []);
+  assert.deepEqual(result.timetable.stations, [
+    { name: 'A', dwell: 30, minimumStop: 15 }, { name: 'B', dwell: 45, minimumStop: -1 }, { name: 'Depot', dwell: -1, minimumStop: 0 }]);
+  assert.equal(result.timetable.trains[1].stops[1].minimumStop, 10);
+  assert.equal('minimumStop' in result.timetable.trains[1].stops[0], false, 'a stop with none of its own has no minimumStop');
+  assert.equal(timetable.write(result.timetable), text);
+});
+
+test('a timetable with none of what version 3 added is written as version 2, which an older mod still takes', () => {
+  const example = timetable.read(readText(path.join(RESOURCES, 'timetable', 'example.json'))).timetable;
+  assert.equal(timetable.version(example), 2);
+  assert.ok(timetable.write(example).includes('"version": 2,'));
+  const old = { name: '', lines: [], trains: [], duties: [] };
+  assert.equal(timetable.version(old), 2, 'a draft from before version 3 has no stations');
+  assert.ok(!timetable.write(old).includes('stations'));
+});
+
+test('seconds that are not a whole number, or are below 0, are refused where they are', () => {
+  const text = readText(path.join(RESOURCES, 'timetable', 'example-stop-times.json'));
+  assert.deepEqual(timetable.read(text.replace('"dwell": 45', '"dwell": "45"')).problems, ['stations[1].dwell: must be a whole number of seconds']);
+  assert.deepEqual(timetable.read(text.replace('"minimum_stop": 0', '"minimum_stop": -1')).problems, ['stations[2].minimum_stop: must be 0 to 600 seconds']);
+  assert.deepEqual(timetable.read(text.replace('"minimum_stop": 10', '"minimum_stop": 1.5')).problems,
+    ['trains[1].stops[1].minimum_stop: must be a whole number of seconds']);
 });
 
 test('strings are escaped as Gson escapes them', () => {

@@ -9,6 +9,7 @@
   --accent: #2563c9;
   --accent-soft: #dbe6f8;
   --danger: #b42318;
+  --warn: #b25e00;
   --plot: #ffffff;
   --train: #5a6b7d;
   --deadhead: #8a8f96;
@@ -29,6 +30,7 @@
     --accent: #6ea2ff;
     --accent-soft: #24344f;
     --danger: #ff8a80;
+    --warn: #f0a640;
     --plot: #11151a;
     --train: #9aa9b8;
     --deadhead: #858b93;
@@ -235,8 +237,18 @@ input.bad {
   outline: 1px solid var(--danger);
 }
 
+input.warn {
+  border-color: var(--warn);
+  outline: 1px solid var(--warn);
+}
+
+input.seconds {
+  width: 56px;
+}
+
 #draw-train,
-#add-duty {
+#add-duty,
+#add-line {
   margin-bottom: 6px;
 }
 
@@ -365,6 +377,26 @@ footer h2 {
   width: 80px;
 }
 
+/* The row under a stop's times, with how long the train stands there. */
+#inspector tr.stop-times td {
+  padding-top: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+#inspector tr.stop-times label {
+  margin-right: 10px;
+  white-space: nowrap;
+}
+
+#inspector tr.stop-times input.seconds {
+  width: 52px;
+}
+
+#inspector tr:has(+ tr.stop-times) td {
+  border-bottom: none;
+}
+
 #inspector .field {
   display: grid;
   grid-template-columns: 90px 1fr;
@@ -455,4 +487,27 @@ dialog .field {
   align-items: center;
   gap: 8px;
   margin: 6px 0;
+}
+
+dialog .scroll {
+  max-height: 55vh;
+  overflow-y: auto;
+}
+
+dialog table.station-times {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+dialog table.station-times th,
+dialog table.station-times td {
+  padding: 3px 6px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  font-weight: normal;
+}
+
+dialog table.station-times th {
+  color: var(--muted);
+  font-size: 12px;
 }

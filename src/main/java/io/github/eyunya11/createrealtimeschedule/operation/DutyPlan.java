@@ -31,16 +31,17 @@ public final class DutyPlan {
             List<Stop> stops = train.stops();
             Stop first = stops.getFirst();
             if (previous == null) {
-                calls.add(new Call(first.station(), Stop.NONE, first.depart(), "", number));
+                calls.add(new Call(first.station(), Stop.NONE, first.depart(), "", number, timetable.minimumStop(first)));
             } else {
-                // The train before has come in here; the set leaves as this one.
+                // The train before has come in here; the set leaves as this one, so this one's stop says how long it stands at the least.
                 Call end = calls.removeLast();
-                calls.add(new Call(end.station(), end.arrive(), first.depart(), previous.number(), number));
+                calls.add(new Call(end.station(), end.arrive(), first.depart(), previous.number(), number, timetable.minimumStop(first)));
             }
             for (int k = 1; k < stops.size(); k++) {
                 Stop stop = stops.get(k);
                 boolean last = k == stops.size() - 1;
-                calls.add(new Call(stop.station(), stop.arrive(), last ? Stop.NONE : stop.depart(), number, last ? "" : number));
+                calls.add(new Call(stop.station(), stop.arrive(), last ? Stop.NONE : stop.depart(), number, last ? "" : number,
+                    last ? Stop.NONE : timetable.minimumStop(stop)));
             }
             previous = train;
         }

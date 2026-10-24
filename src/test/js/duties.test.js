@@ -99,3 +99,12 @@ test('no deadhead where the duty is at its depot already, nor where the network 
   assert.deepEqual(partly.missing, [['B', 'Depot']]);
   assert.deepEqual(partly.timetable.duties[0].trains, ['D1', '1']);
 });
+
+test('a deadhead stands at the station of the train it meets as long as that station\'s dwell', () => {
+  const tt = duties.appendTrain(duties.appendTrain(timetable(), '1A', '1'), '1A', '2');
+  const dwell = station => (station === 'A' ? 60 : 20);
+  const result = duties.addDepotDeadheads(tt, '1A', () => 47, dwell, 5);
+  // Train 1 leaves A at 08:00 and train 2 ends at A at 08:30: a minute before the one and after the other.
+  assert.equal(result.timetable.trains.find(each => each.number === 'D1').stops[1].arrive, t('07:59'));
+  assert.equal(result.timetable.trains.find(each => each.number === 'D2').stops[0].depart, t('08:31'));
+});

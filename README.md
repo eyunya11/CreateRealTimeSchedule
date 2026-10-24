@@ -62,7 +62,7 @@ The departure time is kept in the train as a clock value, so it survives saving 
 
 ## Running a timetable
 
-The mod can also run trains to a whole day's timetable by itself, without Create's schedules. The timetable is a JSON file of lines, trains and duties, in the format of [docs/proposal.md](docs/proposal.md) (version 2). A duty is what one train does in a day: it leaves its depot, runs a string of trains one after another, and comes back. Deadhead trains (`"deadhead": true`) take it from the depot to where its first train starts, and back, and are timed like any other train. The timetable editor, a web page, makes such files by drawing the trains on a diagram (see below).
+The mod can also run trains to a whole day's timetable by itself, without Create's schedules. The timetable is a JSON file of lines, trains and duties, in the format of [docs/proposal.md](docs/proposal.md) (version 3; a timetable that has nothing of version 3 is written as version 2). A duty is what one train does in a day: it leaves its depot, runs a string of trains one after another, and comes back. Deadhead trains (`"deadhead": true`) take it from the depot to where its first train starts, and back, and are timed like any other train. The timetable editor, a web page, makes such files by drawing the trains on a diagram (see below).
 
 | Command | Who | What it does |
 | --- | --- | --- |
@@ -77,7 +77,7 @@ The mod can also run trains to a whole day's timetable by itself, without Create
 | `/rtdiagram refresh` | operators | Works the distances between the stations out from the track again, after it has changed |
 
 - `duty_lead_seconds` (60 by default) before a duty first leaves, it is given the train that has waited longest at its depot station. A train counts as waiting there if it stands at a station of the depot's name with no schedule of Create's and no duty.
-- At each departure time the train is sent to the next station the way Create's destination instruction sends one, and Create drives it. A train that arrives early waits for its time; one that arrives late stops for `default_minimum_stop_seconds` and goes, by the same rule as the wait condition.
+- At each departure time the train is sent to the next station the way Create's destination instruction sends one, and Create drives it. A train that arrives early waits for its time; one that arrives late stops for the minimum stop and goes, by the same rule as the wait condition. The minimum stop is the stop's own if the timetable gives it one, or else its station's, or else `default_minimum_stop_seconds`.
 - The timetable runs every day. A duty that has no free train by the time it is to leave does not run that day. A duty whose train is removed, derails or is given a schedule of Create's is given up, and the train is left alone.
 - Trains with a schedule of Create's are never touched, so they can share the track with the timetable's trains.
 - Create's display boards and Display Links do not show the train number or destination of a train running a duty: it has no schedule of Create's for them to read.
@@ -90,7 +90,7 @@ The editor is a web page. `/rteditor` copies it out of the mod into `createrealt
 
 1. Run `/rtnetwork copy` in the game and paste it into "Load network": the editor then knows the stations and the running time between them.
 2. Add a line, picking its stations top down (tick "Loop line" for one that goes round).
-3. Press "Draw a train" and click a station's row for each stop. The line follows the running time of the track, and a click further right arrives later; each stop stands for the dwell (20 seconds by default). Double-click or press Enter to finish. Drag a stop's point to move it, hold Ctrl to drag the whole train, and put times right in the table on the right.
+3. Press "Draw a train" and click a station's row for each stop. The line follows the running time of the track, and a click further right arrives later; each stop stands for its station's dwell. "Station stop times" gives each station a dwell, and a minimum stop for late trains; a station without them takes the dwell of the settings (20 seconds by default) and the server's minimum stop. The table of a train changes the dwell and the minimum stop of each of its stops. Double-click or press Enter to finish. Drag a stop's point to move it, hold Ctrl to drag the whole train, and put times right in the table on the right.
 4. Add a duty, click its trains in order on the diagram (or pick from the trains that can come next), and press "Add deadheads to and from the depot".
 5. When the problems list is empty, "Export" and "Copy to clipboard", then run `/rttimetable paste` in the game. A timetable being run can be brought back into the editor with `/rttimetable copy`.
 
@@ -105,7 +105,7 @@ The settings are per world, in `serverconfig/createrealtimeschedule-server.toml`
 | `sync_sky` | `true` | Makes the sky follow the clock (see above) |
 | `start_time` | `"06:00"` | The time of day the clock starts at in a world that has no saved clock |
 | `align_on_start` | `false` | Sets the clock to the server's own time of day whenever the server starts |
-| `default_minimum_stop_seconds` | `20` | The minimum stop (0 to 600) a new Real Time of Day condition starts with in the schedule window. Conditions that already exist keep their own value. Trains running a duty of the timetable stop this long at the least |
+| `default_minimum_stop_seconds` | `20` | The minimum stop (0 to 600) a new Real Time of Day condition starts with in the schedule window. Conditions that already exist keep their own value. Trains running a duty of the timetable stop this long at the least, unless the timetable gives the stop or its station a minimum stop of its own |
 | `duty_lead_seconds` | `60` | How long (0 to 3600 seconds) before a duty of the timetable first leaves it is given a train |
 
 ## What is and is not checked

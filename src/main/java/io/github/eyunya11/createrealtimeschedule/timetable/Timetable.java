@@ -26,29 +26,49 @@ import org.jetbrains.annotations.Nullable;
  * it is how a duty gets from the depot to where its first train starts, and back again, and it is drawn
  * on the diagram and timed like any other.
  *
+ * <p>How long a train stands at a station is the time between its arrival and its departure there.
+ * A <em>station</em> entry gives a station of the lines the times the editor and the operation take
+ * for it when a stop does not say: the dwell a train drawn in the editor gets there, and the minimum
+ * stop a late train still makes there.
+ *
  * <p>The records hold whatever they are given. {@link #problems()} says what is wrong with them.
  *
- * @param name   what to call the timetable; may be empty
- * @param lines  the lines
- * @param trains the trains, on any of the lines
- * @param duties the duties, each made of trains from {@code trains}
+ * @param name     what to call the timetable; may be empty
+ * @param lines    the lines
+ * @param stations the stations that have times of their own, each at most once; the others have none
+ * @param trains   the trains, on any of the lines
+ * @param duties   the duties, each made of trains from {@code trains}
  */
-public record Timetable(String name, List<Line> lines, List<Train> trains, List<Duty> duties) {
+public record Timetable(String name, List<Line> lines, List<Station> stations, List<Train> trains, List<Duty> duties) {
 
     /** The {@code format} member of a timetable in JSON. */
     public static final String FORMAT = "createrealtimeschedule.timetable";
 
-    /** The newest version of the JSON this mod reads and the one it writes. Version 2 added deadhead trains. */
-    public static final int VERSION = 2;
+    /**
+     * The newest version of the JSON this mod reads. Version 2 added deadhead trains, and version 3
+     * the stations' times and the stops' minimum stops. A timetable is written in the oldest version
+     * that holds it ({@link #version()}), so that a mod that reads only version 2 still takes one that
+     * has none of what version 3 added.
+     */
+    public static final int VERSION = 3;
 
     /** The longest line id, train number or duty id. */
     public static final int MAX_ID_LENGTH = 32;
 
+    /** The longest dwell or minimum stop, in seconds: the longest minimum stop the server's config takes. */
+    public static final int MAX_STOP_SECONDS = 600;
+
     public Timetable {
         Objects.requireNonNull(name, "name");
         lines = List.copyOf(lines);
+        stations = List.copyOf(stations);
         trains = List.copyOf(trains);
         duties = List.copyOf(duties);
+    }
+
+    /** A timetable whose stations have no times of their own. */
+    public Timetable(String name, List<Line> lines, List<Train> trains, List<Duty> duties) {
+        this(name, lines, List.of(), trains, duties);
     }
 
     /**
@@ -88,20 +108,47 @@ public record Timetable(String name, List<Line> lines, List<Train> trains, List<
     }
 
     /**
+     * The times a station has of its own, for the stops that do not say.
+     *
+     * @param name        the station, as Create names it; a station of one of the lines
+     * @param dwell       how many seconds a train drawn in the editor stands there, or {@link Stop#NONE}
+     *                    for the editor's own setting. The operation does not read it: a train's stop
+     *                    has its times
+     * @param minimumStop how many seconds a late train stands there at the least, or {@link Stop#NONE}
+     *                    for the server's config
+     */
+    public record Station(String name, int dwell, int minimumStop) {
+        public Station {
+            Objects.requireNonNull(name, "name");
+        }
+    }
+
+    /**
      * One stop of a train. The first stop of a train has only a departure, the last only an arrival,
      * and every stop in between has a departure and may have an arrival (the train waits between them).
      *
-     * @param station the station, as Create names it
-     * @param arrive  when the train arrives, as {@link ServiceTime} seconds, or {@link #NONE}
-     * @param depart  when the train leaves, or {@link #NONE}
+     * @param station     the station, as Create names it
+     * @param arrive      when the train arrives, as {@link ServiceTime} seconds, or {@link #NONE}
+     * @param depart      when the train leaves, or {@link #NONE}
+     * @param minimumStop how many seconds the train stands here at the least when it comes in late, or
+     *                    {@link #NONE} for the station's (see {@link Timetable#minimumStop})
      */
-    public record Stop(String station, int arrive, int depart) {
+    public record Stop(String station, int arrive, int depart, int minimumStop) {
 
         /** The time of a stop that has no such time. */
         public static final int NONE = -1;
 
         public Stop {
             Objects.requireNonNull(station, "station");
+        }
+
+        /** A stop with the station's minimum stop. */
+        public Stop(String station, int arrive, int depart) {
+            this(station, arrive, depart, NONE);
+        }
+
+        public boolean hasMinimumStop() {
+            return minimumStop != NONE;
         }
 
         /** The first stop of a train, or a stop it passes through without a time of arrival. */
@@ -151,22 +198,45 @@ public record Timetable(String name, List<Line> lines, List<Train> trains, List<
         return trains.stream().filter(train -> train.number().equals(number)).findFirst();
     }
 
+    public Optional<Station> station(String name) {
+        return stations.stream().filter(station -> station.name().equals(name)).findFirst();
+    }
+
+    /**
+     * The minimum stop a late train makes at {@code stop}, in seconds: the stop's own, or else the
+     * station's, or {@link Stop#NONE} when neither says, for the server's config.
+     */
+    public int minimumStop(Stop stop) {
+        if (stop.hasMinimumStop())
+            return stop.minimumStop();
+        return station(stop.station()).map(Station::minimumStop).orElse(Stop.NONE);
+    }
+
+    /** The oldest version of the JSON that holds this timetable: 3 if it has anything version 3 added, else 2. */
+    public int version() {
+        boolean three = !stations.isEmpty()
+            || trains.stream().anyMatch(train -> train.stops().stream().anyMatch(Stop::hasMinimumStop));
+        return three ? 3 : 2;
+    }
+
     /**
      * Everything that is wrong with the timetable, in words; empty if it can be used.
      *
      * <p>That is: ids, numbers and names that are empty or have a space at either end; two lines,
      * trains or duties with the same id; a train on a line that is not there, or stopping at a station
      * that is not on its line; stops that are not in order along a line, or the same station twice in a
-     * row; times that are missing where they are needed, out of range, or not in order; and duties that
-     * name a train that is not there, use a train twice, string trains together that do not meet
-     * (the next starts somewhere else, or before the one before has arrived), or do not start and end
-     * at their depot.
+     * row; times that are missing where they are needed, out of range, or not in order; dwells and
+     * minimum stops out of range, a station given times twice or that no line has, and a minimum stop
+     * at a train's last stop, which it does not leave; and duties that name a train that is not there,
+     * use a train twice, string trains together that do not meet (the next starts somewhere else, or
+     * before the one before has arrived), or do not start and end at their depot.
      */
     public List<String> problems() {
         List<String> problems = new ArrayList<>();
         if (!name.isEmpty() && !isText(name))
             problems.add("the name must not start or end with a space or contain a control character");
         Map<String, Line> lineById = checkLines(problems);
+        checkStations(problems);
         Map<String, Train> trainByNumber = checkTrains(lineById, problems);
         checkDuties(trainByNumber, problems);
         return problems;
@@ -196,6 +266,29 @@ public record Timetable(String name, List<Line> lines, List<Train> trains, List<
             }
         }
         return byId;
+    }
+
+    // ------------------------------------------------------------------ stations
+
+    private void checkStations(List<String> problems) {
+        Set<String> onLines = new HashSet<>();
+        for (Line line : lines)
+            onLines.addAll(line.stations());
+        Set<String> seen = new HashSet<>();
+        for (int i = 0; i < stations.size(); i++) {
+            Station station = stations.get(i);
+            String label = label("station", "stations", i, station.name());
+            if (!isText(station.name()))
+                problems.add(label + ": the name " + TEXT_RULE);
+            else if (!seen.add(station.name()))
+                problems.add(label + ": is listed twice");
+            else if (!onLines.contains(station.name()))
+                problems.add(label + ": is not a station of any line");
+            if (station.dwell() != Stop.NONE && !isStopSeconds(station.dwell()))
+                problems.add(label + ": the dwell " + STOP_RULE);
+            if (station.minimumStop() != Stop.NONE && !isStopSeconds(station.minimumStop()))
+                problems.add(label + ": the minimum stop " + STOP_RULE);
+        }
     }
 
     // ------------------------------------------------------------------ trains
@@ -256,6 +349,10 @@ public record Timetable(String name, List<Line> lines, List<Train> trains, List<
                 problems.add(where + ": the arrival time is not between 00:00 and 47:59:59");
             if (stop.hasDepart() && !isTime(stop.depart()))
                 problems.add(where + ": the departure time is not between 00:00 and 47:59:59");
+            if (stop.hasMinimumStop() && k == lastIndex)
+                problems.add(where + ": is the last stop, which the train does not leave, so it has no minimum stop");
+            else if (stop.hasMinimumStop() && !isStopSeconds(stop.minimumStop()))
+                problems.add(where + ": the minimum stop " + STOP_RULE);
 
             // the times in order
             if (stop.hasArrive() && previousDeparture != Stop.NONE && stop.arrive() <= previousDeparture)
@@ -356,6 +453,8 @@ public record Timetable(String name, List<Line> lines, List<Train> trains, List<
 
     private static final String TEXT_RULE = "must not be empty, start or end with a space, or contain a control character";
 
+    private static final String STOP_RULE = "must be 0 to " + MAX_STOP_SECONDS + " seconds";
+
     private static String idRule(String what) {
         return "the " + what + " must be 1 to " + MAX_ID_LENGTH
             + " characters, with no space at either end and no control character";
@@ -371,6 +470,10 @@ public record Timetable(String name, List<Line> lines, List<Train> trains, List<
 
     private static boolean isTime(int seconds) {
         return seconds >= 0 && seconds < ServiceTime.LIMIT;
+    }
+
+    private static boolean isStopSeconds(int seconds) {
+        return seconds >= 0 && seconds <= MAX_STOP_SECONDS;
     }
 
     private static String time(int seconds) {

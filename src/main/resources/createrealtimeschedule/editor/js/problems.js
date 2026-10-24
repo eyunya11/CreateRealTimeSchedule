@@ -3,9 +3,11 @@
  * for word, so that the editor finds the mistakes the mod would refuse the timetable for. Shared test
  * cases hold the two to the same results (src/test/resources/.../timetable/cases).
  *
- * A timetable here is plain data, as timetable.js reads it: {name, lines, trains, duties}, a line
- * {id, name, stations, loop}, a train {number, line, type, stops, deadhead}, a stop
- * {station, arrive, depart} with the times in seconds or NONE, and a duty {id, depot, trains}.
+ * A timetable here is plain data, as timetable.js reads it: {name, lines, stations, trains, duties},
+ * a line {id, name, stations, loop}, a station {name, dwell, minimumStop} with seconds or NONE, a
+ * train {number, line, type, stops, deadhead}, a stop {station, arrive, depart} with the times in
+ * seconds or NONE and a minimumStop if it has one of its own, and a duty {id, depot, trains}. A
+ * timetable without stations (one made before version 3) has none with times of their own.
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports)
@@ -21,7 +23,12 @@
   /** The longest line id, train number or duty id. */
   const MAX_ID_LENGTH = 32;
 
+  /** The longest dwell or minimum stop, in seconds: the longest minimum stop the server's config takes. */
+  const MAX_STOP_SECONDS = 600;
+
   const TEXT_RULE = 'must not be empty, start or end with a space, or contain a control character';
+
+  const STOP_RULE = 'must be 0 to ' + MAX_STOP_SECONDS + ' seconds';
 
   // What Java's Character.isWhitespace takes for a space, which String.strip and isBlank go by; not
   // quite JavaScript's \s, which takes the no-break spaces too.
@@ -45,6 +52,14 @@
 
   function isTime(seconds) {
     return seconds >= 0 && seconds < time.LIMIT;
+  }
+
+  function isStopSeconds(seconds) {
+    return seconds >= 0 && seconds <= MAX_STOP_SECONDS;
+  }
+
+  function hasMinimumStop(stop) {
+    return stop.minimumStop !== undefined && stop.minimumStop !== NONE;
   }
 
   /** line "central", or lines[2] for one that has no usable id to name it by. */
@@ -85,6 +100,28 @@
       }
     });
     return byId;
+  }
+
+  function checkStations(timetable, problems) {
+    const onLines = new Set();
+    for (const line of timetable.lines)
+      for (const station of line.stations)
+        onLines.add(station);
+    const seen = new Set();
+    (timetable.stations || []).forEach((station, i) => {
+      const where = label('station', 'stations', i, station.name);
+      if (!isText(station.name))
+        problems.push(where + ': the name ' + TEXT_RULE);
+      else if (seen.has(station.name))
+        problems.push(where + ': is listed twice');
+      else if (!onLines.has(station.name))
+        problems.push(where + ': is not a station of any line');
+      seen.add(station.name);
+      if (station.dwell !== NONE && !isStopSeconds(station.dwell))
+        problems.push(where + ': the dwell ' + STOP_RULE);
+      if (station.minimumStop !== NONE && !isStopSeconds(station.minimumStop))
+        problems.push(where + ': the minimum stop ' + STOP_RULE);
+    });
   }
 
   function checkTrains(timetable, lineById, problems) {
@@ -144,6 +181,10 @@
         problems.push(where + ': the arrival time is not between 00:00 and 47:59:59');
       if (hasDepart(stop) && !isTime(stop.depart))
         problems.push(where + ': the departure time is not between 00:00 and 47:59:59');
+      if (hasMinimumStop(stop) && k === lastIndex)
+        problems.push(where + ': is the last stop, which the train does not leave, so it has no minimum stop');
+      else if (hasMinimumStop(stop) && !isStopSeconds(stop.minimumStop))
+        problems.push(where + ': the minimum stop ' + STOP_RULE);
 
       // the times in order
       if (hasArrive(stop) && previousDeparture !== NONE && stop.arrive <= previousDeparture)
@@ -248,10 +289,11 @@
     if (timetable.name !== '' && !isText(timetable.name))
       found.push('the name must not start or end with a space or contain a control character');
     const lineById = checkLines(timetable, found);
+    checkStations(timetable, found);
     const trainByNumber = checkTrains(timetable, lineById, found);
     checkDuties(timetable, trainByNumber, found);
     return found;
   }
 
-  return { NONE, MAX_ID_LENGTH, problems, isText, isIdentifier };
+  return { NONE, MAX_ID_LENGTH, MAX_STOP_SECONDS, problems, isText, isIdentifier };
 });

@@ -315,8 +315,10 @@
     $('versions').textContent = t('versions', rt.timetable.VERSION, rt.network.VERSION);
   }
 
-  /** The train, duty or line a problem is about, from the way the mod words it. */
+  /** The train, duty, line or station a problem is about, from the way the mod words it. */
   function problemTarget(problem) {
+    if (/^stations?[ []/.test(problem))
+      return { kind: 'station' };
     const match = /^(line|train|duty) "((?:[^"\\]|\\.)*)"/.exec(problem);
     if (match === null)
       return null;
@@ -336,7 +338,9 @@
           const target = problemTarget(problem);
           if (target === null)
             return;
-          if (target.kind === 'line') {
+          if (target.kind === 'station') {
+            stationTimesDialog();
+          } else if (target.kind === 'line') {
             state.lineId = target.id;
             render();
           } else {
@@ -374,6 +378,11 @@
   /** The seconds a train takes from one station to the other, by the network; null if it does not say. */
   function running(from, to) {
     return state.network === null ? null : rt.network.seconds(state.network, from, to);
+  }
+
+  /** The seconds a train drawn at the station stands there: the station's own, or the setting's. */
+  function dwellAt(station) {
+    return rt.edit.dwellAt(state.timetable, station, state.settings.dwell);
   }
 
   /** Shows all the trains of the line, or the morning if it has none. */
@@ -529,7 +538,7 @@
     if (hover !== null) {
       const last = stops[stops.length - 1];
       stops = rt.edit.drawStop(stops, hover.station, hover.second, last === undefined ? null : running(last.station, hover.station),
-        state.settings.dwell, state.settings.snap);
+        dwellAt(hover.station), state.settings.snap);
     }
     if (stops.length === 0)
       return;
@@ -588,7 +597,7 @@
   function addDrawnStop(point) {
     const last = drawing.stops[drawing.stops.length - 1];
     drawing.stops = rt.edit.drawStop(drawing.stops, point.station, point.second,
-      last === undefined ? null : running(last.station, point.station), state.settings.dwell, state.settings.snap);
+      last === undefined ? null : running(last.station, point.station), dwellAt(point.station), state.settings.snap);
     renderInspector();
     renderPreview();
   }
@@ -763,6 +772,64 @@
     return input;
   }
 
+  /**
+   * A whole number of seconds from text, from 0 to most; NONE for an empty text, and null for one
+   * that is not such a number.
+   */
+  function readSeconds(text, most) {
+    const trimmed = text.trim();
+    if (trimmed === '')
+      return rt.edit.NONE;
+    if (!/^\d{1,6}$/.test(trimmed))
+      return null;
+    const seconds = Number(trimmed);
+    return seconds <= most ? seconds : null;
+  }
+
+  /** A box for seconds: empty for none, or the placeholder. Badly written, it is marked with why, and nothing changes. */
+  function secondsInput(seconds, placeholder, most, why, apply) {
+    return h('input', {
+      type: 'text', inputmode: 'numeric', class: 'seconds', value: seconds === rt.edit.NONE ? '' : String(seconds), placeholder, spellcheck: 'false',
+      onchange: event => {
+        const read = readSeconds(event.target.value, most);
+        if (read === null) {
+          event.target.classList.add('bad');
+          event.target.title = why;
+          return;
+        }
+        apply(read);
+      },
+    });
+  }
+
+  /** The row under a stop's times: how long it stands there, and the least it stands when late. */
+  function stopTimesRow(train, i) {
+    const stop = train.stops[i];
+    const number = train.number;
+    const NONE = rt.edit.NONE;
+    if (stop.depart === NONE)
+      return null; // the last stop: the train does not leave it
+    const station = rt.edit.stationTimes(state.timetable, stop.station);
+    const own = stop.minimumStop === undefined ? NONE : stop.minimumStop;
+    const minimum = own !== NONE ? own : station.minimumStop;
+    const cells = [];
+    if (stop.arrive !== NONE) {
+      const dwell = stop.depart - stop.arrive;
+      const input = secondsInput(dwell, '', Number.MAX_SAFE_INTEGER, t('badDwell'),
+        seconds => (seconds === NONE ? render() : change(rt.edit.setDwell(state.timetable, number, i, seconds))));
+      if (minimum !== NONE && dwell < minimum) {
+        input.classList.add('warn');
+        input.title = t('dwellShorter', minimum);
+      }
+      cells.push(h('label', null, t('dwellShort'), ' ', input, ' ', t('seconds')));
+    }
+    cells.push(h('label', null, t('minimumShort'), ' ',
+      secondsInput(own, station.minimumStop !== NONE ? String(station.minimumStop) : t('serverDefault'), rt.problems.MAX_STOP_SECONDS,
+        t('badSeconds'), seconds => change(rt.edit.setStopMinimum(state.timetable, number, i, seconds))),
+      ' ', t('seconds')));
+    return h('tr', { class: 'stop-times' }, h('td', { colspan: '4' }, cells));
+  }
+
   function trainInspector(panel, train) {
     const number = train.number;
     panel.append(h('h2', null, t('trains') + ' ' + number + (train.deadhead ? ' (' + t('deadhead') + ')' : '')));
@@ -801,7 +868,7 @@
       const select = h('select', {
         onchange: event => change(rt.edit.setStopStation(state.timetable, number, i, event.target.value)),
       }, choices.map(station => h('option', { value: station, selected: station === stop.station }, station)));
-      return h('tr', null,
+      return [h('tr', null,
         h('td', null, select),
         h('td', null, timeInput(stop.arrive, i === 0 && stop.arrive === rt.edit.NONE,
           seconds => change(rt.edit.setStopTime(state.timetable, number, i, 'arrive', seconds)))),
@@ -810,11 +877,12 @@
         h('td', null, h('button', {
           type: 'button', title: t('removeStop'), disabled: train.stops.length <= 2,
           onclick: () => change(rt.edit.removeStop(state.timetable, number, i)),
-        }, '×')));
+        }, '×'))), stopTimesRow(train, i)];
     });
     panel.append(h('table', null,
       h('thead', null, h('tr', null, h('th', null, t('station')), h('th', null, t('arrive')), h('th', null, t('depart')), h('th'))),
-      h('tbody', null, rows)));
+      h('tbody', null, rows.flat())));
+    panel.append(h('p', { class: 'note' }, t('stopTimesHelp')));
     panel.append(h('p', { class: 'note' }, t('dragHelp')));
     panel.append(h('div', { class: 'buttons' }, h('button', {
       type: 'button',
@@ -899,7 +967,7 @@
       h('button', {
         type: 'button', disabled: duty.trains.length === 0,
         onclick: () => {
-          const result = rt.duties.addDepotDeadheads(state.timetable, id, running, state.settings.dwell, state.settings.snap);
+          const result = rt.duties.addDepotDeadheads(state.timetable, id, running, dwellAt, state.settings.snap);
           const notes = result.missing.map(([from, to]) => t('noRunningTime', from, to));
           if (result.added.length > 0)
             notes.unshift(t('deadheadsAdded', result.added.length));
@@ -1182,6 +1250,71 @@
     }, buttons);
   }
 
+  /**
+   * The dialog of the stations' own times: every station of the lines, in the order the lines have
+   * them, and after them any station given times that no line has any more, to clear.
+   */
+  function stationTimesDialog() {
+    const names = [];
+    for (const line of state.timetable.lines)
+      names.push(...line.stations);
+    for (const station of state.timetable.stations || [])
+      names.push(station.name);
+    const rows = [...new Set(names)].map(name => ({ station: rt.edit.stationTimes(state.timetable, name), dwell: null, minimum: null }));
+    let error = null;
+    const NONE = rt.edit.NONE;
+    const most = rt.problems.MAX_STOP_SECONDS;
+
+    dialog(t('stationTimes'), body => {
+      body.append(h('p', { class: 'help' }, t('stationTimesHelp', state.settings.dwell)));
+      if (rows.length === 0) {
+        body.append(h('p', { class: 'note' }, t('noStationsYet')));
+        return;
+      }
+      const box = (seconds, placeholder) => h('input', {
+        type: 'text', inputmode: 'numeric', class: 'seconds', spellcheck: 'false', placeholder,
+        value: seconds === NONE ? '' : String(seconds),
+      });
+      for (const row of rows) {
+        row.dwell = box(row.station.dwell, String(state.settings.dwell));
+        row.minimum = box(row.station.minimumStop, t('serverDefault'));
+      }
+      body.append(h('div', { class: 'scroll' }, h('table', { class: 'station-times' },
+        h('thead', null, h('tr', null, h('th', null, t('station')), h('th', null, t('dwell')), h('th', null, t('minimumStop')))),
+        h('tbody', null, rows.map(row => h('tr', null, h('td', null, row.station.name), h('td', null, row.dwell), h('td', null, row.minimum)))))));
+      error = h('p', { class: 'error' });
+      body.append(error);
+    }, [
+      {
+        label: t('ok'),
+        primary: true,
+        action: () => {
+          if (rows.length === 0)
+            return true;
+          const list = [];
+          let bad = false;
+          for (const row of rows) {
+            const dwell = readSeconds(row.dwell.value, most);
+            const minimum = readSeconds(row.minimum.value, most);
+            row.dwell.classList.toggle('bad', dwell === null);
+            row.minimum.classList.toggle('bad', minimum === null);
+            if (dwell === null || minimum === null)
+              bad = true;
+            else
+              list.push({ name: row.station.name, dwell, minimumStop: minimum });
+          }
+          if (bad) {
+            error.textContent = t('badSeconds');
+            return false;
+          }
+          change(rt.edit.setStations(state.timetable, list));
+          return true;
+        },
+      },
+      { label: t('cancel') },
+    ]);
+  }
+
   // ------------------------------------------------------------------ starting
 
   function bind() {
@@ -1199,6 +1332,7 @@
     $('undo').addEventListener('click', undo);
     $('redo').addEventListener('click', redo);
     $('add-line').addEventListener('click', () => lineDialog(null));
+    $('station-times').addEventListener('click', stationTimesDialog);
     $('draw-train').addEventListener('click', () => (drawing === null ? startDrawing() : cancelDrawing()));
     $('add-duty').addEventListener('click', () => {
       const id = rt.duties.nextDutyId(state.timetable);

@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.fail;
 import org.junit.jupiter.api.Test;
 
 import io.github.eyunya11.createrealtimeschedule.clock.RealClock;
+import io.github.eyunya11.createrealtimeschedule.timetable.Timetable;
 
 class ModSettingsTest {
 
@@ -28,6 +29,7 @@ class ModSettingsTest {
         assertEquals("06:00", ModSettings.DEFAULT_START_TIME);
         assertEquals(20, ModSettings.DEFAULT_MINIMUM_STOP_SECONDS);
         assertEquals(600, ModSettings.MAX_MINIMUM_STOP_SECONDS);
+        assertEquals(ModSettings.MAX_MINIMUM_STOP_SECONDS, Timetable.MAX_STOP_SECONDS, "a timetable's minimum stop goes as far as the config's");
         assertEquals(60, ModSettings.DEFAULT_DUTY_LEAD_SECONDS);
         assertEquals(3600, ModSettings.MAX_DUTY_LEAD_SECONDS);
     }

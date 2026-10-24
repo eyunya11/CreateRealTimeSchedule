@@ -1,5 +1,5 @@
 /*
- * Reads and writes a timetable as JSON (version 2 of the format), as TimetableJson does in the mod.
+ * Reads and writes a timetable as JSON (up to version 3 of the format), as TimetableJson does in the mod.
  *
  * Writing gives the same text as the mod, member for member and line for line. Reading checks the
  * same things in the same order and says them in the same words, with one difference: the browser's
@@ -21,8 +21,12 @@
   /** The format member of a timetable in JSON. */
   const FORMAT = 'createrealtimeschedule.timetable';
 
-  /** The newest version of the JSON the editor reads, and the one it writes. */
-  const VERSION = 2;
+  /**
+   * The newest version of the JSON the editor reads. Version 3 added the stations' times and the
+   * stops' minimum stops; a timetable is written in the oldest version that holds it (version()), so
+   * that a mod that reads only version 2 still takes one that has none of them.
+   */
+  const VERSION = 3;
 
   /** The most problems reported at once; the rest are counted. */
   const MAX_PROBLEMS = 50;
@@ -103,6 +107,23 @@
         return value;
       this.problems.add(this.at(key), 'must be true or false');
       return fallback;
+    }
+
+    /**
+     * A whole number of seconds, or NONE if it is not there. One that is too long is for
+     * problems.js; one below 0 is refused here, as it would read as none.
+     */
+    seconds(key) {
+      const value = this.get(key);
+      if (value === null)
+        return NONE;
+      if (typeof value !== 'number' || !Number.isInteger(value) || Math.abs(value) > 999999999) {
+        this.problems.add(this.at(key), 'must be a whole number of seconds');
+        return NONE;
+      }
+      if (value < 0)
+        this.problems.add(this.at(key), 'must be 0 to ' + check.MAX_STOP_SECONDS + ' seconds');
+      return Math.max(value, NONE);
     }
 
     /** The elements of an array of objects; none if the array is not there. */
@@ -205,12 +226,25 @@
     return { id, name: name === null ? id : name, stations, loop };
   }
 
+  function readStation(f) {
+    const name = orEmpty(f.string('name', true));
+    const dwell = f.seconds('dwell');
+    const minimumStop = f.seconds('minimum_stop');
+    f.finish();
+    return { name, dwell, minimumStop };
+  }
+
+  /** A stop; it has a minimumStop only when it has one of its own. */
   function readStop(f) {
     const station = orEmpty(f.string('station', true));
     const arrive = readTime(f, 'arrive');
     const depart = readTime(f, 'depart');
+    const minimumStop = f.seconds('minimum_stop');
     f.finish();
-    return { station, arrive, depart };
+    const stop = { station, arrive, depart };
+    if (minimumStop !== NONE)
+      stop.minimumStop = minimumStop;
+    return stop;
   }
 
   function readTrain(f) {
@@ -244,10 +278,11 @@
       return null;
     const name = top.string('name', false);
     const lines = top.objects('lines', false).map(readLine);
+    const stations = top.objects('stations', false).map(readStation);
     const trains = top.objects('trains', false).map(readTrain);
     const duties = top.objects('duties', false).map(readDuty);
     top.finish();
-    return { name: name === null ? '' : name, lines, trains, duties };
+    return { name: name === null ? '' : name, lines, stations, trains, duties };
   }
 
   /**
@@ -274,15 +309,38 @@
     return { timetable, problems: problems.all() };
   }
 
+  function stationsOf(timetable) {
+    return timetable.stations === undefined ? [] : timetable.stations;
+  }
+
+  function hasMinimumStop(stop) {
+    return stop.minimumStop !== undefined && stop.minimumStop !== NONE;
+  }
+
+  /** The oldest version of the JSON that holds the timetable: 3 if it has anything version 3 added, else 2. */
+  function version(timetable) {
+    const three = stationsOf(timetable).length > 0 || timetable.trains.some(train => train.stops.some(hasMinimumStop));
+    return three ? 3 : 2;
+  }
+
   /**
-   * The timetable as JSON, laid out as the mod lays it out: members with their default value (loop
-   * and deadhead false, type empty, a time a stop does not have) are left out.
+   * The timetable as JSON, laid out as the mod lays it out, in the oldest version that holds it:
+   * members with their default value (loop and deadhead false, type empty, a time or a minimum stop
+   * a stop does not have, no stations with times of their own) are left out.
    */
   function write(timetable) {
     const lines = timetable.lines.map(line => {
       const entries = [['id', out.text(line.id)], ['name', out.text(line.name)], ['stations', out.texts(line.stations)]];
       if (line.loop)
         entries.push(['loop', out.raw('true')]);
+      return out.map(entries);
+    });
+    const stations = stationsOf(timetable).map(station => {
+      const entries = [['name', out.text(station.name)]];
+      if (station.dwell !== NONE)
+        entries.push(['dwell', out.raw(String(station.dwell))]);
+      if (station.minimumStop !== NONE)
+        entries.push(['minimum_stop', out.raw(String(station.minimumStop))]);
       return out.map(entries);
     });
     const trains = timetable.trains.map(train => {
@@ -297,6 +355,8 @@
           stopEntries.push(['arrive', out.text(time.show(stop.arrive))]);
         if (stop.depart !== NONE)
           stopEntries.push(['depart', out.text(time.show(stop.depart))]);
+        if (hasMinimumStop(stop))
+          stopEntries.push(['minimum_stop', out.raw(String(stop.minimumStop))]);
         return out.map(stopEntries);
       });
       entries.push(['stops', out.list(stops)]);
@@ -304,20 +364,22 @@
     });
     const duties = timetable.duties.map(duty =>
       out.map([['id', out.text(duty.id)], ['depot', out.text(duty.depot)], ['trains', out.texts(duty.trains)]]));
-    return out.render(out.map([
+    const top = [
       ['format', out.text(FORMAT)],
-      ['version', out.raw(String(VERSION))],
+      ['version', out.raw(String(version(timetable)))],
       ['name', out.text(timetable.name)],
       ['lines', out.list(lines)],
-      ['trains', out.list(trains)],
-      ['duties', out.list(duties)],
-    ]));
+    ];
+    if (stations.length > 0)
+      top.push(['stations', out.list(stations)]);
+    top.push(['trains', out.list(trains)], ['duties', out.list(duties)]);
+    return out.render(out.map(top));
   }
 
   /** A timetable with nothing in it. */
   function empty() {
-    return { name: '', lines: [], trains: [], duties: [] };
+    return { name: '', lines: [], stations: [], trains: [], duties: [] };
   }
 
-  return { FORMAT, VERSION, NONE, read, write, empty };
+  return { FORMAT, VERSION, NONE, read, write, empty, version };
 });

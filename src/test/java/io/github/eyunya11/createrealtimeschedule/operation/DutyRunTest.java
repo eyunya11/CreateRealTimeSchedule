@@ -71,6 +71,21 @@ class DutyRunTest {
     }
 
     @Test
+    void aLateSetStopsForTheMinimumTheTimetableGivesTheCall() {
+        List<Call> calls = List.of(new Call("Depot", -1, OperationTimetables.t("07:50"), "", "D1"),
+            new Call("A", OperationTimetables.t("07:55"), OperationTimetables.t("08:00"), "D1", "1", 45),
+            new Call("B", OperationTimetables.t("08:10"), OperationTimetables.t("08:15"), "1", "2", 0),
+            new Call("Depot", OperationTimetables.t("08:20"), -1, "2", ""));
+        DutyRun run = DutyRun.start("1A", DAY, calls, at("07:49"));
+        run.left(at("07:50"));
+        run.arrived(at("08:00"), MINIMUM);
+        assertEquals(at("08:00") + 45 * SECOND, run.departure(), "the call's own minimum, not the server's");
+        run.left(run.departure());
+        run.arrived(at("08:16"), MINIMUM);
+        assertEquals(at("08:16"), run.departure(), "a minimum stop of nothing lets the set go at once");
+    }
+
+    @Test
     void theDutyEndsAtTheLastCall() {
         DutyRun run = started();
         for (int call = 1; call < CALLS.size(); call++) {

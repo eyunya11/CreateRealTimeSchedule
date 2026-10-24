@@ -165,6 +165,62 @@ class TimetableJsonTest {
         assertFalse(timetable.trains().get(0).deadhead());
     }
 
+    /** The stations' times and a stop's minimum stop, which version 3 added; a timetable with them is written as version 3. */
+    private static Timetable withStopTimes() {
+        Timetable night = night();
+        Train train = night.trains().getFirst();
+        List<Stop> stops = new ArrayList<>(train.stops());
+        Stop b = stops.get(1);
+        stops.set(1, new Stop(b.station(), b.arrive(), b.depart(), 0));
+        return new Timetable(night.name(), night.lines(),
+            List.of(new Timetable.Station("B", 30, Stop.NONE), new Timetable.Station("C", Stop.NONE, 45), new Timetable.Station("A", 20, 10)),
+            List.of(new Train(train.number(), train.line(), train.type(), stops, train.deadhead())), night.duties());
+    }
+
+    @Test
+    void readsAndWritesTheTimesOfStationsAndStopsAsVersionThree() {
+        Timetable timetable = withStopTimes();
+        String json = TimetableJson.write(timetable);
+        assertTrue(json.contains("\"version\": 3,"), json);
+        assertTrue(json.contains("  \"stations\": [\n"
+            + "    {\"name\": \"B\", \"dwell\": 30},\n"
+            + "    {\"name\": \"C\", \"minimum_stop\": 45},\n"
+            + "    {\"name\": \"A\", \"dwell\": 20, \"minimum_stop\": 10}\n"
+            + "  ],\n  \"trains\""), json);
+        assertTrue(json.contains("{\"station\": \"B\", \"arrive\": \"24:05:30\", \"depart\": \"24:06\", \"minimum_stop\": 0}"), json);
+        assertEquals(timetable, accepted(json));
+        assertEquals(json, TimetableJson.write(accepted(json)));
+    }
+
+    /** The example the editor's tests read too (src/test/js), which both have to write back as it is. */
+    @Test
+    void writesTheStopTimesExampleBackIdenticallyToTheCharacter() {
+        String text = resource("example-stop-times.json");
+        Timetable timetable = accepted(text);
+        assertEquals(List.of(new Timetable.Station("A", 30, 15), new Timetable.Station("B", 45, Stop.NONE), new Timetable.Station("Depot", Stop.NONE, 0)),
+            timetable.stations());
+        assertEquals(10, timetable.train("1").orElseThrow().stops().get(1).minimumStop());
+        assertEquals(text, TimetableJson.write(timetable));
+    }
+
+    /** One with none of what version 3 added is version 2, which a mod that reads only version 2 still takes. */
+    @Test
+    void aTimetableWithoutStopTimesIsWrittenAsVersionTwo() {
+        assertTrue(TimetableJson.write(night()).contains("\"version\": 2,"));
+        assertEquals(2, night().version());
+        assertEquals(3, withStopTimes().version());
+    }
+
+    @Test
+    void refusesSecondsThatAreNotAWholeNumber() {
+        String json = TimetableJson.write(withStopTimes());
+        assertOnlyProblem(json.replace("\"dwell\": 30", "\"dwell\": \"30\""), "stations[0].dwell: must be a whole number of seconds");
+        assertOnlyProblem(json.replace("\"minimum_stop\": 45", "\"minimum_stop\": 4.5"), "stations[1].minimum_stop: must be a whole number of seconds");
+        assertOnlyProblem(json.replace("\"minimum_stop\": 45", "\"minimum_stop\": -1"), "stations[1].minimum_stop: must be 0 to 600 seconds");
+        assertOnlyProblem(json.replace("\"minimum_stop\": 0", "\"minimum_stop\": null, \"wait\": 1"), "trains[0].stops[1].wait: is not a member of this format");
+        assertOnlyProblem(json.replace("{\"name\": \"B\", \"dwell\": 30}", "{\"dwell\": 30}"), "stations[0].name: is missing");
+    }
+
     @Test
     void writesAnEmptyTimetable() {
         assertEquals("{\n"
@@ -344,8 +400,8 @@ class TimetableJsonTest {
         for (String version : List.of("0", "-1"))
             assertOnlyProblem("{\"format\": \"createrealtimeschedule.timetable\", \"version\": " + version + "}", "version: must be 1 or more");
         // A newer version may have members this one has never heard of; they are not worth listing.
-        assertOnlyProblem("{\"format\": \"createrealtimeschedule.timetable\", \"version\": 3, \"colours\": [1, 2]}",
-            "version: is 3, but this mod reads timetables up to version 2");
+        assertOnlyProblem("{\"format\": \"createrealtimeschedule.timetable\", \"version\": 4, \"colours\": [1, 2]}",
+            "version: is 4, but this mod reads timetables up to version 3");
     }
 
     @Test
