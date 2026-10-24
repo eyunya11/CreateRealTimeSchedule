@@ -177,14 +177,23 @@ test('a stop stretched stands longer or shorter, and the stops after it move by 
   assert.deepEqual(three.trains[2].stops[1], { station: 'Y', arrive: t('09:05'), depart: t('09:06') }, 'the timetable given is left as it was');
 });
 
-test('a stop pressed and drawn along its row stands as long as the line drawn', () => {
-  let stops = edit.drawStopHeld([], 'X', t('08:00'), t('08:02'), null, 20, 5);
-  assert.deepEqual(stops, [{ station: 'X', arrive: NONE, depart: t('08:00') }], 'the first stop is only left, where it is pressed');
-  // 60 seconds of running time from X: arrived at 08:01, and drawn on to 08:01:47, to the step.
-  stops = edit.drawStopHeld(stops, 'Y', t('08:00:30'), t('08:01:47'), 60, 20, 5);
-  assert.deepEqual(stops[1], { station: 'Y', arrive: t('08:01'), depart: t('08:01:45') });
-  // Let go before the train arrives: it leaves as it arrives.
-  assert.deepEqual(edit.drawStopHeld(stops, 'Z', t('08:03'), t('08:02'), 30, 20, 5)[2], { station: 'Z', arrive: t('08:03'), depart: t('08:03') });
-  // Pressed again at Y, where the train is: it stands there longer, as far as the line is drawn.
-  assert.deepEqual(edit.drawStopHeld(stops, 'Y', t('08:01:10'), t('08:02:30'), 60, 20, 5)[1], { station: 'Y', arrive: t('08:01'), depart: t('08:02:30') });
+test('a click on the row of the stop just arrived at says when the train leaves it, and a click elsewhere goes on', () => {
+  let drawn = edit.drawClick([], false, 'X', t('08:00'), null, 20, 5);
+  assert.deepEqual(drawn, { stops: [{ station: 'X', arrive: NONE, depart: t('08:00') }], leaving: false }, 'the first stop is only left');
+  // 60 seconds of running time from X: arrived at 08:01, and to be left by the next click.
+  drawn = edit.drawClick(drawn.stops, drawn.leaving, 'Y', t('08:00:30'), 60, 20, 5);
+  assert.equal(drawn.leaving, true);
+  assert.deepEqual(drawn.stops[1], { station: 'Y', arrive: t('08:01'), depart: t('08:01:20') }, 'until then it stands the dwell');
+  // Clicked on Y's row at 08:01:47: the train leaves Y then, to the step.
+  const left = edit.drawClick(drawn.stops, drawn.leaving, 'Y', t('08:01:47'), 0, 20, 5);
+  assert.deepEqual(left, { stops: [drawn.stops[0], { station: 'Y', arrive: t('08:01'), depart: t('08:01:45') }], leaving: false });
+  // Clicked before the train arrives: it leaves as it arrives.
+  assert.equal(edit.drawClick(drawn.stops, drawn.leaving, 'Y', t('08:00:10'), 0, 20, 5).stops[1].depart, t('08:01'));
+  // Clicked on another row instead: the train leaves Y after the dwell and goes on to Z.
+  const on = edit.drawClick(drawn.stops, drawn.leaving, 'Z', t('08:02'), 30, 20, 5);
+  assert.deepEqual(on.stops.map(stop => [stop.station, stop.arrive, stop.depart]),
+    [['X', NONE, t('08:00')], ['Y', t('08:01'), t('08:01:20')], ['Z', t('08:02'), t('08:02:20')]]);
+  assert.equal(on.leaving, true);
+  // Once Y is left, a click on its row again changes nothing.
+  assert.deepEqual(edit.drawClick(left.stops, left.leaving, 'Y', t('08:03'), 0, 20, 5), { stops: left.stops, leaving: false });
 });

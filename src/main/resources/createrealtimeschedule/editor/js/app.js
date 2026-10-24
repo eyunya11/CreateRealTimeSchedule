@@ -352,15 +352,14 @@
 
   // ------------------------------------------------------------------ the diagram
 
-  /** A train being drawn: the stops so far, and the type and mark it will have. Null when none is. */
+  /**
+   * A train being drawn: the stops so far, the type and mark it will have, the dwell it is given,
+   * and whether its last stop is still to be left, which is so from a click that arrives at a stop
+   * until a second click on the same row says when the train leaves. Null when none is.
+   */
   let drawing = null;
   /** Where the pointer is while a train is drawn: the station row nearest it, and the time. */
   let hover = null;
-  /**
-   * A stop being drawn by holding the button down while a train is drawn: the station row and the
-   * time it was pressed at, and the time the pointer is at now, where the train is to leave.
-   */
-  let held = null;
   /** A stop (index) or a whole train (index -1) being dragged, from the timetable as it was. */
   let dragging = null;
   /** The timetable as the drag going on would leave it; null when nothing is dragged. */
@@ -546,14 +545,8 @@
     group.replaceChildren();
     if (drawing === null)
       return;
-    let stops = drawing.stops;
-    if (held !== null) {
-      stops = drawHeld(held);
-    } else if (hover !== null) {
-      const last = stops[stops.length - 1];
-      stops = rt.edit.drawStop(stops, hover.station, hover.second, last === undefined ? null : running(last.station, hover.station),
-        drawingDwellAt(hover.station), state.settings.snap);
-    }
+    const stops = hover === null ? drawing.stops : drawnWith(hover);
+    const following = hover !== null && leavesAt(hover);
     if (stops.length === 0)
       return;
     const train = { number: '', line: drawn.axis.line, type: drawing.type, deadhead: drawing.deadhead,
@@ -565,19 +558,36 @@
         if (!Number.isNaN(second) && !Number.isNaN(position))
           group.append(s('circle', { class: 'point', cx: view.x(second), cy: view.y(position, drawn.length), r: 3, fill: 'var(--accent)' }));
     const end = stops[stops.length - 1];
+    const endY = view.y(drawn.axis.position(Math.max(0, drawn.axis.row(end.station))), drawn.length);
+    // The diagram has the last stop only arrived at; while it is still to be left, it stands until its departure.
+    if (stops.length >= 2 && end.arrive !== rt.edit.NONE && end.depart !== rt.edit.NONE) {
+      group.append(s('path', { class: 'preview', d: 'M' + view.x(end.arrive).toFixed(1) + ',' + endY.toFixed(1) + 'L' + view.x(end.depart).toFixed(1) + ',' + endY.toFixed(1) }));
+      group.append(s('circle', { class: 'point', cx: view.x(end.depart), cy: endY, r: 3, fill: 'var(--accent)' }));
+    }
     const at = end.arrive !== rt.edit.NONE ? end.arrive : end.depart;
-    const label = s('text', { class: 'label', x: view.x(at) + 6, y: view.y(drawn.axis.position(Math.max(0, drawn.axis.row(end.station))), drawn.length) + 14 });
-    label.textContent = held !== null && end.arrive !== rt.edit.NONE
+    const label = s('text', { class: 'label', x: view.x(at) + 6, y: endY + 14 });
+    label.textContent = following
       ? timeText(end.arrive) + ' - ' + timeText(end.depart) + ' (' + (end.depart - end.arrive) + ' ' + t('seconds') + ')'
       : timeText(at);
     group.append(label);
   }
 
-  /** The stops of the train being drawn, with the stop held down. */
-  function drawHeld(press) {
+  /** Whether a click at point says when the train being drawn leaves its last stop: one on the row of that stop, while it is still to be left. */
+  function leavesAt(point) {
     const last = drawing.stops[drawing.stops.length - 1];
-    return rt.edit.drawStopHeld(drawing.stops, press.station, press.pressed, press.released,
-      last === undefined ? null : running(last.station, press.station), drawingDwellAt(press.station), state.settings.snap);
+    return drawing.leaving && last !== undefined && last.station === point.station;
+  }
+
+  /** What a click at point does to the train being drawn (see edit.drawClick). */
+  function clickAt(point) {
+    const last = drawing.stops[drawing.stops.length - 1];
+    return rt.edit.drawClick(drawing.stops, drawing.leaving, point.station, point.second,
+      last === undefined ? null : running(last.station, point.station), drawingDwellAt(point.station), state.settings.snap);
+  }
+
+  /** The stops of the train being drawn as a click at point would leave them. */
+  function drawnWith(point) {
+    return clickAt(point).stops;
   }
 
   /** The station row nearest the pointer, and the time under it. */
@@ -612,16 +622,16 @@
     const line = currentLine();
     if (line === null || line.stations.length < 2)
       return;
-    drawing = { stops: [], type: drawing !== null ? drawing.type : '', deadhead: false, dwell: drawing !== null ? drawing.dwell : rt.edit.NONE };
+    drawing = { stops: [], type: drawing !== null ? drawing.type : '', deadhead: false, dwell: drawing !== null ? drawing.dwell : rt.edit.NONE, leaving: false };
     hover = null;
     state.selection = null;
     render();
   }
 
   function addDrawnStop(point) {
-    const last = drawing.stops[drawing.stops.length - 1];
-    drawing.stops = rt.edit.drawStop(drawing.stops, point.station, point.second,
-      last === undefined ? null : running(last.station, point.station), drawingDwellAt(point.station), state.settings.snap);
+    const done = clickAt(point);
+    drawing.stops = done.stops;
+    drawing.leaving = done.leaving;
     renderInspector();
     renderPreview();
   }
@@ -664,10 +674,7 @@
     svg.addEventListener('pointerdown', event => {
       if (view === null || event.button !== 0 || dragging !== null)
         return;
-      // While a train is drawn, a press on a row draws a stop there, and dragging along it draws how
-      // long the train stands; with Shift held, a drag moves the diagram, as it does otherwise.
-      const draws = drawing !== null && drawn !== null && !event.shiftKey;
-      gesture = { x: event.clientX, startX: event.clientX, id: event.pointerId, moved: false, draws: draws ? pointAt(event) : null };
+      gesture = { x: event.clientX, startX: event.clientX, id: event.pointerId, moved: false };
       capture(event.pointerId);
     });
     svg.addEventListener('pointermove', event => {
@@ -689,12 +696,6 @@
         if (!gesture.moved && Math.abs(event.clientX - gesture.startX) < 4)
           return;
         gesture.moved = true;
-        if (gesture.draws !== null) {
-          const box = svg.getBoundingClientRect();
-          held = { station: gesture.draws.station, pressed: gesture.draws.second, released: view.second(event.clientX - box.left) };
-          renderPreview();
-          return;
-        }
         view.pan(event.clientX - gesture.x);
         gesture.x = event.clientX;
         renderDiagram();
@@ -719,17 +720,7 @@
       if (gesture === null || event.pointerId !== gesture.id)
         return;
       const clicked = !gesture.moved && event.type === 'pointerup';
-      const press = held;
       gesture = null;
-      held = null;
-      if (press !== null) {
-        if (event.type === 'pointerup' && drawing !== null) {
-          drawing.stops = drawHeld(press);
-          renderInspector();
-        }
-        renderPreview();
-        return;
-      }
       if (!clicked)
         return;
       if (drawing !== null && drawn !== null)
@@ -804,8 +795,12 @@
         h('td', null, timeText(stop.arrive)),
         h('td', null, timeText(stop.depart)),
         h('td', null, stop.arrive === rt.edit.NONE ? null : secondsInput(stop.depart - stop.arrive, '', Number.MAX_SAFE_INTEGER, t('badDwell'), seconds => {
-          if (seconds !== rt.edit.NONE)
+          if (seconds !== rt.edit.NONE) {
             drawing.stops = rt.edit.setDrawnDwell(drawing.stops, i, seconds);
+            // A dwell typed for the last stop says when the train leaves it, as a click on its row would.
+            if (i === drawing.stops.length - 1)
+              drawing.leaving = false;
+          }
           renderInspector();
           renderPreview();
         }))));

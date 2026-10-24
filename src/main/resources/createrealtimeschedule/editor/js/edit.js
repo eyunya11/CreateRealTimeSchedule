@@ -304,19 +304,20 @@
   }
 
   /**
-   * The stops of a train being drawn, with a stop at station pressed at second pressed and let go at
-   * second released, further along the same row: the stop is arrived at as drawStop has it for a
-   * click at pressed, and left at released (to the nearest step), or as it is arrived at if released
-   * is before that. Pressed at the station the train is at, it changes how long the train stands
-   * there. At the first stop, which is only left, it is a click.
+   * A click at station, at second clicked, on a train being drawn whose last stop is still to be left
+   * (leaving) or not. On the row of that stop, it says when the train leaves: there, to the nearest
+   * step, but not before it arrives. Anywhere else it is drawStop's click, and the stop it adds is to
+   * be left by the next click, unless it is the first, which is only left. Until then the stop stands
+   * the dwell, which is how the train leaves if the next click is on another row.
+   *
+   * @returns {{stops: object[], leaving: boolean}} the stops, and whether the last is still to be left
    */
-  function drawStopHeld(stops, station, pressed, released, running, dwell, step) {
-    const next = drawStop(stops, station, pressed, running, dwell, step);
-    const index = next.length - 1;
-    const stop = next[index];
-    if (stop.station !== station || stop.arrive === NONE)
-      return next;
-    return setDrawnDwell(next, index, Math.max(0, snap(released, step) - stop.arrive));
+  function drawClick(stops, leaving, station, clicked, running, dwell, step) {
+    const last = stops[stops.length - 1];
+    if (leaving && last !== undefined && last.station === station)
+      return { stops: setDrawnDwell(stops, stops.length - 1, Math.max(0, snap(clicked, step) - last.arrive)), leaving: false };
+    const next = drawStop(stops, station, clicked, running, dwell, step);
+    return { stops: next, leaving: next !== stops && next.length > 1 };
   }
 
   /** The stops of a train drawn to the end: the last stop is only arrived at. Null if there are fewer than two. */
@@ -331,6 +332,6 @@
   return {
     NONE, copy, setName, putLine, removeLine, stationTimes, dwellAt, setStations,
     nextNumber, addTrain, removeTrain, setTrain, moveStop, stretchStop, shiftTrain, setStopTime, setDwell, setStopMinimum, setStopStation, removeStop,
-    snap, snapUp, drawStop, drawStopHeld, setDrawnDwell, finishDrawing,
+    snap, snapUp, drawStop, drawClick, setDrawnDwell, finishDrawing,
   };
 });
