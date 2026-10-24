@@ -148,3 +148,18 @@ test('a stop is given its dwell and its own minimum stop, and the last stop lose
   const shortened = edit.removeStop(held, '3', 2);
   assert.deepEqual(shortened.trains[2].stops[1], { station: 'Y', arrive: t('09:05'), depart: NONE });
 });
+
+test('a stop drawn already is given its dwell, and the stops after it move with it', () => {
+  let stops = edit.drawStop([], 'X', t('08:00'), null, 20, 5);
+  stops = edit.drawStop(stops, 'Y', t('08:01'), 60, 20, 5);
+  stops = edit.drawStop(stops, 'Z', t('08:03'), 90, 20, 5);
+  // Y stood 20 seconds and Z was arrived at at 08:03, when it was clicked; Y now stands 25 seconds more.
+  const longer = edit.setDrawnDwell(stops, 1, 45);
+  assert.deepEqual(longer, [
+    { station: 'X', arrive: NONE, depart: t('08:00') },
+    { station: 'Y', arrive: t('08:01'), depart: t('08:01:45') },
+    { station: 'Z', arrive: t('08:03:25'), depart: t('08:03:45') }]);
+  assert.equal(stops[1].depart, t('08:01:20'), 'the stops given are left as they were');
+  assert.deepEqual(edit.setDrawnDwell(longer, 2, 0)[2], { station: 'Z', arrive: t('08:03:25'), depart: t('08:03:25') });
+  assert.throws(() => edit.setDrawnDwell(stops, 0, 30), 'the first stop is not stood at');
+});

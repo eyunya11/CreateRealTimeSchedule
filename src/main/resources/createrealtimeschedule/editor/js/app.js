@@ -385,6 +385,11 @@
     return rt.edit.dwellAt(state.timetable, station, state.settings.dwell);
   }
 
+  /** The seconds the train being drawn stands at the station: its own dwell, if it is given one, or else the station's. */
+  function drawingDwellAt(station) {
+    return drawing.dwell !== rt.edit.NONE ? drawing.dwell : dwellAt(station);
+  }
+
   /** Shows all the trains of the line, or the morning if it has none. */
   function fitView(line) {
     const trains = state.timetable.trains.filter(train => train.line === line.id && train.stops.length > 0);
@@ -538,7 +543,7 @@
     if (hover !== null) {
       const last = stops[stops.length - 1];
       stops = rt.edit.drawStop(stops, hover.station, hover.second, last === undefined ? null : running(last.station, hover.station),
-        dwellAt(hover.station), state.settings.snap);
+        drawingDwellAt(hover.station), state.settings.snap);
     }
     if (stops.length === 0)
       return;
@@ -588,7 +593,7 @@
     const line = currentLine();
     if (line === null || line.stations.length < 2)
       return;
-    drawing = { stops: [], type: drawing !== null ? drawing.type : '', deadhead: false };
+    drawing = { stops: [], type: drawing !== null ? drawing.type : '', deadhead: false, dwell: drawing !== null ? drawing.dwell : rt.edit.NONE };
     hover = null;
     state.selection = null;
     render();
@@ -597,7 +602,7 @@
   function addDrawnStop(point) {
     const last = drawing.stops[drawing.stops.length - 1];
     drawing.stops = rt.edit.drawStop(drawing.stops, point.station, point.second,
-      last === undefined ? null : running(last.station, point.station), dwellAt(point.station), state.settings.snap);
+      last === undefined ? null : running(last.station, point.station), drawingDwellAt(point.station), state.settings.snap);
     renderInspector();
     renderPreview();
   }
@@ -747,8 +752,27 @@
         drawing.deadhead = event.target.checked;
       },
     }))));
-    panel.append(h('ol', null, drawing.stops.map(stop =>
-      h('li', null, stop.station + ' ' + timeText(stop.arrive) + (stop.arrive !== rt.edit.NONE ? ' / ' : '') + timeText(stop.depart)))));
+    panel.append(field(t('dwell'), secondsInput(drawing.dwell, t('stationDwell'), rt.problems.MAX_STOP_SECONDS, t('badSeconds'), seconds => {
+      drawing.dwell = seconds;
+      renderInspector();
+      renderPreview();
+    })));
+    panel.append(h('p', { class: 'note' }, t('drawDwellHelp')));
+    if (drawing.stops.length > 0) {
+      const rows = drawing.stops.map((stop, i) => h('tr', null,
+        h('td', null, stop.station),
+        h('td', null, timeText(stop.arrive)),
+        h('td', null, timeText(stop.depart)),
+        h('td', null, stop.arrive === rt.edit.NONE ? null : secondsInput(stop.depart - stop.arrive, '', Number.MAX_SAFE_INTEGER, t('badDwell'), seconds => {
+          if (seconds !== rt.edit.NONE)
+            drawing.stops = rt.edit.setDrawnDwell(drawing.stops, i, seconds);
+          renderInspector();
+          renderPreview();
+        }))));
+      panel.append(h('table', null,
+        h('thead', null, h('tr', null, h('th', null, t('station')), h('th', null, t('arrive')), h('th', null, t('depart')), h('th', null, t('dwellShort')))),
+        h('tbody', null, rows)));
+    }
     panel.append(h('div', { class: 'buttons' },
       h('button', { type: 'button', class: 'primary', disabled: drawing.stops.length < 2, onclick: finishDrawing }, t('finish')),
       h('button', { type: 'button', onclick: cancelDrawing }, t('cancel'))));

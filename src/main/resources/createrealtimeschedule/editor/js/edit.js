@@ -267,6 +267,21 @@
     return next;
   }
 
+  /**
+   * The stops of a train being drawn, with the stop at index standing seconds: it is left that long
+   * after it is arrived at, and the stops after it move by as much, so that the running times
+   * between them stay as they were. A stop that is not arrived at (the first) has no dwell to set.
+   */
+  function setDrawnDwell(stops, index, seconds) {
+    const stop = stops[index];
+    if (stop.arrive === NONE || stop.depart === NONE)
+      throw new Error('stop ' + index + ' is not stood at');
+    const delta = stop.arrive + seconds - stop.depart;
+    return stops.map((each, i) => (i < index ? { station: each.station, arrive: each.arrive, depart: each.depart }
+      : i === index ? { station: each.station, arrive: each.arrive, depart: each.arrive + seconds }
+        : { station: each.station, arrive: shifted(each.arrive, delta), depart: shifted(each.depart, delta) }));
+  }
+
   /** The stops of a train drawn to the end: the last stop is only arrived at. Null if there are fewer than two. */
   function finishDrawing(stops) {
     if (stops.length < 2)
@@ -279,6 +294,6 @@
   return {
     NONE, copy, setName, putLine, removeLine, stationTimes, dwellAt, setStations,
     nextNumber, addTrain, removeTrain, setTrain, moveStop, shiftTrain, setStopTime, setDwell, setStopMinimum, setStopStation, removeStop,
-    snap, snapUp, drawStop, finishDrawing,
+    snap, snapUp, drawStop, setDrawnDwell, finishDrawing,
   };
 });
