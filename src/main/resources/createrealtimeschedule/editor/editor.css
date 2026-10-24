@@ -318,7 +318,12 @@ input.seconds {
 #diagram .point {
   stroke: var(--panel);
   stroke-width: 1.5;
-  cursor: ew-resize;
+  cursor: move;
+}
+
+/* The point a stop is left at, which stretches the stop rather than moving it. */
+#diagram .point.stretch {
+  cursor: col-resize;
 }
 
 #diagram .preview {

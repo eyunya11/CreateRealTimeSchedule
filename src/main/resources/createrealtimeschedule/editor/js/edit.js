@@ -174,6 +174,27 @@
     return next;
   }
 
+  /**
+   * Has a train stand delta seconds longer at one of its stops (shorter, for a delta below 0, but
+   * never less than nothing): it leaves later, and the stops after it move by as much, so that the
+   * running times stay as they were. A stop that is not both arrived at and left has no dwell to
+   * stretch, and is left as it is.
+   */
+  function stretchStop(timetable, number, index, delta) {
+    const next = copy(timetable);
+    const stops = trainAt(next, number).stops;
+    const stop = stops[index];
+    if (stop.arrive === NONE || stop.depart === NONE)
+      return next;
+    const by = Math.max(delta, stop.arrive - stop.depart);
+    stop.depart += by;
+    for (let i = index + 1; i < stops.length; i++) {
+      stops[i].arrive = shifted(stops[i].arrive, by);
+      stops[i].depart = shifted(stops[i].depart, by);
+    }
+    return next;
+  }
+
   /** Moves all the times of a train by delta seconds. */
   function shiftTrain(timetable, number, delta) {
     const next = copy(timetable);
@@ -282,6 +303,22 @@
         : { station: each.station, arrive: shifted(each.arrive, delta), depart: shifted(each.depart, delta) }));
   }
 
+  /**
+   * The stops of a train being drawn, with a stop at station pressed at second pressed and let go at
+   * second released, further along the same row: the stop is arrived at as drawStop has it for a
+   * click at pressed, and left at released (to the nearest step), or as it is arrived at if released
+   * is before that. Pressed at the station the train is at, it changes how long the train stands
+   * there. At the first stop, which is only left, it is a click.
+   */
+  function drawStopHeld(stops, station, pressed, released, running, dwell, step) {
+    const next = drawStop(stops, station, pressed, running, dwell, step);
+    const index = next.length - 1;
+    const stop = next[index];
+    if (stop.station !== station || stop.arrive === NONE)
+      return next;
+    return setDrawnDwell(next, index, Math.max(0, snap(released, step) - stop.arrive));
+  }
+
   /** The stops of a train drawn to the end: the last stop is only arrived at. Null if there are fewer than two. */
   function finishDrawing(stops) {
     if (stops.length < 2)
@@ -293,7 +330,7 @@
 
   return {
     NONE, copy, setName, putLine, removeLine, stationTimes, dwellAt, setStations,
-    nextNumber, addTrain, removeTrain, setTrain, moveStop, shiftTrain, setStopTime, setDwell, setStopMinimum, setStopStation, removeStop,
-    snap, snapUp, drawStop, setDrawnDwell, finishDrawing,
+    nextNumber, addTrain, removeTrain, setTrain, moveStop, stretchStop, shiftTrain, setStopTime, setDwell, setStopMinimum, setStopStation, removeStop,
+    snap, snapUp, drawStop, drawStopHeld, setDrawnDwell, finishDrawing,
   };
 });

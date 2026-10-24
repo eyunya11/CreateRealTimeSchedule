@@ -163,3 +163,28 @@ test('a stop drawn already is given its dwell, and the stops after it move with 
   assert.deepEqual(edit.setDrawnDwell(longer, 2, 0)[2], { station: 'Z', arrive: t('08:03:25'), depart: t('08:03:25') });
   assert.throws(() => edit.setDrawnDwell(stops, 0, 30), 'the first stop is not stood at');
 });
+
+test('a stop stretched stands longer or shorter, and the stops after it move by as much', () => {
+  const three = edit.addTrain(timetable(), { number: '3', line: 'a', type: '', deadhead: false, stops: [
+    { station: 'X', arrive: NONE, depart: t('09:00') }, { station: 'Y', arrive: t('09:05'), depart: t('09:06') }, { station: 'Z', arrive: t('09:10'), depart: NONE }] });
+  const longer = edit.stretchStop(three, '3', 1, 30);
+  assert.deepEqual(longer.trains[2].stops.map(stop => [stop.arrive, stop.depart]),
+    [[NONE, t('09:00')], [t('09:05'), t('09:06:30')], [t('09:10:30'), NONE]]);
+  const none = edit.stretchStop(three, '3', 1, -600);
+  assert.deepEqual(none.trains[2].stops.map(stop => [stop.arrive, stop.depart]),
+    [[NONE, t('09:00')], [t('09:05'), t('09:05')], [t('09:09'), NONE]], 'it never stands less than nothing');
+  assert.deepEqual(edit.stretchStop(three, '3', 0, 30).trains[2].stops, three.trains[2].stops, 'the first stop is not stood at');
+  assert.deepEqual(three.trains[2].stops[1], { station: 'Y', arrive: t('09:05'), depart: t('09:06') }, 'the timetable given is left as it was');
+});
+
+test('a stop pressed and drawn along its row stands as long as the line drawn', () => {
+  let stops = edit.drawStopHeld([], 'X', t('08:00'), t('08:02'), null, 20, 5);
+  assert.deepEqual(stops, [{ station: 'X', arrive: NONE, depart: t('08:00') }], 'the first stop is only left, where it is pressed');
+  // 60 seconds of running time from X: arrived at 08:01, and drawn on to 08:01:47, to the step.
+  stops = edit.drawStopHeld(stops, 'Y', t('08:00:30'), t('08:01:47'), 60, 20, 5);
+  assert.deepEqual(stops[1], { station: 'Y', arrive: t('08:01'), depart: t('08:01:45') });
+  // Let go before the train arrives: it leaves as it arrives.
+  assert.deepEqual(edit.drawStopHeld(stops, 'Z', t('08:03'), t('08:02'), 30, 20, 5)[2], { station: 'Z', arrive: t('08:03'), depart: t('08:03') });
+  // Pressed again at Y, where the train is: it stands there longer, as far as the line is drawn.
+  assert.deepEqual(edit.drawStopHeld(stops, 'Y', t('08:01:10'), t('08:02:30'), 60, 20, 5)[1], { station: 'Y', arrive: t('08:01'), depart: t('08:02:30') });
+});

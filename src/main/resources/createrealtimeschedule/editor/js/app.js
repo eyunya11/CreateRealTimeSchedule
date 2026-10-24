@@ -356,6 +356,11 @@
   let drawing = null;
   /** Where the pointer is while a train is drawn: the station row nearest it, and the time. */
   let hover = null;
+  /**
+   * A stop being drawn by holding the button down while a train is drawn: the station row and the
+   * time it was pressed at, and the time the pointer is at now, where the train is to leave.
+   */
+  let held = null;
   /** A stop (index) or a whole train (index -1) being dragged, from the timetable as it was. */
   let dragging = null;
   /** The timetable as the drag going on would leave it; null when nothing is dragged. */
@@ -516,12 +521,14 @@
       plot.append(group);
       if (isSelected && drawing === null)
         for (const point of planned.points)
-          for (const [second, position] of [[point.arriveSecond, point.arrivePosition], [point.departSecond, point.departPosition]])
+          for (const [second, position, leaving] of [[point.arriveSecond, point.arrivePosition, false], [point.departSecond, point.departPosition, true]])
             if (!Number.isNaN(second) && !Number.isNaN(position)) {
-              const handle = s('circle', { class: 'point', cx: view.x(second), cy: view.y(position, length), r: 5, fill: colour });
+              // The point a stop is left at, after it is arrived at, stretches the stop; any other moves it.
+              const stretches = leaving && !Number.isNaN(point.arriveSecond);
+              const handle = s('circle', { class: stretches ? 'point stretch' : 'point', cx: view.x(second), cy: view.y(position, length), r: 5, fill: colour });
               handle.addEventListener('pointerdown', event => {
                 if (event.button === 0)
-                  startDrag(planned.number, point.stop, event);
+                  startDrag(planned.number, point.stop, event, stretches);
               });
               plot.append(handle);
             }
@@ -540,7 +547,9 @@
     if (drawing === null)
       return;
     let stops = drawing.stops;
-    if (hover !== null) {
+    if (held !== null) {
+      stops = drawHeld(held);
+    } else if (hover !== null) {
       const last = stops[stops.length - 1];
       stops = rt.edit.drawStop(stops, hover.station, hover.second, last === undefined ? null : running(last.station, hover.station),
         drawingDwellAt(hover.station), state.settings.snap);
@@ -558,8 +567,17 @@
     const end = stops[stops.length - 1];
     const at = end.arrive !== rt.edit.NONE ? end.arrive : end.depart;
     const label = s('text', { class: 'label', x: view.x(at) + 6, y: view.y(drawn.axis.position(Math.max(0, drawn.axis.row(end.station))), drawn.length) + 14 });
-    label.textContent = timeText(at);
+    label.textContent = held !== null && end.arrive !== rt.edit.NONE
+      ? timeText(end.arrive) + ' - ' + timeText(end.depart) + ' (' + (end.depart - end.arrive) + ' ' + t('seconds') + ')'
+      : timeText(at);
     group.append(label);
+  }
+
+  /** The stops of the train being drawn, with the stop held down. */
+  function drawHeld(press) {
+    const last = drawing.stops[drawing.stops.length - 1];
+    return rt.edit.drawStopHeld(drawing.stops, press.station, press.pressed, press.released,
+      last === undefined ? null : running(last.station, press.station), drawingDwellAt(press.station), state.settings.snap);
   }
 
   /** The station row nearest the pointer, and the time under it. */
@@ -583,9 +601,10 @@
     }
   }
 
-  function startDrag(number, index, event) {
+  /** Starts dragging a stop (index), or the whole train (index -1); a stop that stretches stands longer or shorter instead of moving. */
+  function startDrag(number, index, event, stretches) {
     event.stopPropagation();
-    dragging = { number, index, x0: event.clientX, base: state.timetable, delta: 0, id: event.pointerId };
+    dragging = { number, index, stretches: !!stretches, x0: event.clientX, base: state.timetable, delta: 0, id: event.pointerId };
     capture(event.pointerId);
   }
 
@@ -645,7 +664,10 @@
     svg.addEventListener('pointerdown', event => {
       if (view === null || event.button !== 0 || dragging !== null)
         return;
-      gesture = { x: event.clientX, startX: event.clientX, id: event.pointerId, moved: false };
+      // While a train is drawn, a press on a row draws a stop there, and dragging along it draws how
+      // long the train stands; with Shift held, a drag moves the diagram, as it does otherwise.
+      const draws = drawing !== null && drawn !== null && !event.shiftKey;
+      gesture = { x: event.clientX, startX: event.clientX, id: event.pointerId, moved: false, draws: draws ? pointAt(event) : null };
       capture(event.pointerId);
     });
     svg.addEventListener('pointermove', event => {
@@ -656,7 +678,9 @@
           dragging.delta = delta;
           shown = delta === 0 ? null : dragging.index < 0
             ? rt.edit.shiftTrain(dragging.base, dragging.number, delta)
-            : rt.edit.moveStop(dragging.base, dragging.number, dragging.index, delta);
+            : dragging.stretches
+              ? rt.edit.stretchStop(dragging.base, dragging.number, dragging.index, delta)
+              : rt.edit.moveStop(dragging.base, dragging.number, dragging.index, delta);
           renderDiagram();
         }
         return;
@@ -665,6 +689,12 @@
         if (!gesture.moved && Math.abs(event.clientX - gesture.startX) < 4)
           return;
         gesture.moved = true;
+        if (gesture.draws !== null) {
+          const box = svg.getBoundingClientRect();
+          held = { station: gesture.draws.station, pressed: gesture.draws.second, released: view.second(event.clientX - box.left) };
+          renderPreview();
+          return;
+        }
         view.pan(event.clientX - gesture.x);
         gesture.x = event.clientX;
         renderDiagram();
@@ -689,7 +719,17 @@
       if (gesture === null || event.pointerId !== gesture.id)
         return;
       const clicked = !gesture.moved && event.type === 'pointerup';
+      const press = held;
       gesture = null;
+      held = null;
+      if (press !== null) {
+        if (event.type === 'pointerup' && drawing !== null) {
+          drawing.stops = drawHeld(press);
+          renderInspector();
+        }
+        renderPreview();
+        return;
+      }
       if (!clicked)
         return;
       if (drawing !== null && drawn !== null)
