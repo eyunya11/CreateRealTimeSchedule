@@ -26,7 +26,8 @@
     network: null,
     lineId: null,
     selection: null,
-    settings: { language: i18n.guess(navigator.language), dwell: 20, snap: 5 },
+    // Times dragged or drawn land on the step, or on the fine step while Shift is held.
+    settings: { language: i18n.guess(navigator.language), dwell: 20, snap: 15, fineSnap: 5 },
     undo: [],
     redo: [],
   };
@@ -142,8 +143,13 @@
     }
     if (stored === null || typeof stored !== 'object')
       return;
-    if (stored.settings && typeof stored.settings === 'object')
+    if (stored.settings && typeof stored.settings === 'object') {
+      // Settings kept before there was a fine step have the step of 5 seconds that was then the
+      // default, which the fine step now is: they take the new default step instead.
+      if (stored.settings.fineSnap === undefined && stored.settings.snap === 5)
+        delete stored.settings.snap;
       Object.assign(state.settings, stored.settings);
+    }
     if (typeof stored.timetable === 'string') {
       const read = rt.timetable.read(stored.timetable);
       if (read.timetable !== null)
@@ -699,7 +705,12 @@
   function clickAt(point) {
     const last = drawing.stops[drawing.stops.length - 1];
     return rt.edit.drawClick(drawing.stops, drawing.leaving, point.station, point.second,
-      last === undefined ? null : running(last.station, point.station), drawingDwellAt(point.station), state.settings.snap);
+      last === undefined ? null : running(last.station, point.station), drawingDwellAt(point.station), stepOf(point.fine));
+  }
+
+  /** The step times land on: the fine one while Shift is held, else the usual one. */
+  function stepOf(fine) {
+    return fine ? state.settings.fineSnap : state.settings.snap;
   }
 
   /** The station row nearest the pointer, and the time under it. */
@@ -711,7 +722,7 @@
     for (const row of drawn.rows)
       if (best === null || Math.abs(row.y - y) < Math.abs(best.y - y))
         best = row;
-    return { station: best.station, second: view.second(x) };
+    return { station: best.station, second: view.second(x), fine: event.shiftKey };
   }
 
   /** Keeps the pointer's events coming to the diagram while a button is held, if the browser still knows the pointer. */
@@ -816,7 +827,7 @@
         dragging.py = event.clientY - box.top;
         const raw = (event.clientX - dragging.x0) / view.width * view.span;
         // The time dragged lands on the step, not just the way it is dragged by.
-        const step = state.settings.snap;
+        const step = stepOf(event.shiftKey);
         const at = draggedTime(dragging);
         const delta = rt.edit.snap(at + raw, step) - at;
         if (delta !== dragging.delta) {
@@ -1226,6 +1237,13 @@
         saveSoon();
       },
     }, [1, 5, 10, 15, 30, 60].map(step => h('option', { value: String(step), selected: step === state.settings.snap }, String(step))))));
+    panel.append(field(t('fineSnap'), h('select', {
+      onchange: event => {
+        state.settings.fineSnap = Number(event.target.value);
+        saveSoon();
+      },
+    }, [1, 5, 10, 15, 30, 60].map(step => h('option', { value: String(step), selected: step === state.settings.fineSnap }, String(step))))));
+    panel.append(h('p', { class: 'note' }, t('snapHelp')));
   }
 
   // ------------------------------------------------------------------ dialogs
