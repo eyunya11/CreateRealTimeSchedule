@@ -9,6 +9,7 @@ import com.mojang.logging.LogUtils;
 
 import io.github.eyunya11.createrealtimeschedule.Createrealtimeschedule;
 import io.github.eyunya11.createrealtimeschedule.editor.EditorFiles;
+import io.github.eyunya11.createrealtimeschedule.network.ClipboardRequestPayload.What;
 import net.minecraft.Util;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -20,10 +21,20 @@ import net.neoforged.fml.loading.FMLPaths;
 import net.neoforged.neoforge.client.event.RegisterClientCommandsEvent;
 
 /**
- * {@code /rteditor}: opens the timetable editor in the browser. A command of the client, since the
- * editor's files come out of the mod on the player's own computer, into
- * {@code createrealtimeschedule/editor} in the game folder. The folder stays the same, so what the
- * browser keeps of a draft stays too.
+ * {@code /rteditor}, a command of the client, for the timetable editor:
+ *
+ * <ul>
+ * <li>{@code /rteditor} opens the editor in the browser. The editor's files come out of the mod on the
+ * player's own computer, into {@code createrealtimeschedule/editor} in the game folder. The folder stays
+ * the same, so what the browser keeps of a draft stays too.</li>
+ * <li>{@code copy timetable} and {@code copy network} put the timetable being run, or the track
+ * network, on the clipboard, to paste into the editor.</li>
+ * <li>{@code paste} loads the timetable on the clipboard, which the editor has put there.</li>
+ * </ul>
+ *
+ * <p>The clipboard is read and written only by these commands, which the player types (see
+ * {@link ClipboardClient}); the server may not touch it. The server does what they ask only for a
+ * player of permission level 2, as {@code /rttimetable load} and {@code /rtnetwork export} need.
  */
 @EventBusSubscriber(modid = Createrealtimeschedule.MODID, value = Dist.CLIENT)
 public final class EditorCommand {
@@ -37,7 +48,22 @@ public final class EditorCommand {
     @SubscribeEvent
     public static void onRegisterClientCommands(RegisterClientCommandsEvent event) {
         event.getDispatcher().register(Commands.literal("rteditor")
-            .executes(context -> open(context.getSource())));
+            .executes(context -> open(context.getSource()))
+            .then(Commands.literal("copy")
+                .requires(source -> source.hasPermission(2))
+                .then(Commands.literal("timetable").executes(context -> copy(What.TIMETABLE)))
+                .then(Commands.literal("network").executes(context -> copy(What.NETWORK))))
+            .then(Commands.literal("paste")
+                .requires(source -> source.hasPermission(2))
+                .executes(context -> {
+                    ClipboardClient.paste();
+                    return 1;
+                })));
+    }
+
+    private static int copy(What what) {
+        ClipboardClient.copy(what);
+        return 1;
     }
 
     private static int open(CommandSourceStack source) {

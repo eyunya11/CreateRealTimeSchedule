@@ -1,5 +1,5 @@
 /*
- * The track network as /rtnetwork export and /rtnetwork copy write it (NetworkJson in the mod): the
+ * The track network as /rtnetwork export and /rteditor copy network write it (NetworkJson in the mod): the
  * stations, and the legs between them with their length and the ticks a train takes. The editor
  * takes the running time between two stations from it, and the distances for the diagram's axis.
  */

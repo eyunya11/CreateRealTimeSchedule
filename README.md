@@ -69,9 +69,9 @@ The mod can also run trains to a whole day's timetable by itself, without Create
 | `/rttimetable load` | operators | Reads `createrealtimeschedule/timetable.json` in the world folder and runs it. If anything is wrong with it, it says what and keeps running the timetable it had |
 | `/rttimetable status` | operators | Shows, for each duty, which train runs it, where it is and how late, or when it next leaves; and what went wrong lately |
 | `/rttimetable unload` | operators | Stops running the timetable |
-| `/rttimetable copy` | operators | Puts the timetable being run on your clipboard, for the editor |
-| `/rttimetable paste` | operators | Loads the timetable on your clipboard, as `load` does the file |
-| `/rtnetwork copy` | operators | Puts the track network (stations and running times) on your clipboard, for the editor; `/rtnetwork export` writes it to `createrealtimeschedule/network.json` |
+| `/rteditor copy timetable` | operators | Puts the timetable being run on your clipboard, for the editor (a command of the client, like the two below: only they touch your clipboard, and only when you type them) |
+| `/rteditor paste` | operators | Loads the timetable on your clipboard, as `load` does the file |
+| `/rteditor copy network` | operators | Puts the track network (stations and running times) on your clipboard, for the editor; `/rtnetwork export` writes it to `createrealtimeschedule/network.json` |
 | `/rteditor` | anyone | Opens the timetable editor in your browser (a command of the client) |
 | `/rtdiagram` | anyone | Opens the diagram of the timetable's first line; `/rtdiagram line <id>` opens that of another |
 | `/rtdiagram refresh` | operators | Works the distances between the stations out from the track again, after it has changed |
@@ -88,11 +88,11 @@ The diagram shows one line of the timetable: time across, the line's stations do
 
 The editor is a web page. `/rteditor` copies it out of the mod into `createrealtimeschedule/editor` in the game folder and opens it, so it is always the one of your version of the mod; the same page is also at https://eyunya11.github.io/CreateRealTimeSchedule/ for anyone without the mod. To make a timetable:
 
-1. Run `/rtnetwork copy` in the game and paste it into "Load network": the editor then knows the stations and the running time between them.
+1. Run `/rteditor copy network` in the game and paste it into "Load network": the editor then knows the stations and the running time between them.
 2. Add a line, picking its stations top down (tick "Loop line" for one that goes round).
 3. Press "Draw a train" and click a station's row for each stop. The line follows the running time of the track, and a click further right arrives later; each stop stands for its station's dwell. Once the train has arrived, move the pointer to the right and the point it leaves at follows; click the same row again to leave there, or click another row to stand for the dwell and go on. "Station stop times" gives each station a dwell, and a minimum stop for late trains; a station without them takes the dwell of the settings (20 seconds by default) and the server's minimum stop. While you draw, the drawing panel gives the train a dwell of its own for the stops you draw next, and its table changes the dwell of a stop drawn already, moving the stops after it. The table of a train changes the dwell and the minimum stop of each of its stops. Double-click or press Enter to finish. Drag the point a stop is arrived at to move it, and the point it is left at to make it stand longer or shorter; hold Ctrl to drag the whole train, and put times right in the table on the right.
 4. Add a duty, click its trains in order on the diagram (or pick from the trains that can come next), and press "Add deadheads to and from the depot".
-5. When the problems list is empty, "Export" and "Copy to clipboard", then run `/rttimetable paste` in the game. A timetable being run can be brought back into the editor with `/rttimetable copy`.
+5. When the problems list is empty, "Export" and "Copy to clipboard", then run `/rteditor paste` in the game. A timetable being run can be brought back into the editor with `/rteditor copy timetable`.
 
 The editor checks a timetable by the same rules as the mod and words its problems the same way, undoes and redoes, keeps the draft in the browser, and speaks Japanese and English.
 

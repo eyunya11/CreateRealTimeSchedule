@@ -14,8 +14,10 @@ import com.mojang.brigadier.ParseResults;
 import io.github.eyunya11.createrealtimeschedule.Createrealtimeschedule;
 import io.github.eyunya11.createrealtimeschedule.clock.ClockService;
 import io.github.eyunya11.createrealtimeschedule.clock.RealClock;
+import io.github.eyunya11.createrealtimeschedule.command.ClipboardService;
 import io.github.eyunya11.createrealtimeschedule.command.RtTimetableCommand;
 import io.github.eyunya11.createrealtimeschedule.diagram.DutyTimes;
+import io.github.eyunya11.createrealtimeschedule.network.ClipboardRequestPayload.What;
 import io.github.eyunya11.createrealtimeschedule.operation.DutyRun;
 import io.github.eyunya11.createrealtimeschedule.operation.OperationData;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable;
@@ -196,7 +198,7 @@ public class TimetableCommandTests {
     }
 
     /**
-     * What {@code /rttimetable load} and {@code paste} share: text with nothing wrong in it is run, and
+     * What {@code /rttimetable load} and {@code /rteditor paste} share: text with nothing wrong in it is run, and
      * text with a mistake is refused while the timetable run before goes on.
      */
     @GameTest(template = EMPTY, batch = "realtimetimetable_text")
@@ -217,19 +219,25 @@ public class TimetableCommandTests {
         }
     }
 
-    /** The clipboard is a player's: run by the server itself, the commands are there and refuse. */
+    /**
+     * The clipboard is the player's: no command of the server's reaches it, not even one run as another
+     * player, since copying and pasting are commands of the client (/rteditor). What the server sends a
+     * client that asks to copy is the timetable it runs, as it was loaded, or nothing while it runs none.
+     */
     @GameTest(template = EMPTY, batch = "realtimetimetable_clipboard")
-    public static void theClipboardCommandsAreThereAndNeedAPlayer(GameTestHelper helper) {
+    public static void theServerHasNoClipboardCommandAndCopiesTheTimetableItRuns(GameTestHelper helper) {
         MinecraftServer server = helper.getLevel().getServer();
         try {
-            OperationData.get(server).loadTimetable(TIMETABLE, TimetableJson.parse(TIMETABLE).timetable(), ClockService.now(server));
             CommandSourceStack source = server.createCommandSourceStack().withSuppressedOutput();
-            for (String command : List.of("rttimetable copy", "rttimetable paste", "rtnetwork copy")) {
+            for (String command : List.of("rttimetable copy", "rttimetable paste", "rtnetwork copy", "rteditor paste")) {
                 ParseResults<CommandSourceStack> parsed = server.getCommands().getDispatcher().parse(command, source);
-                helper.assertTrue(parsed.getExceptions().isEmpty() && !parsed.getReader().canRead() && parsed.getContext().getCommand() != null,
-                    "/" + command + " is not a command");
-                helper.assertTrue(run(server, command) == 0, "/" + command + " did something when the server ran it");
+                helper.assertTrue(parsed.getReader().canRead() || parsed.getContext().getCommand() == null,
+                    "/" + command + " is a command of the server");
             }
+            helper.assertTrue(ClipboardService.copy(source, What.TIMETABLE) == null, "a timetable is copied while none is run");
+            OperationData.get(server).loadTimetable(TIMETABLE, TimetableJson.parse(TIMETABLE).timetable(), ClockService.now(server));
+            ClipboardService.Copy copy = ClipboardService.copy(source, What.TIMETABLE);
+            helper.assertTrue(copy != null && copy.text().equals(TIMETABLE), "what is copied is not the timetable as it was loaded: " + copy);
             helper.succeed();
         } finally {
             cleanUp(server);

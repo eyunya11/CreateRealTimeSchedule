@@ -12,7 +12,6 @@ import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.context.CommandContext;
 import com.simibubi.create.Create;
 
-import io.github.eyunya11.createrealtimeschedule.network.ClipboardPayload;
 import io.github.eyunya11.createrealtimeschedule.railway.CreateNetwork;
 import io.github.eyunya11.createrealtimeschedule.railway.Leg;
 import io.github.eyunya11.createrealtimeschedule.railway.NetworkJson;
@@ -22,9 +21,7 @@ import io.github.eyunya11.createrealtimeschedule.travel.TrainSpecs;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
-import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.storage.LevelResource;
-import net.neoforged.neoforge.network.PacketDistributor;
 
 /**
  * {@code /rtnetwork}: the stations of the track network and the running time between them, as JSON
@@ -32,8 +29,10 @@ import net.neoforged.neoforge.network.PacketDistributor;
  *
  * <ul>
  * <li>{@code export} writes it to {@code createrealtimeschedule/network.json} in the world folder.</li>
- * <li>{@code copy} puts it on the clipboard of the player who runs it.</li>
  * </ul>
+ *
+ * <p>{@code /rteditor copy network}, a command of the client, puts it on the player's clipboard (see
+ * {@link ClipboardService}).
  *
  * <p>The times are for a train without fuel at full throttle, by the server's config.
  */
@@ -47,16 +46,14 @@ public final class RtNetworkCommand {
         dispatcher.register(Commands.literal("rtnetwork")
             .requires(source -> source.hasPermission(2))
             .then(Commands.literal("export")
-                .executes(RtNetworkCommand::export))
-            .then(Commands.literal("copy")
-                .executes(RtNetworkCommand::copy)));
+                .executes(RtNetworkCommand::export)));
     }
 
     /** The network as JSON, with how many stations and legs it has. */
-    private record Written(String json, int stations, int legs) {}
+    record Written(String json, int stations, int legs) {}
 
     /** The network as JSON; null after saying why there is none. */
-    private static @Nullable Written write(CommandSourceStack source) {
+    static @Nullable Written write(CommandSourceStack source) {
         TrainSpec spec;
         try {
             spec = TrainSpecs.unpowered();
@@ -88,24 +85,6 @@ public final class RtNetworkCommand {
         }
         source.sendSuccess(() -> Component.translatableWithFallback(KEY + "done",
             "Wrote %1$s stations and %2$s legs to %3$s", written.stations(), written.legs(), file.toString()), true);
-        return written.legs();
-    }
-
-    private static int copy(CommandContext<CommandSourceStack> context) {
-        CommandSourceStack source = context.getSource();
-        ServerPlayer player = RtTimetableCommand.player(source);
-        if (player == null)
-            return 0;
-        Written written = write(source);
-        if (written == null)
-            return 0;
-        if (written.json().length() > ClipboardPayload.MAX_LENGTH) {
-            source.sendFailure(RtTimetableCommand.tooLarge(written.json().length()));
-            return 0;
-        }
-        PacketDistributor.sendToPlayer(player, new ClipboardPayload(written.json()));
-        source.sendSuccess(() -> Component.translatableWithFallback(KEY + "copied",
-            "Copied %1$s stations and %2$s legs to your clipboard", written.stations(), written.legs()), false);
         return written.legs();
     }
 }

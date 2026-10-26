@@ -4,7 +4,7 @@ import io.github.eyunya11.createrealtimeschedule.Createrealtimeschedule;
 import io.github.eyunya11.createrealtimeschedule.client.ClientClock;
 import io.github.eyunya11.createrealtimeschedule.client.ClipboardClient;
 import io.github.eyunya11.createrealtimeschedule.client.DiagramClient;
-import io.github.eyunya11.createrealtimeschedule.command.RtTimetableCommand;
+import io.github.eyunya11.createrealtimeschedule.command.ClipboardService;
 import io.github.eyunya11.createrealtimeschedule.diagram.DiagramService;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
@@ -32,9 +32,8 @@ public final class ModNetwork {
             .playToClient(DiagramSnapshotPayload.TYPE, DiagramSnapshotPayload.STREAM_CODEC,
                 (payload, context) -> DiagramClient.onSnapshot(payload))
             .playToServer(DiagramRequestPayload.TYPE, DiagramRequestPayload.STREAM_CODEC, DiagramService::onRequest)
+            .playToServer(ClipboardRequestPayload.TYPE, ClipboardRequestPayload.STREAM_CODEC, ClipboardService::onRequest)
             .playToClient(ClipboardPayload.TYPE, ClipboardPayload.STREAM_CODEC, (payload, context) -> ClipboardClient.onClipboard(payload))
-            .playToClient(ClipboardRequestPayload.TYPE, ClipboardRequestPayload.STREAM_CODEC,
-                (payload, context) -> ClipboardClient.onRequest(payload))
-            .playToServer(TimetablePastePayload.TYPE, TimetablePastePayload.STREAM_CODEC, RtTimetableCommand::onPaste);
+            .playToServer(TimetablePastePayload.TYPE, TimetablePastePayload.STREAM_CODEC, ClipboardService::onPaste);
     }
 }
