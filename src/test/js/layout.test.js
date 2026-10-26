@@ -110,6 +110,13 @@ test('a planned train slopes between stations and is level where it stands', () 
     [[NaN, 20, t('08:00'), 20], [t('08:05'), 60, t('08:06'), 60], [t('08:10'), 120, NaN, 120]]);
 });
 
+test('the parts of a planned train say which way or which standing each of its segments draws', () => {
+  const one = layout.plannedTrain(AXIS, { number: '1', line: 'l', type: 'local', deadhead: false,
+    stops: [stop('A', null, '08:00'), stop('M', '08:05', '08:06'), stop('B', '08:10')] });
+  assert.deepEqual(one.parts.map(part => [part.kind, part.stop]), [['run', 0], ['run', 1], ['stand', 1]]);
+  assert.deepEqual(one.parts.map(part => part.segments), [[one.segments[0]], [one.segments[2]], [one.segments[1]]]);
+});
+
 test('a stop with only a departure is passed through at that time', () => {
   const three = layout.plannedTrain(AXIS, { number: '3', line: 'l', type: '', deadhead: false,
     stops: [stop('A', null, '09:00'), stop('M', null, '09:04'), stop('B', '09:10')] });

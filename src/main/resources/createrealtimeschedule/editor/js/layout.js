@@ -5,7 +5,8 @@
  * positions are those of the axis.
  *
  * Besides the segments the mod draws, each train has the points of its stops, for the editor to take
- * hold of: where the train arrives at each stop and where it leaves.
+ * hold of: where the train arrives at each stop and where it leaves; and its parts, the same segments
+ * by what they draw: the way from one stop to the next, or the standing at a stop.
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports)
@@ -24,13 +25,16 @@
   /**
    * The segments of a train's way through its visits, as DiagramModel's path(): the way between two
    * stations is that of the axis's hops, standing is drawn at the row the train came in at, and also
-   * at the row it goes out from if that is another. Also the row each visit comes in at and goes out from.
+   * at the row it goes out from if that is another. Also the row each visit comes in at and goes out
+   * from, and the parts: {kind: 'run', stop, segments} for the way from visit stop to the next, and
+   * {kind: 'stand', stop, segments} for the standing at visit stop, in the order they are made.
    */
   function path(axis, visits) {
     const n = visits.length;
     const rowIn = new Array(n).fill(-1);
     const rowOut = new Array(n).fill(-1);
     const segments = [];
+    const parts = [];
     for (let k = 0; k + 1 < n; k++) {
       const from = visits[k];
       const to = visits[k + 1];
@@ -43,11 +47,15 @@
       if (Number.isNaN(from.depart) || Number.isNaN(to.arrive))
         continue;
       let at = from.depart;
+      const run = { kind: 'run', stop: k, segments: [] };
       hops.forEach((hop, h) => {
         const until = h === hops.length - 1 ? to.arrive : at + (to.arrive - from.depart) * hop.share;
-        segments.push({ fromSecond: at, fromPosition: axis.position(hop.fromRow), toSecond: until, toPosition: axis.position(hop.toRow) });
+        const segment = { fromSecond: at, fromPosition: axis.position(hop.fromRow), toSecond: until, toPosition: axis.position(hop.toRow) };
+        segments.push(segment);
+        run.segments.push(segment);
         at = until;
       });
+      parts.push(run);
     }
     for (let k = 0; k < n; k++) {
       const visit = visits[k];
@@ -56,19 +64,23 @@
       const into = rowIn[k] >= 0 ? rowIn[k] : rowOut[k] >= 0 ? rowOut[k] : axis.row(visit.station);
       if (into < 0)
         continue;
-      segments.push({ fromSecond: visit.arrive, fromPosition: axis.position(into), toSecond: visit.depart, toPosition: axis.position(into) });
+      const stand = { kind: 'stand', stop: k, segments: [] };
+      stand.segments.push({ fromSecond: visit.arrive, fromPosition: axis.position(into), toSecond: visit.depart, toPosition: axis.position(into) });
       if (rowOut[k] >= 0 && rowOut[k] !== into)
-        segments.push({ fromSecond: visit.arrive, fromPosition: axis.position(rowOut[k]), toSecond: visit.depart, toPosition: axis.position(rowOut[k]) });
+        stand.segments.push({ fromSecond: visit.arrive, fromPosition: axis.position(rowOut[k]), toSecond: visit.depart, toPosition: axis.position(rowOut[k]) });
+      segments.push(...stand.segments);
+      parts.push(stand);
     }
     // A stable sort, as Java's List.sort is, so that segments that start together keep their order.
     segments.sort((a, b) => a.fromSecond - b.fromSecond);
-    return { segments, rowIn, rowOut };
+    return { segments, rowIn, rowOut, parts };
   }
 
   /**
    * A train of the timetable as the diagram of the axis's line draws it:
-   * {number, type, deadhead, segments, labelSecond, labelPosition, points}. A point is
-   * {stop, arriveSecond, arrivePosition, departSecond, departPosition}, NaN for what the stop does not have.
+   * {number, type, deadhead, segments, parts, labelSecond, labelPosition, points}. A point is
+   * {stop, arriveSecond, arrivePosition, departSecond, departPosition}, NaN for what the stop does not
+   * have; a part is a run or a standing of path(), with the segments it draws.
    */
   function plannedTrain(axis, train) {
     const down = axis.down(train.stops.map(stop => stop.station));
@@ -79,7 +91,7 @@
       depart: seconds(stop.depart),
       down,
     }));
-    const { segments, rowIn, rowOut } = path(axis, visits);
+    const { segments, rowIn, rowOut, parts } = path(axis, visits);
     const first = rowOut.length > 0 && rowOut[0] >= 0 ? rowOut[0] : visits.length === 0 ? -1 : axis.row(visits[0].station);
     const points = visits.map((visit, k) => {
       const inRow = rowIn[k] >= 0 ? rowIn[k] : rowOut[k] >= 0 ? rowOut[k] : axis.row(visit.station);
@@ -97,6 +109,7 @@
       type: train.type,
       deadhead: train.deadhead,
       segments,
+      parts,
       labelSecond: train.stops.length > 0 ? train.stops[0].depart : NaN,
       labelPosition: first >= 0 ? axis.position(first) : 0,
       points,

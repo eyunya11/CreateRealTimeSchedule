@@ -311,6 +311,11 @@ input.seconds {
   cursor: grab;
 }
 
+/* The way between two stops, which moves alone, along the time. */
+#diagram .train .hit.run {
+  cursor: ew-resize;
+}
+
 #diagram .train .number {
   font-size: 11px;
 }

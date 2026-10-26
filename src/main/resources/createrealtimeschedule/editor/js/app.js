@@ -505,23 +505,30 @@
         + (duty === null ? '' : inDuty.has(planned.number) ? ' in-duty' : ' dim');
       const group = s('g', { class: 'train' + marks, 'data-number': planned.number });
       group.append(s('path', { class: 'shown', d, stroke: colour }));
-      const hit = s('path', { class: 'hit', d });
-      hit.addEventListener('pointerdown', event => {
-        if (drawing !== null || event.button !== 0)
-          return; // a click while drawing goes to the row under it
-        if (picking && duty !== null) {
-          event.stopPropagation();
-          dutyNote = '';
-          change(rt.duties.appendTrain(state.timetable, duty.id, planned.number));
-          return;
-        }
-        // A press on a train's line chooses it, and dragging it on moves the whole train in time; a
-        // press that does not move is only the choosing.
-        if (!isSelected)
-          select({ kind: 'train', number: planned.number });
-        startDrag(planned.number, -1, event);
-      });
-      group.append(hit);
+      // Each part of the line takes hold of its own: a press on it chooses the train, and dragging it
+      // on moves the way between two stops alone, or the whole train from where it stands; a press
+      // that does not move is only the choosing.
+      for (const part of planned.parts) {
+        const hit = s('path', { class: part.kind === 'run' ? 'hit run' : 'hit', d: pathOf(part.segments, length) });
+        hit.addEventListener('pointerdown', event => {
+          if (drawing !== null || event.button !== 0)
+            return; // a click while drawing goes to the row under it
+          if (picking && duty !== null) {
+            event.stopPropagation();
+            dutyNote = '';
+            change(rt.duties.appendTrain(state.timetable, duty.id, planned.number));
+            return;
+          }
+          if (!isSelected)
+            select({ kind: 'train', number: planned.number });
+          // With Ctrl, a way moves the whole train too, for a train that stands nowhere on the way.
+          if (part.kind === 'run' && !event.ctrlKey && !event.metaKey)
+            startDrag(planned.number, part.stop, event, 'run');
+          else
+            startDrag(planned.number, -1, event);
+        });
+        group.append(hit);
+      }
       if (!Number.isNaN(planned.labelSecond)) {
         const number = s('text', { class: 'number', x: view.x(planned.labelSecond) + 3, y: view.y(planned.labelPosition, length) - 4, fill: colour });
         number.textContent = planned.number;
@@ -627,7 +634,8 @@
 
   /**
    * Starts dragging a stop (index), or the whole train (index -1). part says what of a stop is dragged:
-   * 'stop' moves it as a whole, 'arrive' its arrival alone, and 'stretch' its departure and the stops after it.
+   * 'stop' moves it as a whole, 'arrive' its arrival alone, 'stretch' its departure and the stops after
+   * it, and 'run' the way from it to the next stop.
    */
   function startDrag(number, index, event, part) {
     event.stopPropagation();
@@ -706,7 +714,9 @@
               ? rt.edit.stretchStop(dragging.base, dragging.number, dragging.index, delta)
               : dragging.part === 'arrive'
                 ? rt.edit.moveArrival(dragging.base, dragging.number, dragging.index, delta, running)
-                : rt.edit.moveStop(dragging.base, dragging.number, dragging.index, delta, running);
+                : dragging.part === 'run'
+                  ? rt.edit.moveRun(dragging.base, dragging.number, dragging.index, delta, running)
+                  : rt.edit.moveStop(dragging.base, dragging.number, dragging.index, delta, running);
           renderDiagram();
         }
         return;

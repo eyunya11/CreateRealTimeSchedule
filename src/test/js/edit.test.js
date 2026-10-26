@@ -267,3 +267,16 @@ test('an arrival dragged moves alone, so the train stands longer or shorter, bet
   // A stop with no arrival time moves as a whole.
   assert.equal(edit.moveArrival(tt, '3', 0, -60, running).trains[2].stops[0].depart, t('08:59'));
 });
+
+test('a way dragged moves alone, keeping its running time, so the train stands longer at one end and shorter at the other', () => {
+  const { tt, running } = threeWithTrack();
+  const times = next => next.trains[2].stops.map(stop => [stop.arrive, stop.depart]);
+  // Y to Z, 09:06 to 09:10, half a minute later: Y is stood at longer, Z is come in at later.
+  assert.deepEqual(times(edit.moveRun(tt, '3', 1, 30, running)), [[NONE, t('09:00')], [t('09:05'), t('09:06:30')], [t('09:10:30'), NONE]]);
+  // No sooner than the train comes in at Y: it leaves as it arrives.
+  assert.deepEqual(times(edit.moveRun(tt, '3', 1, -300, running))[1], [t('09:05'), t('09:05')]);
+  // X to Y, no later than the train leaves Y.
+  assert.deepEqual(times(edit.moveRun(tt, '3', 0, 300, running)).slice(0, 2), [[NONE, t('09:01')], [t('09:06'), t('09:06')]]);
+  // From the first stop, which is only left, it may go as early as it likes.
+  assert.deepEqual(times(edit.moveRun(tt, '3', 0, -600, running)).slice(0, 2), [[NONE, t('08:50')], [t('08:55'), t('09:06')]]);
+});

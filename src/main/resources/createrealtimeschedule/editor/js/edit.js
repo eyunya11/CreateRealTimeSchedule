@@ -232,6 +232,31 @@
   }
 
   /**
+   * Moves the way a train runs from one of its stops (index) to the next by delta seconds: it leaves
+   * the one and comes in at the other that much later (sooner, for a delta below 0), so that the
+   * running time stays as it was and the train stands longer at the one stop and shorter at the
+   * other. It leaves no sooner than it arrives (or, at a stop with no arrival time, than the running
+   * time after the stop before allows), and comes in no later than it leaves the next stop (or, at a
+   * stop with no arrival time, than the running time to the stop after allows); a way already beyond
+   * one of these is not moved further.
+   */
+  function moveRun(timetable, number, index, delta, running) {
+    const next = copy(timetable);
+    const stops = trainAt(next, number).stops;
+    const from = stops[index];
+    const to = stops[index + 1];
+    const lowest = from.arrive !== NONE ? from.arrive : stopLimits(stops, index, running).earliest;
+    const highest = to.arrive !== NONE && to.depart !== NONE ? to.depart : stopLimits(stops, index + 1, running).latest;
+    const by = Math.min(Math.max(delta, Math.min(lowest - from.depart, 0)), Math.max(highest - comesIn(to), 0));
+    from.depart += by;
+    if (to.arrive !== NONE)
+      to.arrive += by;
+    else
+      to.depart += by;
+    return next;
+  }
+
+  /**
    * Moves the time a train comes in at one of its stops by delta seconds, and leaves the time it
    * leaves where it is, so that it stands there shorter or longer: no sooner than the running time
    * after it leaves the stop before (see stopLimits), and no later than it leaves, nor, at the last
@@ -449,7 +474,7 @@
 
   return {
     NONE, copy, setName, putLine, removeLine, stationTimes, dwellAt, setStations,
-    nextNumber, addTrain, removeTrain, setTrain, stopLimits, moveStop, moveArrival, stretchStop, shiftTrain, setStopTime, setDwell, setStopMinimum, setStopStation,
+    nextNumber, addTrain, removeTrain, setTrain, stopLimits, moveStop, moveRun, moveArrival, stretchStop, shiftTrain, setStopTime, setDwell, setStopMinimum, setStopStation,
     removeStop, tooFast,
     snap, snapUp, drawStop, drawClick, setDrawnDwell, finishDrawing,
   };
