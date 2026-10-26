@@ -14,7 +14,7 @@ import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 public final class ModNetwork {
 
     /** 2 since the diagram's payloads came in, 3 since the clipboard's. */
-    private static final String PROTOCOL_VERSION = "3";
+    private static final String PROTOCOL_VERSION = "4";
 
     private ModNetwork() {}
 

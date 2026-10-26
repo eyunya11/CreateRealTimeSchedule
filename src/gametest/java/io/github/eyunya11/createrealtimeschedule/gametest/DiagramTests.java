@@ -115,6 +115,15 @@ public class DiagramTests {
             FriendlyByteBuf small = new FriendlyByteBuf(Unpooled.buffer());
             DiagramSnapshotPayload.STREAM_CODEC.encode(small, same);
             helper.assertTrue(DiagramSnapshotPayload.STREAM_CODEC.decode(small).equals(same), "a snapshot with nothing new does not read back the same");
+            // A duty whose set was held at A from its first call there to its second, leaving out the call at B.
+            DutyTimes held = new DutyTimes("1A", RealClock.day(now), "Held set", DutyTimes.Status.RUNNING,
+                List.of(DutyRun.NOT_YET, now - 200, DutyRun.NOT_YET, DutyRun.NOT_YET), List.of(now - 400, DutyRun.NOT_YET, DutyRun.NOT_YET, DutyRun.NOT_YET),
+                List.of(2));
+            DiagramSnapshotPayload withHeld = new DiagramSnapshotPayload(same.revision(), null, same.timesRevision(), List.of(held), now);
+            FriendlyByteBuf heldBuf = new FriendlyByteBuf(Unpooled.buffer());
+            DiagramSnapshotPayload.STREAM_CODEC.encode(heldBuf, withHeld);
+            helper.assertTrue(DiagramSnapshotPayload.STREAM_CODEC.decode(heldBuf).equals(withHeld) && heldBuf.readableBytes() == 0,
+                "the calls a held duty leaves out do not read back the same");
             int before = data.revision();
             data.forgetAxes();
             helper.assertTrue(data.revision() != before && DiagramService.snapshot(server, before, -1).content() != null,

@@ -146,6 +146,39 @@ class DiagramModelTest {
         assertEquals(3, model.planned().size(), "train 2 is drawn on the line it is not on");
     }
 
+    /** Held at A from its first call there (call 1) to its second (call 4): the set stands at A from coming in to leaving, all in one. */
+    private static DutyTimes held(DutyTimes.Status status, long arrived, long left, long back) {
+        return new DutyTimes("1A", DAY, "Train 1", status, List.of(X, arrived, X, X, X, back), List.of(at("07:50"), X, X, X, left, X),
+            List.of(2, 3));
+    }
+
+    @Test
+    void aSetHeldAtAStationIsDrawnStandingThereFromComingInToLeaving() {
+        DutyTimes done = held(DutyTimes.Status.FINISHED, at("08:21"), at("08:30"), at("08:35"));
+        assertEquals(List.of(
+            new Segment(t("07:50"), 0, t("08:21"), 20),
+            new Segment(t("08:21"), 20, t("08:30"), 20),
+            new Segment(t("08:30"), 20, t("08:35"), 0)), DiagramModel.of(timetable("l"), AXIS, DAY, List.of(done), at("09:00")).ran().getFirst().segments());
+        // While it is held, it stands there until now.
+        DutyTimes holding = held(DutyTimes.Status.RUNNING, at("08:21"), X, X);
+        assertEquals(List.of(
+            new Segment(t("07:50"), 0, t("08:21"), 20),
+            new Segment(t("08:21"), 20, t("08:25"), 20)), DiagramModel.of(timetable("l"), AXIS, DAY, List.of(holding), at("08:25")).ran().getFirst().segments());
+    }
+
+    @Test
+    void theTrainsAHoldCancelsAreMarkedOnItsDayOnly() {
+        DutyTimes done = held(DutyTimes.Status.FINISHED, at("08:21"), at("08:30"), at("08:35"));
+        DiagramModel model = DiagramModel.of(timetable("l"), AXIS, DAY, List.of(done), at("09:00"));
+        assertTrue(planned(model, "1").cancelled());
+        assertTrue(planned(model, "2").cancelled());
+        assertFalse(planned(model, "D1").cancelled());
+        assertFalse(planned(model, "D2").cancelled());
+        DiagramModel dayAfter = DiagramModel.of(timetable("l"), AXIS, DAY + 1, List.of(done), at("09:00") + RealClock.TICKS_PER_DAY);
+        assertFalse(planned(dayAfter, "1").cancelled(), "the hold was on the day before");
+        assertFalse(planned(DiagramModel.of(timetable("l"), AXIS, DAY, List.of(), at("09:00")), "1").cancelled());
+    }
+
     @Test
     void dutiesOfAnotherDayOrNotInTheTimetableAreLeftOut() {
         DutyTimes done = times(DutyTimes.Status.FINISHED,
