@@ -564,8 +564,43 @@
       }
     }
 
+    for (const guide of fastestRuns(axisOfLine))
+      plot.append(s('path', { class: 'guide', d: pathOf(guide, length) }));
     plot.append(s('g', { id: 'preview' }));
     renderPreview();
+  }
+
+  /**
+   * While a stop or a way of a train is dragged, the ways it changes as the train would run them
+   * fastest: leaving the stop before when it does, and coming in at the next the track's running time
+   * later. The diagram draws them as a guide, segments for each way; none for a way the track gives no
+   * running time for, nor while the whole train is moved, which changes no way.
+   */
+  function fastestRuns(axisOfLine) {
+    if (dragging === null || dragging.index < 0)
+      return [];
+    const train = shownTimetable().trains.find(each => each.number === dragging.number);
+    if (train === undefined || train.line !== axisOfLine.line)
+      return [];
+    const k = dragging.index;
+    // The way into the stop for its arrival, the way out of it for its departure or the way itself,
+    // and both for a stop with one time.
+    const ways = dragging.part === 'arrive' ? [k - 1] : dragging.part === 'stretch' || dragging.part === 'run' ? [k] : [k - 1, k];
+    const guides = [];
+    for (const i of ways) {
+      const from = train.stops[i];
+      const to = train.stops[i + 1];
+      if (from === undefined || to === undefined || from.depart === rt.edit.NONE)
+        continue;
+      const seconds = running(from.station, to.station);
+      if (seconds === null)
+        continue;
+      const fastest = { number: '', line: train.line, type: '', deadhead: false, stops: [
+        { station: from.station, arrive: rt.edit.NONE, depart: from.depart },
+        { station: to.station, arrive: from.depart + seconds, depart: rt.edit.NONE }] };
+      guides.push(rt.layout.plannedTrain(axisOfLine, fastest).segments);
+    }
+    return guides;
   }
 
   /** The train being drawn, with the stop it would get where the pointer is. */
@@ -641,6 +676,9 @@
     event.stopPropagation();
     dragging = { number, index, part: part || 'stop', x0: event.clientX, base: state.timetable, delta: 0, id: event.pointerId };
     capture(event.pointerId);
+    // The guide of the fastest ways, from the first moment of a drag that changes them.
+    if (index >= 0)
+      renderDiagram();
   }
 
   function startDrawing() {

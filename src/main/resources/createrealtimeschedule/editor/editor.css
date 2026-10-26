@@ -331,6 +331,15 @@ input.seconds {
   cursor: col-resize;
 }
 
+/* While a stop or a way is dragged, the way as the train would run it fastest, by the track. */
+#diagram .guide {
+  fill: none;
+  stroke: var(--danger);
+  stroke-width: 1.8;
+  stroke-dasharray: 5 4;
+  pointer-events: none;
+}
+
 #diagram .preview {
   fill: none;
   stroke: var(--accent);
