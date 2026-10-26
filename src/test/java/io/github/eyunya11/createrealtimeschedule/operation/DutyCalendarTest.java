@@ -47,6 +47,22 @@ class DutyCalendarTest {
         assertFalse(due.getFirst().missedBy(at(5, "07:50")));
     }
 
+    /**
+     * A duty may start late until the tick before the same duty of the next day is due, a lead before
+     * it leaves: on that tick due() still has the day before, to be given up, and from the next it has not.
+     */
+    @Test
+    void aDutyMayStartLateUntilTheNextDaysIsAboutToBeDue() {
+        assertTrue(DutyCalendar.mayStartLate(5, t("07:50"), at(5, "07:50") + 1, LEAD));
+        assertTrue(DutyCalendar.mayStartLate(5, t("07:50"), at(6, "07:49") - 2, LEAD));
+        assertFalse(DutyCalendar.mayStartLate(5, t("07:50"), at(6, "07:49") - 1, LEAD));
+        assertEquals(List.of(new Start("1A", 5, at(5, "07:50"))), DutyCalendar.due("1A", t("07:50"), 4, at(6, "07:49") - 1, LEAD));
+        // With no lead, the day before is gone from due() once the next day's start has come.
+        assertFalse(DutyCalendar.mayStartLate(5, t("07:50"), at(6, "07:50") - 1, 0));
+        assertEquals(List.of(new Start("1A", 5, at(5, "07:50"))), DutyCalendar.due("1A", t("07:50"), 4, at(6, "07:50") - 1, 0));
+        assertEquals(List.of(new Start("1A", 6, at(6, "07:50"))), DutyCalendar.due("1A", t("07:50"), 4, at(6, "07:50"), 0));
+    }
+
     @Test
     void afterALongStopADutyIsMissedOnceNotOnceADay() {
         assertEquals(List.of(new Start("1A", 9, at(9, "07:50"))), DutyCalendar.due("1A", t("07:50"), 4, at(9, "12:00"), LEAD));

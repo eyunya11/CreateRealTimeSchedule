@@ -131,6 +131,66 @@ public class TimetableCommandTests {
         helper.succeed();
     }
 
+    /** A duty that comes back to A: out to A, on to B, back to A, and in again. */
+    private static final String BACK_TO_A = """
+        {
+          "format": "createrealtimeschedule.timetable",
+          "version": 2,
+          "name": "Back to A",
+          "lines": [{"id": "loop", "name": "Loop", "stations": ["Depot", "A", "B"], "loop": true}],
+          "trains": [
+            {"number": "D1", "line": "loop", "deadhead": true, "stops": [
+              {"station": "Depot", "depart": "12:00:05"}, {"station": "A", "arrive": "12:00:07"}]},
+            {"number": "1", "line": "loop", "stops": [
+              {"station": "A", "depart": "12:00:20"}, {"station": "B", "arrive": "12:00:27"}]},
+            {"number": "2", "line": "loop", "stops": [
+              {"station": "B", "depart": "12:00:35"}, {"station": "A", "arrive": "12:01:00"}]},
+            {"number": "D2", "line": "loop", "deadhead": true, "stops": [
+              {"station": "A", "depart": "12:01:20"}, {"station": "Depot", "arrive": "12:01:40"}]}
+          ],
+          "duties": [{"id": "1A", "depot": "Depot", "trains": ["D1", "1", "2", "D2"]}]
+        }
+        """;
+
+    /**
+     * A run whose set was held at A, from its first call there to its second, and so leaves out the
+     * call at B, is saved and read back the same, running and in the records; and so is when the
+     * timetable was loaded.
+     */
+    @GameTest(template = EMPTY, batch = "realtimetimetable_saved_held")
+    public static void aHeldRunIsSavedAndReadBackTheSame(GameTestHelper helper) {
+        MinecraftServer server = helper.getLevel().getServer();
+        Timetable timetable = TimetableJson.parse(BACK_TO_A).timetable();
+        OperationData data = new OperationData();
+        long now = ClockService.now(server);
+        data.loadTimetable(BACK_TO_A, timetable, now);
+        DutyRun run = heldAtA(DutyRun.start("1A", 3, data.calls("1A"), now));
+        UUID train = new UUID(1, 2);
+        data.runs().put(train, run);
+        DutyRun done = heldAtA(DutyRun.start("1A", RealClock.day(now), data.calls("1A"), now));
+        done.left(done.departure());
+        done.arrived(done.plannedArrival(4), 0);
+        data.keep(done, "Train 7", DutyTimes.Status.FINISHED, now);
+
+        CompoundTag saved = data.save(new CompoundTag(), server.registryAccess());
+        OperationData again = OperationData.load(saved, server.registryAccess());
+        helper.assertTrue(again.runs().size() == 1 && again.runs().get(train).state().equals(run.state())
+            && again.runs().get(train).skipped().equals(List.of(2)), "the held run did not come back the same: " + again.runs());
+        List<OperationData.Record> history = again.history();
+        helper.assertTrue(history.size() == 1 && history.getFirst().run().state().equals(done.state())
+            && history.getFirst().run().skipped().equals(List.of(2)), "the record of the held run did not come back the same: " + history);
+        helper.assertTrue(again.loadedAt() == now && data.loadedAt() == now, "when the timetable was loaded did not come back");
+        helper.succeed();
+    }
+
+    /** {@code run}, out to A late and held there until its second call there. */
+    private static DutyRun heldAtA(DutyRun run) {
+        run.left(run.departure());
+        run.arrived(run.plannedArrival(1) + 200, 0);
+        run.hold(3, run.plannedDeparture(3));
+        return run;
+    }
+
     /**
      * The records of a duty's times are kept for the service day of now and the one before, and dropped
      * when a new timetable changes the duty.

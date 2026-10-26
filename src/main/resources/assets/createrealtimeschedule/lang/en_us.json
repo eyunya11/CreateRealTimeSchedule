@@ -16,6 +16,7 @@
   "commands.createrealtimeschedule.rttimetable.standing": "%1$s: %2$s at %3$s, leaves at %4$s (%5$s)",
   "commands.createrealtimeschedule.rttimetable.running": "%1$s: %2$s on the way to %3$s (%4$s)",
   "commands.createrealtimeschedule.rttimetable.waiting": "%1$s: next leaves %2$s at %3$s",
+  "commands.createrealtimeschedule.rttimetable.late": "%1$s: was to leave %2$s at %3$s; waits for a free set to start late",
   "commands.createrealtimeschedule.rttimetable.note": "%1$s: duty %2$s of day %3$s %4$s",
   "createrealtimeschedule.schedule.condition.real_time_of_day": "Real Time of Day",
   "createrealtimeschedule.schedule.condition.real_time_of_day.status": "Departs at %1$s",

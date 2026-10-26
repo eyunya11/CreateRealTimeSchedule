@@ -167,8 +167,12 @@ public final class RtTimetableCommand {
         List<Call> calls = data.calls(duty.id());
         int first = DutyPlan.firstDeparture(calls);
         long day = Math.max(data.lastDay(duty.id()) + 1, DutyCalendar.lastDayStartedBy(now, first));
+        long start = DutyCalendar.startOf(day, first);
+        if (start < now)
+            return Component.translatableWithFallback(KEY + "late", "%1$s: was to leave %2$s at %3$s; waits for a free set to start late",
+                duty.id(), duty.depot(), TimeText.clock(start));
         return Component.translatableWithFallback(KEY + "waiting", "%1$s: next leaves %2$s at %3$s",
-            duty.id(), duty.depot(), TimeText.clock(DutyCalendar.startOf(day, first)));
+            duty.id(), duty.depot(), TimeText.clock(start));
     }
 
     static String name(Timetable timetable) {

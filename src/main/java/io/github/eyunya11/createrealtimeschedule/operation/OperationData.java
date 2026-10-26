@@ -97,6 +97,7 @@ public final class OperationData extends SavedData {
     private static final String TAG_HISTORY = "History";
     private static final String TAG_NAME = "Name";
     private static final String TAG_ENDING = "Ending";
+    private static final String TAG_LOADED_AT = "LoadedAt";
 
     private String json = "";
     private @Nullable Timetable timetable;
@@ -106,6 +107,8 @@ public final class OperationData extends SavedData {
     private final Map<UUID, Long> freeSince = new HashMap<>();
     private final Deque<Note> notes = new ArrayDeque<>();
     private final List<Record> history = new ArrayList<>();
+    /** When the timetable was loaded, or far in the past if that is not known. */
+    private long loadedAt = Long.MIN_VALUE;
     /** Not saved: the call at which each running train was last found to have no way on, so that it is logged once a call. */
     private final Map<UUID, Integer> noWay = new HashMap<>();
     /** Not saved: no duty starts before this clock value, so there is nothing to look for until a lead before it. */
@@ -145,18 +148,20 @@ public final class OperationData extends SavedData {
     }
 
     /**
-     * Runs {@code timetable} from now on, which {@code json} is the text of. A duty's starts that have
-     * gone by at {@code now} are not looked at: loading a timetable at noon does not make the morning's
-     * duties count as missed. A running duty goes on if the new timetable has it with the same calls,
-     * and is given up if not; so is the record of a duty that has stopped running, which is dropped.
+     * Runs {@code timetable} from now on, which {@code json} is the text of. Of a duty's starts that
+     * have gone by at {@code now}, only the last is looked at, as a duty that may start late (see
+     * {@link OperationService}); loading a timetable at noon makes none of the morning's duties count as
+     * missed. A running duty goes on if the new timetable has it with the same calls, and is given up
+     * if not; so is the record of a duty that has stopped running, which is dropped.
      */
     public void loadTimetable(String json, Timetable timetable, long now) {
         this.json = json;
         use(timetable);
         for (Duty duty : timetable.duties()) {
             long started = DutyCalendar.lastDayStartedBy(now, DutyPlan.firstDeparture(calls.get(duty.id())));
-            lastDays.merge(duty.id(), started, Math::max);
+            lastDays.merge(duty.id(), started - 1, Math::max);
         }
+        loadedAt = now;
         lastDays.keySet().retainAll(calls.keySet());
         runs.entrySet().removeIf(entry -> {
             DutyRun run = entry.getValue();
@@ -214,6 +219,14 @@ public final class OperationData extends SavedData {
     public void dealtWith(String id, long day) {
         if (!Long.valueOf(day).equals(lastDays.put(id, day)))
             setDirty();
+    }
+
+    /**
+     * When the timetable was loaded; far in the past if that is not known. A duty that was to start
+     * before then and did not is no duty that did not run.
+     */
+    public long loadedAt() {
+        return loadedAt;
     }
 
     /** No duty starts before this clock value; {@link Long#MIN_VALUE} if that is not known. */
@@ -329,6 +342,7 @@ public final class OperationData extends SavedData {
     @Override
     public CompoundTag save(CompoundTag tag, HolderLookup.Provider registries) {
         tag.putString(TAG_TIMETABLE, json);
+        tag.putLong(TAG_LOADED_AT, loadedAt);
         CompoundTag days = new CompoundTag();
         lastDays.forEach(days::putLong);
         tag.put(TAG_LAST_DAYS, days);
@@ -415,6 +429,8 @@ public final class OperationData extends SavedData {
             else
                 LOGGER.error("The saved timetable no longer reads, and is not run: {}", result.problems());
         }
+        if (tag.contains(TAG_LOADED_AT))
+            data.loadedAt = tag.getLong(TAG_LOADED_AT);
         CompoundTag days = tag.getCompound(TAG_LAST_DAYS);
         for (String duty : days.getAllKeys())
             data.lastDays.put(duty, days.getLong(duty));
