@@ -216,16 +216,28 @@
   }
 
   /**
+   * How far a time (at) that is dragged delta seconds may go: no sooner than lowest and no later than
+   * highest, each rounded in to the step, so that a drag held at a limit still lands on a step. A time
+   * already beyond a limit is not moved further beyond it.
+   */
+  function heldBy(delta, at, lowest, highest, step) {
+    const low = snapUp(lowest, step || 1);
+    const high = snapDown(highest, step || 1);
+    return Math.min(Math.max(delta, Math.min(low - at, 0)), Math.max(high - at, 0));
+  }
+
+  /**
    * Moves the times of one stop of a train by delta seconds, so that it stands there as long as
    * before, but no further than the stops either side of it and the running times to them allow (see
-   * stopLimits); a stop already too close to one of them is not moved closer.
+   * stopLimits); a stop already too close to one of them is not moved closer. With a step, the limits
+   * are rounded in to it (see heldBy).
    */
-  function moveStop(timetable, number, index, delta, running) {
+  function moveStop(timetable, number, index, delta, running, step) {
     const next = copy(timetable);
     const stops = trainAt(next, number).stops;
     const stop = stops[index];
     const { earliest, latest } = stopLimits(stops, index, running);
-    const by = Math.min(Math.max(delta, Math.min(earliest - comesIn(stop), 0)), Math.max(latest - goesOut(stop), 0));
+    const by = heldBy(delta, comesIn(stop), earliest, latest - (goesOut(stop) - comesIn(stop)), step);
     stop.arrive = shifted(stop.arrive, by);
     stop.depart = shifted(stop.depart, by);
     return next;
@@ -238,16 +250,16 @@
    * other. It leaves no sooner than it arrives (or, at a stop with no arrival time, than the running
    * time after the stop before allows), and comes in no later than it leaves the next stop (or, at a
    * stop with no arrival time, than the running time to the stop after allows); a way already beyond
-   * one of these is not moved further.
+   * one of these is not moved further. With a step, the limits are rounded in to it (see heldBy).
    */
-  function moveRun(timetable, number, index, delta, running) {
+  function moveRun(timetable, number, index, delta, running, step) {
     const next = copy(timetable);
     const stops = trainAt(next, number).stops;
     const from = stops[index];
     const to = stops[index + 1];
     const lowest = from.arrive !== NONE ? from.arrive : stopLimits(stops, index, running).earliest;
     const highest = to.arrive !== NONE && to.depart !== NONE ? to.depart : stopLimits(stops, index + 1, running).latest;
-    const by = Math.min(Math.max(delta, Math.min(lowest - from.depart, 0)), Math.max(highest - comesIn(to), 0));
+    const by = heldBy(delta, from.depart, lowest, highest - (comesIn(to) - from.depart), step);
     from.depart += by;
     if (to.arrive !== NONE)
       to.arrive += by;
@@ -261,17 +273,18 @@
    * leaves where it is, so that it stands there shorter or longer: no sooner than the running time
    * after it leaves the stop before (see stopLimits), and no later than it leaves, nor, at the last
    * stop, than nothing holds it. A stop already too close to the one before is not moved closer. A
-   * stop with no arrival time is moved as moveStop moves it.
+   * stop with no arrival time is moved as moveStop moves it. With a step, the limits are rounded in to
+   * it (see heldBy).
    */
-  function moveArrival(timetable, number, index, delta, running) {
+  function moveArrival(timetable, number, index, delta, running, step) {
     const stops = trainAt(timetable, number).stops;
     if (stops[index].arrive === NONE)
-      return moveStop(timetable, number, index, delta, running);
+      return moveStop(timetable, number, index, delta, running, step);
     const next = copy(timetable);
     const stop = trainAt(next, number).stops[index];
     const { earliest, latest } = stopLimits(trainAt(next, number).stops, index, running);
     const highest = stop.depart !== NONE ? stop.depart : latest;
-    stop.arrive += Math.min(Math.max(delta, Math.min(earliest - stop.arrive, 0)), Math.max(highest - stop.arrive, 0));
+    stop.arrive += heldBy(delta, stop.arrive, earliest, highest, step);
     return next;
   }
 
@@ -279,15 +292,15 @@
    * Has a train stand delta seconds longer at one of its stops (shorter, for a delta below 0, but
    * never less than nothing): it leaves later, and the stops after it move by as much, so that the
    * running times stay as they were. A stop that is not both arrived at and left has no dwell to
-   * stretch, and is left as it is.
+   * stretch, and is left as it is. With a step, the limit is rounded in to it (see heldBy).
    */
-  function stretchStop(timetable, number, index, delta) {
+  function stretchStop(timetable, number, index, delta, step) {
     const next = copy(timetable);
     const stops = trainAt(next, number).stops;
     const stop = stops[index];
     if (stop.arrive === NONE || stop.depart === NONE)
       return next;
-    const by = Math.max(delta, stop.arrive - stop.depart);
+    const by = heldBy(delta, stop.depart, stop.arrive, Infinity, step);
     stop.depart += by;
     for (let i = index + 1; i < stops.length; i++) {
       stops[i].arrive = shifted(stops[i].arrive, by);
@@ -406,6 +419,11 @@
     return step > 1 ? Math.ceil(seconds / step) * step : Math.ceil(seconds);
   }
 
+  /** seconds down to the step before. */
+  function snapDown(seconds, step) {
+    return step > 1 ? Math.floor(seconds / step) * step : Math.floor(seconds);
+  }
+
   /**
    * The stops of a train being drawn, with a stop at station added where it was clicked, at second
    * clicked. The first stop leaves at the time clicked. A later one is arrived at when the running
@@ -476,6 +494,6 @@
     NONE, copy, setName, putLine, removeLine, stationTimes, dwellAt, setStations,
     nextNumber, addTrain, removeTrain, setTrain, stopLimits, moveStop, moveRun, moveArrival, stretchStop, shiftTrain, setStopTime, setDwell, setStopMinimum, setStopStation,
     removeStop, tooFast,
-    snap, snapUp, drawStop, drawClick, setDrawnDwell, finishDrawing,
+    snap, snapUp, snapDown, drawStop, drawClick, setDrawnDwell, finishDrawing,
   };
 });

@@ -280,3 +280,20 @@ test('a way dragged moves alone, keeping its running time, so the train stands l
   // From the first stop, which is only left, it may go as early as it likes.
   assert.deepEqual(times(edit.moveRun(tt, '3', 0, -600, running)).slice(0, 2), [[NONE, t('08:50')], [t('08:55'), t('09:06')]]);
 });
+
+test('with a step, a drag held at a limit still lands on the step', () => {
+  const { tt } = threeWithTrack();
+  // 3 minutes 57 from X to Y and 2 minutes 58 from Y to Z, which no step of 5 seconds falls on.
+  const running = (from, to) => (from === 'X' && to === 'Y' ? 237 : from === 'Y' && to === 'Z' ? 178 : null);
+  const y = next => next.trains[2].stops[1];
+  // The arrival at Y no sooner than 09:03:57, so on the step no sooner than 09:04:00.
+  assert.equal(y(edit.moveArrival(tt, '3', 1, -300, running, 5)).arrive, t('09:04'));
+  assert.equal(y(edit.moveArrival(tt, '3', 1, -300, running)).arrive, t('09:03:57'), 'without a step, the limit itself');
+  // Y moved as a whole: it leaves no later than 09:07:02, so it comes in no later than 09:06:00 on the step.
+  assert.deepEqual(y(edit.moveStop(tt, '3', 1, 600, running, 5)), { station: 'Y', arrive: t('09:06'), depart: t('09:07') });
+  // The way from Y: Z is come in at with no stop after to hold it; Y is left no sooner than it arrives.
+  assert.equal(y(edit.moveRun(tt, '3', 1, -600, running, 5)).depart, t('09:05'));
+  // A stop stretched shorter than nothing stands no time, on the step.
+  const offStep = edit.setStopTime(tt, '3', 1, 'arrive', t('09:05:02'));
+  assert.equal(y(edit.stretchStop(offStep, '3', 1, -600, 5)).depart, t('09:05:05'), 'rounded up to the step, the arrival being off it');
+});

@@ -682,6 +682,18 @@
   }
 
   /**
+   * The time a drag takes hold of, in the timetable as it was: the arrival or the departure of the
+   * stop, the departure of the way, the time a stop with one time has, or the first time of the train.
+   */
+  function draggedTime(drag) {
+    const stops = drag.base.trains.find(each => each.number === drag.number).stops;
+    const stop = stops[drag.index < 0 ? 0 : drag.index];
+    if (drag.part === 'stretch' || drag.part === 'run')
+      return stop.depart;
+    return stop.arrive !== rt.edit.NONE ? stop.arrive : stop.depart;
+  }
+
+  /**
    * Starts dragging a stop (index), or the whole train (index -1). part says what of a stop is dragged:
    * 'stop' moves it as a whole, 'arrive' its arrival alone, 'stretch' its departure and the stops after
    * it, and 'run' the way from it to the next stop.
@@ -757,18 +769,21 @@
     svg.addEventListener('pointermove', event => {
       if (dragging !== null && event.pointerId === dragging.id) {
         const raw = (event.clientX - dragging.x0) / view.width * view.span;
-        const delta = rt.edit.snap(raw, state.settings.snap);
+        // The time dragged lands on the step, not just the way it is dragged by.
+        const step = state.settings.snap;
+        const at = draggedTime(dragging);
+        const delta = rt.edit.snap(at + raw, step) - at;
         if (delta !== dragging.delta) {
           dragging.delta = delta;
           shown = delta === 0 ? null : dragging.index < 0
             ? rt.edit.shiftTrain(dragging.base, dragging.number, delta)
             : dragging.part === 'stretch'
-              ? rt.edit.stretchStop(dragging.base, dragging.number, dragging.index, delta)
+              ? rt.edit.stretchStop(dragging.base, dragging.number, dragging.index, delta, step)
               : dragging.part === 'arrive'
-                ? rt.edit.moveArrival(dragging.base, dragging.number, dragging.index, delta, running)
+                ? rt.edit.moveArrival(dragging.base, dragging.number, dragging.index, delta, running, step)
                 : dragging.part === 'run'
-                  ? rt.edit.moveRun(dragging.base, dragging.number, dragging.index, delta, running)
-                  : rt.edit.moveStop(dragging.base, dragging.number, dragging.index, delta, running);
+                  ? rt.edit.moveRun(dragging.base, dragging.number, dragging.index, delta, running, step)
+                  : rt.edit.moveStop(dragging.base, dragging.number, dragging.index, delta, running, step);
           renderDiagram();
         }
         return;
