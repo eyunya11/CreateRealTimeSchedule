@@ -80,12 +80,20 @@
     return TYPE_COLOURS[((hash % TYPE_COLOURS.length) + TYPE_COLOURS.length) % TYPE_COLOURS.length];
   }
 
-  /** HH:MM of seconds from 00:00 of the service day, going on past 24:00 and back before 00:00. */
-  function clockText(second) {
-    const minutes = Math.round(second / 60);
-    const hour = Math.floor(minutes / 60);
-    const minute = ((minutes % 60) + 60) % 60;
-    return String(hour).padStart(2, '0') + ':' + String(minute).padStart(2, '0');
+  /** A label of the time scale. */
+  function scaleLabel(className, x, y, anchor, text) {
+    const label = s('text', { class: className, x, y, 'text-anchor': anchor });
+    label.textContent = text;
+    return label;
+  }
+
+  /**
+   * The hour a time is in, as the timetable counts it: on past 24 for the day after (24:10 is in hour
+   * 24), and from 23 back for a time before 00:00, which is the day before.
+   */
+  function hourOf(second) {
+    const hour = Math.floor(second / 3600);
+    return String(hour < 0 ? ((hour % 24) + 24) % 24 : hour);
   }
 
   function timeText(seconds) {
@@ -480,15 +488,21 @@
     });
     drawn = { axis: axisOfLine, length, rows };
 
-    // the time scale
-    const step = view.step(56);
-    for (let second = Math.ceil(view.start() / step) * step; second <= view.end(); second += step) {
+    // The time scale: the hour, large, on each hour's line, and the minutes past it, small, on the
+    // lines between; and the hour the diagram starts in at its left edge, should no hour's line be there.
+    const step = view.step(40);
+    const first = Math.ceil(view.start() / step) * step;
+    if (first % 3600 !== 0)
+      svg.append(scaleLabel('label hour', left, plotBottom + 20, 'start', hourOf(view.start())));
+    for (let second = first; second <= view.end(); second += step) {
       const x = view.x(second);
       const hour = second % 3600 === 0;
       svg.append(s('line', { class: hour ? 'grid strong' : 'grid', x1: x, y1: top, x2: x, y2: plotBottom }));
-      const label = s('text', { class: 'label', x, y: plotBottom + 18, 'text-anchor': 'middle' });
-      label.textContent = clockText(second);
-      svg.append(label);
+      // The minutes next to the hour at the left edge would run into it.
+      if (!hour && first % 3600 !== 0 && x - left < 28)
+        continue;
+      svg.append(hour ? scaleLabel('label hour', x, plotBottom + 20, 'middle', hourOf(second))
+        : scaleLabel('label minute', x, plotBottom + 18, 'middle', String(Math.floor(((second % 3600) + 3600) % 3600 / 60))));
     }
 
     // the trains

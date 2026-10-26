@@ -285,6 +285,17 @@ input.seconds {
   font-size: 12px;
 }
 
+/* The time scale: the hours large and dark, the minutes between them small and pale. */
+#diagram .label.hour {
+  fill: var(--text);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+#diagram .label.minute {
+  font-size: 11px;
+}
+
 #diagram .station {
   fill: var(--text);
   font-size: 12px;
