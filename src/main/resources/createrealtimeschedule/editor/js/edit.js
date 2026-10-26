@@ -309,6 +309,49 @@
     return next;
   }
 
+  /**
+   * The time a drag of a train takes hold of: for a stop (index), its arrival ('arrive'), its
+   * departure ('stretch'), the departure of the way from it ('run'), or the time it comes in at
+   * ('stop', a stop with one time); for the whole train (index -1), the time it first comes in at.
+   */
+  function draggedTime(timetable, number, index, part) {
+    const stops = trainAt(timetable, number).stops;
+    const stop = stops[index < 0 ? 0 : index];
+    return part === 'stretch' || part === 'run' ? stop.depart : comesIn(stop);
+  }
+
+  /**
+   * A drag of a train raw seconds along the time, as the diagram makes it: the time it takes hold of
+   * (draggedTime) lands on the step, and the drag goes on as moveArrival, stretchStop, moveRun or
+   * moveStop has it for part, or as shiftTrain for the whole train (index -1).
+   *
+   * @returns {{delta: number, timetable: object}} the seconds the time taken hold of is moved by, before
+   *   the limits, and the timetable after the drag (the one given, for a delta of nothing)
+   */
+  function drag(timetable, number, index, part, raw, running, step) {
+    const at = draggedTime(timetable, number, index, part);
+    const delta = snap(at + raw, step) - at;
+    if (delta === 0)
+      return { delta, timetable };
+    if (index < 0)
+      return { delta, timetable: shiftTrain(timetable, number, delta) };
+    switch (part) {
+      case 'arrive':
+        return { delta, timetable: moveArrival(timetable, number, index, delta, running, step) };
+      case 'stretch':
+        return { delta, timetable: stretchStop(timetable, number, index, delta, step) };
+      case 'run':
+        return { delta, timetable: moveRun(timetable, number, index, delta, running, step) };
+      default:
+        return { delta, timetable: moveStop(timetable, number, index, delta, running, step) };
+    }
+  }
+
+  /** Whether train number has the same stops in both timetables, as after a drag that changed nothing. */
+  function sameStops(a, b, number) {
+    return JSON.stringify(trainAt(a, number).stops) === JSON.stringify(trainAt(b, number).stops);
+  }
+
   /** Moves all the times of a train by delta seconds. */
   function shiftTrain(timetable, number, delta) {
     const next = copy(timetable);
@@ -492,7 +535,7 @@
 
   return {
     NONE, copy, setName, putLine, removeLine, stationTimes, dwellAt, setStations,
-    nextNumber, addTrain, removeTrain, setTrain, stopLimits, moveStop, moveRun, moveArrival, stretchStop, shiftTrain, setStopTime, setDwell, setStopMinimum, setStopStation,
+    nextNumber, addTrain, removeTrain, setTrain, stopLimits, moveStop, moveRun, moveArrival, stretchStop, draggedTime, drag, sameStops, shiftTrain, setStopTime, setDwell, setStopMinimum, setStopStation,
     removeStop, tooFast,
     snap, snapUp, snapDown, drawStop, drawClick, setDrawnDwell, finishDrawing,
   };

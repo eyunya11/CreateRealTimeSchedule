@@ -50,20 +50,37 @@ public final class EditorCommand {
         event.getDispatcher().register(Commands.literal("rteditor")
             .executes(context -> open(context.getSource()))
             .then(Commands.literal("copy")
-                .requires(source -> source.hasPermission(2))
-                .then(Commands.literal("timetable").executes(context -> copy(What.TIMETABLE)))
-                .then(Commands.literal("network").executes(context -> copy(What.NETWORK))))
+                .then(Commands.literal("timetable").executes(context -> copy(context.getSource(), What.TIMETABLE)))
+                .then(Commands.literal("network").executes(context -> copy(context.getSource(), What.NETWORK))))
             .then(Commands.literal("paste")
-                .requires(source -> source.hasPermission(2))
-                .executes(context -> {
-                    ClipboardClient.paste();
-                    return 1;
-                })));
+                .executes(context -> paste(context.getSource()))));
     }
 
-    private static int copy(What what) {
+    // The subcommands are there for every player, and say why they will not do for one below
+    // permission level 2: hidden from such a player, they would go to the server, which has no
+    // /rteditor and answers only that the command is unknown.
+
+    private static int copy(CommandSourceStack source, What what) {
+        if (!allowed(source))
+            return 0;
         ClipboardClient.copy(what);
         return 1;
+    }
+
+    private static int paste(CommandSourceStack source) {
+        if (!allowed(source))
+            return 0;
+        ClipboardClient.paste();
+        return 1;
+    }
+
+    /** Whether the player may copy from and paste to the game, as the server will check; if not, says so. */
+    private static boolean allowed(CommandSourceStack source) {
+        if (source.hasPermission(2))
+            return true;
+        source.sendFailure(Component.translatableWithFallback("commands.createrealtimeschedule.clipboard.not_allowed",
+            "Only an operator (permission level 2) may copy from or paste to the game"));
+        return false;
     }
 
     private static int open(CommandSourceStack source) {

@@ -48,6 +48,7 @@
   "screen.createrealtimeschedule.diagram.day_before": "the day before",
   "screen.createrealtimeschedule.diagram.now": "now",
   "screen.createrealtimeschedule.diagram.help": "Wheel: zoom   Drag: move   Left/Right: line   PgUp/PgDn: day   Home: now",
+  "commands.createrealtimeschedule.clipboard.not_allowed": "Only an operator (permission level 2) may copy from or paste to the game",
   "commands.createrealtimeschedule.clipboard.too_large": "That is %1$s characters, more than the %2$s the clipboard is sent",
   "commands.createrealtimeschedule.rtnetwork.copied": "Copied %1$s stations and %2$s legs to your clipboard",
   "commands.createrealtimeschedule.rttimetable.copied": "Copied the timetable %1$s to your clipboard",

@@ -297,3 +297,29 @@ test('with a step, a drag held at a limit still lands on the step', () => {
   const offStep = edit.setStopTime(tt, '3', 1, 'arrive', t('09:05:02'));
   assert.equal(y(edit.stretchStop(offStep, '3', 1, -600, 5)).depart, t('09:05:05'), 'rounded up to the step, the arrival being off it');
 });
+
+test('a drag lands the time it takes hold of on the step, whichever part of the train it is', () => {
+  const { tt } = threeWithTrack();
+  // Off the step: X leaves 09:00:03, Y is come in at 09:05:07 and left 09:06:01.
+  let off = edit.setStopTime(tt, '3', 0, 'depart', t('09:00:03'));
+  off = edit.setStopTime(off, '3', 1, 'arrive', t('09:05:07'));
+  off = edit.setStopTime(off, '3', 1, 'depart', t('09:06:01'));
+  const running = (from, to) => (from === 'X' && to === 'Y' ? 237 : from === 'Y' && to === 'Z' ? 178 : null);
+  const stops = moved => moved.timetable.trains[2].stops;
+  assert.equal(edit.draggedTime(off, '3', 1, 'arrive'), t('09:05:07'));
+  assert.equal(edit.draggedTime(off, '3', 1, 'run'), t('09:06:01'));
+  assert.equal(edit.draggedTime(off, '3', -1, 'stop'), t('09:00:03'));
+  // A little earlier: the arrival lands on 09:05:05, with a step of 5.
+  assert.equal(stops(edit.drag(off, '3', 1, 'arrive', -3, running, 5))[1].arrive, t('09:05:05'));
+  // The departure, and the way from Y, a little later: on 09:06:15 with a step of 15.
+  assert.equal(stops(edit.drag(off, '3', 1, 'stretch', 10, running, 15))[1].depart, t('09:06:15'));
+  assert.equal(stops(edit.drag(off, '3', 1, 'run', 10, running, 15))[1].depart, t('09:06:15'));
+  // The whole train: its first departure on 09:00:15.
+  assert.equal(stops(edit.drag(off, '3', -1, 'stop', 10, running, 15))[0].depart, t('09:00:15'));
+  // A time on the step, not moved far enough to reach another: nothing changes, and the timetable given comes back.
+  const still = edit.drag(tt, '3', 1, 'arrive', 4, running, 15);
+  assert.equal(still.delta, 0);
+  assert.equal(still.timetable, tt);
+  assert.ok(edit.sameStops(off, edit.setStopTime(off, '1', 0, 'depart', t('07:00')), '3'), 'another train changing is no change of this one');
+  assert.ok(!edit.sameStops(off, tt, '3'));
+});

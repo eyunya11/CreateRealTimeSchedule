@@ -68,10 +68,10 @@ public final class ClipboardService {
         OperationData data = OperationData.get(source.getServer());
         Timetable timetable = data.timetable();
         if (timetable == null) {
-            source.sendFailure(Component.translatableWithFallback("commands.createrealtimeschedule.rttimetable.none", "No timetable is being run"));
+            source.sendFailure(Component.translatableWithFallback(RtTimetableCommand.KEY + "none", "No timetable is being run"));
             return null;
         }
-        return new Copy(data.json(), Component.translatableWithFallback("commands.createrealtimeschedule.rttimetable.copied",
+        return new Copy(data.json(), Component.translatableWithFallback(RtTimetableCommand.KEY + "copied",
             "Copied the timetable %1$s to your clipboard", RtTimetableCommand.name(timetable)));
     }
 
@@ -79,7 +79,7 @@ public final class ClipboardService {
         RtNetworkCommand.Written written = RtNetworkCommand.write(source);
         if (written == null)
             return null;
-        return new Copy(written.json(), Component.translatableWithFallback("commands.createrealtimeschedule.rtnetwork.copied",
+        return new Copy(written.json(), Component.translatableWithFallback(RtNetworkCommand.KEY + "copied",
             "Copied %1$s stations and %2$s legs to your clipboard", written.stations(), written.legs()));
     }
 
@@ -88,27 +88,32 @@ public final class ClipboardService {
         CommandSourceStack source = allowed(context);
         if (source == null)
             return;
-        Component from = Component.translatableWithFallback("commands.createrealtimeschedule.rttimetable.clipboard", "your clipboard");
+        Component from = Component.translatableWithFallback(RtTimetableCommand.KEY + "clipboard", "your clipboard");
         if (paste.tooLong()) {
-            source.sendFailure(Component.translatableWithFallback("commands.createrealtimeschedule.rttimetable.paste_too_long",
+            source.sendFailure(Component.translatableWithFallback(RtTimetableCommand.KEY + "paste_too_long",
                 "%1$s holds more than the %2$s characters a timetable is sent in", from, ClipboardPayload.MAX_LENGTH));
             return;
         }
         if (paste.text().isBlank()) {
-            source.sendFailure(Component.translatableWithFallback("commands.createrealtimeschedule.rttimetable.paste_empty",
+            source.sendFailure(Component.translatableWithFallback(RtTimetableCommand.KEY + "paste_empty",
                 "There is no text in %1$s", from));
             return;
         }
         RtTimetableCommand.loadText(source, paste.text(), from);
     }
 
-    /** The commands of the player who sent the payload, if the player may load timetables; null if not. */
+    /**
+     * The commands of the player who sent the payload, if the player may load timetables; null if not,
+     * after telling the player so, since the client's own command has said nothing yet.
+     */
     private static @Nullable CommandSourceStack allowed(IPayloadContext context) {
         if (!(context.player() instanceof ServerPlayer player))
             return null;
         CommandSourceStack source = player.createCommandSourceStack();
         if (!source.hasPermission(2)) {
             LOGGER.warn("{} may not load timetables or export the network, and what its client sent was dropped", player.getName().getString());
+            source.sendFailure(Component.translatableWithFallback(KEY + "not_allowed",
+                "Only an operator (permission level 2) may copy from or paste to the game"));
             return null;
         }
         return source;

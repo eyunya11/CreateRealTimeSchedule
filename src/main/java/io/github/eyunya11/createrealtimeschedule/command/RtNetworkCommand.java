@@ -38,7 +38,8 @@ import net.minecraft.world.level.storage.LevelResource;
  */
 public final class RtNetworkCommand {
 
-    private static final String KEY = "commands.createrealtimeschedule.rtnetwork.";
+    /** The prefix of the messages of /rtnetwork, which ClipboardService shares. */
+    static final String KEY = "commands.createrealtimeschedule.rtnetwork.";
 
     private RtNetworkCommand() {}
 

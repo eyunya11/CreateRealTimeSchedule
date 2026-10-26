@@ -145,9 +145,12 @@
       return;
     if (stored.settings && typeof stored.settings === 'object') {
       // Settings kept before there was a fine step have the step of 5 seconds that was then the
-      // default, which the fine step now is: they take the new default step instead.
-      if (stored.settings.fineSnap === undefined && stored.settings.snap === 5)
+      // default, which the fine step now is: they take the new default step instead, and the
+      // settings say so, for one who had chosen 5 seconds to choose it again.
+      if (stored.settings.fineSnap === undefined && stored.settings.snap === 5) {
         delete stored.settings.snap;
+        stepChanged = true;
+      }
       Object.assign(state.settings, stored.settings);
     }
     if (typeof stored.timetable === 'string') {
@@ -393,6 +396,8 @@
   let picking = false;
   /** What the last change to a duty's deadheads had to say. */
   let dutyNote = '';
+  /** Whether the step kept from before the fine step came in was changed to the new default, which the settings tell. */
+  let stepChanged = false;
   /** What the last time typed for the train chosen had to say, if it was held to the track's running times. */
   let trainNote = '';
 
@@ -735,18 +740,6 @@
   }
 
   /**
-   * The time a drag takes hold of, in the timetable as it was: the arrival or the departure of the
-   * stop, the departure of the way, the time a stop with one time has, or the first time of the train.
-   */
-  function draggedTime(drag) {
-    const stops = drag.base.trains.find(each => each.number === drag.number).stops;
-    const stop = stops[drag.index < 0 ? 0 : drag.index];
-    if (drag.part === 'stretch' || drag.part === 'run')
-      return stop.depart;
-    return stop.arrive !== rt.edit.NONE ? stop.arrive : stop.depart;
-  }
-
-  /**
    * Starts dragging a stop (index), or the whole train (index -1). part says what of a stop is dragged:
    * 'stop' moves it as a whole, 'arrive' its arrival alone, 'stretch' its departure and the stops after
    * it, and 'run' the way from it to the next stop.
@@ -826,21 +819,10 @@
         dragging.px = event.clientX - box.left;
         dragging.py = event.clientY - box.top;
         const raw = (event.clientX - dragging.x0) / view.width * view.span;
-        // The time dragged lands on the step, not just the way it is dragged by.
-        const step = stepOf(event.shiftKey);
-        const at = draggedTime(dragging);
-        const delta = rt.edit.snap(at + raw, step) - at;
-        if (delta !== dragging.delta) {
-          dragging.delta = delta;
-          shown = delta === 0 ? null : dragging.index < 0
-            ? rt.edit.shiftTrain(dragging.base, dragging.number, delta)
-            : dragging.part === 'stretch'
-              ? rt.edit.stretchStop(dragging.base, dragging.number, dragging.index, delta, step)
-              : dragging.part === 'arrive'
-                ? rt.edit.moveArrival(dragging.base, dragging.number, dragging.index, delta, running, step)
-                : dragging.part === 'run'
-                  ? rt.edit.moveRun(dragging.base, dragging.number, dragging.index, delta, running, step)
-                  : rt.edit.moveStop(dragging.base, dragging.number, dragging.index, delta, running, step);
+        const moved = rt.edit.drag(dragging.base, dragging.number, dragging.index, dragging.part, raw, running, stepOf(event.shiftKey));
+        if (moved.delta !== dragging.delta) {
+          dragging.delta = moved.delta;
+          shown = moved.delta === 0 ? null : moved.timetable;
           renderDiagram();
         } else {
           renderDragLabel();
@@ -864,11 +846,12 @@
     const end = event => {
       if (dragging !== null && event.pointerId === dragging.id) {
         const next = shown;
-        const base = dragging.base;
+        const { base, number } = dragging;
         shown = null;
         dragging = null;
-        // A drag that changed nothing (a stop stretched no shorter than nothing) is not a change to undo.
-        if (next !== null && event.type === 'pointerup' && rt.timetable.write(next) !== rt.timetable.write(base))
+        // A drag that changed nothing (a stop stretched no shorter than nothing) is not a change to
+        // undo; a drag changes only the train dragged, so only it is compared.
+        if (next !== null && event.type === 'pointerup' && !rt.edit.sameStops(next, base, number))
           change(next);
         else
           renderDiagram();
@@ -1234,6 +1217,7 @@
     panel.append(field(t('snap'), h('select', {
       onchange: event => {
         state.settings.snap = Number(event.target.value);
+        stepChanged = false;
         saveSoon();
       },
     }, [1, 5, 10, 15, 30, 60].map(step => h('option', { value: String(step), selected: step === state.settings.snap }, String(step))))));
@@ -1244,6 +1228,8 @@
       },
     }, [1, 5, 10, 15, 30, 60].map(step => h('option', { value: String(step), selected: step === state.settings.fineSnap }, String(step))))));
     panel.append(h('p', { class: 'note' }, t('snapHelp')));
+    if (stepChanged)
+      panel.append(h('p', { class: 'note held' }, t('stepChanged', state.settings.snap, state.settings.fineSnap)));
   }
 
   // ------------------------------------------------------------------ dialogs

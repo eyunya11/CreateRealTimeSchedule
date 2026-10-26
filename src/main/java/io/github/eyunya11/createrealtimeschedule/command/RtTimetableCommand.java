@@ -46,7 +46,8 @@ import net.minecraft.world.level.storage.LevelResource;
  */
 public final class RtTimetableCommand {
 
-    private static final String KEY = "commands.createrealtimeschedule.rttimetable.";
+    /** The prefix of the messages of /rttimetable, which ClipboardService shares. */
+    static final String KEY = "commands.createrealtimeschedule.rttimetable.";
 
     /** The most problems of a refused timetable said in the chat; all of them go to the log. */
     private static final int PROBLEMS_SHOWN = 10;
