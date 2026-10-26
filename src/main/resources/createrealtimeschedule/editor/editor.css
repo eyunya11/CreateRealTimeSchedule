@@ -360,6 +360,15 @@ footer h2 {
   color: var(--danger);
 }
 
+/* A train faster than the track: not a mistake the mod refuses, but one to look at. */
+.problems li.warning {
+  color: var(--warn);
+}
+
+#inspector .note.held {
+  color: var(--warn);
+}
+
 #inspector table {
   width: 100%;
   border-collapse: collapse;

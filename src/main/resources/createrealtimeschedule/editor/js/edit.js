@@ -176,12 +176,58 @@
     return seconds === NONE ? NONE : seconds + delta;
   }
 
-  /** Moves the times of one stop of a train by delta seconds, so that it stands there as long as before. */
-  function moveStop(timetable, number, index, delta) {
+  /**
+   * The seconds a train takes at the least from one stop to the next: the running time the track
+   * gives (running, from one station's name to another's, null where it does not say), and in any
+   * case a second, since a train has to arrive after it leaves.
+   */
+  function leastRunning(running, from, to) {
+    const seconds = running ? running(from.station, to.station) : null;
+    return Math.max(1, seconds === null ? 1 : seconds);
+  }
+
+  /**
+   * How early and how late one stop of a train can be, by the stops either side of it and the track:
+   * the train comes in no sooner than the running time after it leaves the stop before, and leaves
+   * no later than the running time before it comes in at the stop after. A stop with no arrival time
+   * comes in when it leaves.
+   *
+   * @returns {{earliest: number, latest: number}} the earliest time the train can come in, and the
+   *   latest it can leave; -Infinity and Infinity where nothing holds it
+   */
+  function stopLimits(stops, index, running) {
+    const stop = stops[index];
+    const before = stops[index - 1];
+    const after = stops[index + 1];
+    const earliest = before !== undefined && before.depart !== NONE ? before.depart + leastRunning(running, before, stop) : -Infinity;
+    const reach = after === undefined ? NONE : after.arrive !== NONE ? after.arrive : after.depart;
+    const latest = reach !== NONE ? reach - leastRunning(running, stop, after) : Infinity;
+    return { earliest, latest };
+  }
+
+  /** The time a stop is come in at, or left at if it has no arrival time. */
+  function comesIn(stop) {
+    return stop.arrive !== NONE ? stop.arrive : stop.depart;
+  }
+
+  /** The time a stop is left at, or come in at if it is the last. */
+  function goesOut(stop) {
+    return stop.depart !== NONE ? stop.depart : stop.arrive;
+  }
+
+  /**
+   * Moves the times of one stop of a train by delta seconds, so that it stands there as long as
+   * before, but no further than the stops either side of it and the running times to them allow (see
+   * stopLimits); a stop already too close to one of them is not moved closer.
+   */
+  function moveStop(timetable, number, index, delta, running) {
     const next = copy(timetable);
-    const stop = trainAt(next, number).stops[index];
-    stop.arrive = shifted(stop.arrive, delta);
-    stop.depart = shifted(stop.depart, delta);
+    const stops = trainAt(next, number).stops;
+    const stop = stops[index];
+    const { earliest, latest } = stopLimits(stops, index, running);
+    const by = Math.min(Math.max(delta, Math.min(earliest - comesIn(stop), 0)), Math.max(latest - goesOut(stop), 0));
+    stop.arrive = shifted(stop.arrive, by);
+    stop.depart = shifted(stop.depart, by);
     return next;
   }
 
@@ -216,21 +262,62 @@
     return next;
   }
 
-  /** Sets one time of a stop: field is 'arrive' or 'depart', and seconds may be NONE. */
-  function setStopTime(timetable, number, index, field, seconds) {
+  /**
+   * Sets one time of a stop: field is 'arrive' or 'depart', and seconds may be NONE. A time is held
+   * to what the stops either side and the running times to them allow (see stopLimits), and an
+   * arrival to no later than the stop is left, a departure to no sooner than it is arrived at; where
+   * the two cannot both hold, the stop before wins.
+   */
+  function setStopTime(timetable, number, index, field, seconds, running) {
     const next = copy(timetable);
-    trainAt(next, number).stops[index][field] = seconds;
+    const stops = trainAt(next, number).stops;
+    const stop = stops[index];
+    if (seconds === NONE) {
+      stop[field] = NONE;
+      return next;
+    }
+    const { earliest, latest } = stopLimits(stops, index, running);
+    const lowest = field === 'arrive' || stop.arrive === NONE ? earliest : stop.arrive;
+    const highest = field === 'depart' || stop.depart === NONE ? latest : stop.depart;
+    stop[field] = Math.max(Math.min(seconds, highest), lowest);
     return next;
   }
 
-  /** Has the train stand seconds at one of its stops: it leaves that long after it arrives. */
-  function setDwell(timetable, number, index, seconds) {
+  /**
+   * Has the train stand seconds at one of its stops: it leaves that long after it arrives, but no
+   * later than the running time to the stop after allows.
+   */
+  function setDwell(timetable, number, index, seconds, running) {
     const next = copy(timetable);
-    const stop = trainAt(next, number).stops[index];
+    const stops = trainAt(next, number).stops;
+    const stop = stops[index];
     if (stop.arrive === NONE)
       throw new Error('stop ' + index + ' of train ' + number + ' has no arrival to stand from');
-    stop.depart = stop.arrive + seconds;
+    stop.depart = Math.max(Math.min(stop.arrive + seconds, stopLimits(stops, index, running).latest), stop.arrive);
     return next;
+  }
+
+  /**
+   * The ways between stops that trains run faster than the track lets them: those where a train
+   * comes in at a stop sooner after leaving the one before than the running time (running, null
+   * where it does not say). Ways the track gives no running time for are not counted.
+   *
+   * @returns {Array<{number: string, from: string, to: string, given: number, needed: number}>}
+   */
+  function tooFast(timetable, running) {
+    const found = [];
+    for (const train of timetable.trains)
+      for (let k = 1; k < train.stops.length; k++) {
+        const before = train.stops[k - 1];
+        const stop = train.stops[k];
+        const needed = running(before.station, stop.station);
+        if (needed === null || before.depart === NONE || comesIn(stop) === NONE)
+          continue;
+        const given = comesIn(stop) - before.depart;
+        if (given < needed)
+          found.push({ number: train.number, from: before.station, to: stop.station, given, needed });
+      }
+    return found;
   }
 
   /** Sets the minimum stop of one stop of a train, in seconds; NONE leaves it to the station's. */
@@ -343,7 +430,8 @@
 
   return {
     NONE, copy, setName, putLine, removeLine, stationTimes, dwellAt, setStations,
-    nextNumber, addTrain, removeTrain, setTrain, moveStop, stretchStop, shiftTrain, setStopTime, setDwell, setStopMinimum, setStopStation, removeStop,
+    nextNumber, addTrain, removeTrain, setTrain, stopLimits, moveStop, stretchStop, shiftTrain, setStopTime, setDwell, setStopMinimum, setStopStation,
+    removeStop, tooFast,
     snap, snapUp, drawStop, drawClick, setDrawnDwell, finishDrawing,
   };
 });

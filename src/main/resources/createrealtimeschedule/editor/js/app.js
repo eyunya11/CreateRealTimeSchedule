@@ -197,6 +197,7 @@
       picking = false;
       dutyNote = '';
     }
+    trainNote = '';
     state.selection = selection;
     if (selection !== null && selection.kind === 'train') {
       const train = state.timetable.trains.find(each => each.number === selection.number);
@@ -331,9 +332,15 @@
 
   function renderProblems() {
     const found = rt.problems.problems(state.timetable);
-    $('problems-title').textContent = found.length === 0 ? t('noProblems') : t('problemCount', found.length);
+    // Not what the mod refuses a timetable for, but a train that cannot keep its times on this track.
+    const fast = state.network === null ? [] : rt.edit.tooFast(state.timetable, running);
+    $('problems-title').textContent = (found.length === 0 ? t('noProblems') : t('problemCount', found.length))
+      + (fast.length === 0 ? '' : t('tooFastCount', fast.length));
     const list = $('problems');
     list.replaceChildren();
+    for (const way of fast)
+      list.append(h('li', { class: 'warning', onclick: () => select({ kind: 'train', number: way.number }) },
+        t('tooFast', way.number, way.from, way.to, way.given, way.needed)));
     for (const problem of found)
       list.append(h('li', {
         onclick: () => {
@@ -372,6 +379,8 @@
   let picking = false;
   /** What the last change to a duty's deadheads had to say. */
   let dutyNote = '';
+  /** What the last time typed for the train chosen had to say, if it was held to the track's running times. */
+  let trainNote = '';
 
   function lineAxis(line) {
     return rt.axis.of(line, state.network === null ? [] : state.network.legs);
@@ -689,7 +698,7 @@
             ? rt.edit.shiftTrain(dragging.base, dragging.number, delta)
             : dragging.stretches
               ? rt.edit.stretchStop(dragging.base, dragging.number, dragging.index, delta)
-              : rt.edit.moveStop(dragging.base, dragging.number, dragging.index, delta);
+              : rt.edit.moveStop(dragging.base, dragging.number, dragging.index, delta, running);
           renderDiagram();
         }
         return;
@@ -879,7 +888,8 @@
     if (stop.arrive !== NONE) {
       const dwell = stop.depart - stop.arrive;
       const input = secondsInput(dwell, '', Number.MAX_SAFE_INTEGER, t('badDwell'),
-        seconds => (seconds === NONE ? render() : change(rt.edit.setDwell(state.timetable, number, i, seconds))));
+        seconds => (seconds === NONE ? render()
+          : changeStop(rt.edit.setDwell(state.timetable, number, i, seconds, running), number, i, 'depart', stop.arrive + seconds)));
       if (minimum !== NONE && dwell < minimum) {
         input.classList.add('warn');
         input.title = t('dwellShorter', minimum);
@@ -891,6 +901,16 @@
         t('badSeconds'), seconds => change(rt.edit.setStopMinimum(state.timetable, number, i, seconds))),
       ' ', t('seconds')));
     return h('tr', { class: 'stop-times' }, h('td', { colspan: '4' }, cells));
+  }
+
+  /**
+   * Makes next the timetable, after a time asked for one of a train's stops: if the stops either side
+   * and the track's running times held it to another, the train's panel says which.
+   */
+  function changeStop(next, number, index, field, asked) {
+    const got = next.trains.find(each => each.number === number).stops[index][field];
+    trainNote = got !== asked ? t('timeHeld', timeText(got)) : '';
+    change(next);
   }
 
   function trainInspector(panel, train) {
@@ -934,9 +954,9 @@
       return [h('tr', null,
         h('td', null, select),
         h('td', null, timeInput(stop.arrive, i === 0 && stop.arrive === rt.edit.NONE,
-          seconds => change(rt.edit.setStopTime(state.timetable, number, i, 'arrive', seconds)))),
+          seconds => changeStop(rt.edit.setStopTime(state.timetable, number, i, 'arrive', seconds, running), number, i, 'arrive', seconds))),
         h('td', null, timeInput(stop.depart, i === last && stop.depart === rt.edit.NONE,
-          seconds => change(rt.edit.setStopTime(state.timetable, number, i, 'depart', seconds)))),
+          seconds => changeStop(rt.edit.setStopTime(state.timetable, number, i, 'depart', seconds, running), number, i, 'depart', seconds))),
         h('td', null, h('button', {
           type: 'button', title: t('removeStop'), disabled: train.stops.length <= 2,
           onclick: () => change(rt.edit.removeStop(state.timetable, number, i)),
@@ -945,6 +965,8 @@
     panel.append(h('table', null,
       h('thead', null, h('tr', null, h('th', null, t('station')), h('th', null, t('arrive')), h('th', null, t('depart')), h('th'))),
       h('tbody', null, rows.flat())));
+    if (trainNote !== '')
+      panel.append(h('p', { class: 'note held' }, trainNote));
     panel.append(h('p', { class: 'note' }, t('stopTimesHelp')));
     panel.append(h('p', { class: 'note' }, t('dragHelp')));
     panel.append(h('div', { class: 'buttons' }, h('button', {

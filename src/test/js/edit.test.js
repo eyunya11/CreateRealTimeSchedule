@@ -210,3 +210,47 @@ test('the times of a station no line has any more go with the line, and stay whi
   assert.deepEqual(without.stations.map(station => station.name), ['Y']);
   assert.deepEqual(problems.problems(without).filter(problem => problem.startsWith('station')), [], 'no station is left on no line');
 });
+
+/** Train 3, X 09:00 to Y (09:05 to 09:06) to Z 09:10, with the track's running times: 4 minutes from X to Y, 3 from Y to Z. */
+function threeWithTrack() {
+  const tt = edit.addTrain(timetable(), { number: '3', line: 'a', type: '', deadhead: false, stops: [
+    { station: 'X', arrive: NONE, depart: t('09:00') }, { station: 'Y', arrive: t('09:05'), depart: t('09:06') }, { station: 'Z', arrive: t('09:10'), depart: NONE }] });
+  const running = (from, to) => (from === 'X' && to === 'Y' ? 240 : from === 'Y' && to === 'Z' ? 180 : null);
+  return { tt, running };
+}
+
+test('a stop dragged stops where the track\'s running time to the stops either side runs out', () => {
+  const { tt, running } = threeWithTrack();
+  assert.deepEqual(edit.stopLimits(tt.trains[2].stops, 1, running), { earliest: t('09:04'), latest: t('09:07') });
+  const times = next => next.trains[2].stops[1];
+  // Two minutes earlier would come in at 09:03, a minute short of the running time from X: it stops at 09:04.
+  assert.deepEqual(times(edit.moveStop(tt, '3', 1, -120, running)), { station: 'Y', arrive: t('09:04'), depart: t('09:05') });
+  assert.deepEqual(times(edit.moveStop(tt, '3', 1, 300, running)), { station: 'Y', arrive: t('09:06'), depart: t('09:07') });
+  assert.deepEqual(times(edit.moveStop(tt, '3', 1, 30, running)), { station: 'Y', arrive: t('09:05:30'), depart: t('09:06:30') }, 'within the limits it moves freely');
+  // Without the track, a stop still stays after the one before is left.
+  assert.deepEqual(times(edit.moveStop(tt, '3', 1, -600)), { station: 'Y', arrive: t('09:00:01'), depart: t('09:01:01') });
+  // A stop already too close is not moved closer, but may move away.
+  const close = edit.moveStop(tt, '3', 1, -120);
+  assert.equal(times(edit.moveStop(close, '3', 1, -10, running)).arrive, t('09:03'));
+  assert.equal(times(edit.moveStop(close, '3', 1, 20, running)).arrive, t('09:03:20'));
+});
+
+test('a time typed into the table is held to the running time and to the stop\'s other time', () => {
+  const { tt, running } = threeWithTrack();
+  const stop = (next, i) => next.trains[2].stops[i];
+  assert.equal(stop(edit.setStopTime(tt, '3', 1, 'arrive', t('09:02'), running), 1).arrive, t('09:04'), 'no sooner than the running time from X');
+  assert.equal(stop(edit.setStopTime(tt, '3', 1, 'arrive', t('09:08'), running), 1).arrive, t('09:06'), 'no later than it leaves');
+  assert.equal(stop(edit.setStopTime(tt, '3', 1, 'depart', t('09:09'), running), 1).depart, t('09:07'), 'no later than the running time to Z');
+  assert.equal(stop(edit.setStopTime(tt, '3', 1, 'depart', t('09:04'), running), 1).depart, t('09:05'), 'no sooner than it arrives');
+  assert.equal(stop(edit.setStopTime(tt, '3', 2, 'arrive', t('09:08'), running), 2).arrive, t('09:09'));
+  assert.equal(stop(edit.setStopTime(tt, '3', 0, 'depart', t('09:03'), running), 0).depart, t('09:01'));
+  assert.equal(stop(edit.setStopTime(tt, '3', 1, 'arrive', NONE, running), 1).arrive, NONE, 'a time can still be taken out');
+  assert.equal(stop(edit.setDwell(tt, '3', 1, 300, running), 1).depart, t('09:07'), 'a dwell no longer than the running time to Z allows');
+});
+
+test('the ways trains run faster than the track are found', () => {
+  const { tt, running } = threeWithTrack();
+  assert.deepEqual(edit.tooFast(tt, running), []);
+  const fast = edit.setStopTime(tt, '3', 1, 'arrive', t('09:02'));
+  assert.deepEqual(edit.tooFast(fast, running), [{ number: '3', from: 'X', to: 'Y', given: 120, needed: 240 }]);
+});
