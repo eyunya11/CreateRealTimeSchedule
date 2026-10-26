@@ -216,3 +216,28 @@ test('a segment is cut to the time shown', () => {
   assert.deepEqual(v.clip(segment(9 * 3600, 100, 9 * 3600, 100), 200), [370, 70, 370, 70]);
   assert.equal(v.clip(segment(6 * 3600, 0, 7 * 3600, 200), 200), null);
 });
+
+// ------------------------------------------------------------------ the waits (the editor's own)
+
+test('a wait is drawn from where the train waited for runs through the station to where the waiting train leaves', () => {
+  // A to S1 30 blocks, S1 to S2 30, S2 to B 40: the express runs through S1 at 08:03 by its share of the way.
+  const l = line('l', ['A', 'S1', 'S2', 'B']);
+  const a = axis.of(l, [leg('A', 'S1', 30), leg('S1', 'S2', 30), leg('S2', 'B', 40)]);
+  const local = { number: '1', line: 'l', type: '', deadhead: false,
+    stops: [stop('A', null, '07:58'), Object.assign(stop('S2', '08:03', '08:06'), { waits: [{ train: '3001', at: 'S1', maxWait: NONE }] }), stop('B', '08:15')] };
+  const express = { number: '3001', line: 'l', type: '', deadhead: false, stops: [stop('A', null, '08:00'), stop('B', '08:10')] };
+  const marks = layout.waitMarks({ name: '', lines: [l], trains: [local, express], duties: [] }, a);
+  assert.deepEqual(marks, [{ fromSecond: t('08:03'), fromPosition: 30, toSecond: t('08:06'), toPosition: 60 }]);
+});
+
+test('a wait for a train that calls at the station is drawn from where it leaves, and one for a train on another line not at all', () => {
+  const l = line('l', ['A', 'S2', 'B']);
+  const a = axis.of(l, [leg('A', 'S2', 50), leg('S2', 'B', 50)]);
+  const local = { number: '1', line: 'l', type: '', deadhead: false,
+    stops: [stop('A', null, '07:58'), Object.assign(stop('S2', '08:03', '08:06'), { waits: [{ train: '2', at: '', maxWait: NONE }, { train: '9', at: '', maxWait: NONE }] }),
+      stop('B', '08:15')] };
+  const other = { number: '2', line: 'l', type: '', deadhead: false, stops: [stop('A', null, '07:55'), stop('S2', '08:00', '08:04'), stop('B', '08:12')] };
+  const elsewhere = { number: '9', line: 'm', type: '', deadhead: false, stops: [stop('S2', null, '08:00'), stop('Z', '08:05')] };
+  const timetable = { name: '', lines: [l, line('m', ['S2', 'Z'])], trains: [local, other, elsewhere], duties: [] };
+  assert.deepEqual(layout.waitMarks(timetable, a), [{ fromSecond: t('08:04'), fromPosition: 50, toSecond: t('08:06'), toPosition: 50 }]);
+});

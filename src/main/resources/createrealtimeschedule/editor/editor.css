@@ -343,6 +343,18 @@ input.seconds {
 }
 
 /* While a stop or a way is dragged, the way as the train would run it fastest, by the track. */
+#diagram .wait {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+  pointer-events: none;
+}
+
+#diagram .wait-head {
+  fill: var(--accent);
+}
+
 #diagram .guide {
   fill: none;
   stroke: var(--danger);
@@ -443,6 +455,22 @@ footer h2 {
 
 #inspector tr.stop-times input.seconds {
   width: 52px;
+}
+
+#inspector tr.stop-times .waits {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin-top: 4px;
+}
+
+#inspector tr.stop-times .wait {
+  white-space: nowrap;
+}
+
+#inspector tr.stop-times .wait-add select {
+  max-width: 110px;
 }
 
 #inspector tr:has(+ tr.stop-times) td {

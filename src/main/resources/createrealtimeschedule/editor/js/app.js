@@ -483,6 +483,9 @@
     const plotRight = width - right;
     const plotBottom = height - bottom;
     const defs = s('defs');
+    const arrow = s('marker', { id: 'wait-arrow', viewBox: '0 0 10 10', refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: 'auto' });
+    arrow.append(s('path', { class: 'wait-head', d: 'M 0 0 L 10 5 L 0 10 z' }));
+    defs.append(arrow);
     const clip = s('clipPath', { id: 'plot' });
     clip.append(s('rect', { x: left, y: top - 6, width: Math.max(0, plotRight - left), height: Math.max(0, plotBottom - top + 12) }));
     defs.append(clip);
@@ -592,6 +595,12 @@
 
     for (const guide of fastestRuns(axisOfLine))
       plot.append(s('path', { class: 'guide', d: pathOf(guide, length) }));
+    // The waits: from where the train waited for leaves its station, or runs through it, to where the train that waits leaves.
+    for (const mark of rt.layout.waitMarks(shownTimetable(), axisOfLine))
+      plot.append(s('path', {
+        class: 'wait', 'marker-end': 'url(#wait-arrow)',
+        d: 'M ' + view.x(mark.fromSecond) + ' ' + view.y(mark.fromPosition, length) + ' L ' + view.x(mark.toSecond) + ' ' + view.y(mark.toPosition, length),
+      }));
     plot.append(s('g', { id: 'preview' }));
     renderPreview();
     svg.append(s('g', { id: 'drag-label' }));
@@ -1028,7 +1037,52 @@
       secondsInput(own, station.minimumStop !== NONE ? String(station.minimumStop) : t('serverDefault'), rt.problems.MAX_STOP_SECONDS,
         t('badSeconds'), seconds => change(rt.edit.setStopMinimum(state.timetable, number, i, seconds))),
       ' ', t('seconds')));
+    cells.push(waitsCell(train, i));
     return h('tr', { class: 'stop-times' }, h('td', { colspan: '4' }, cells));
+  }
+
+  /**
+   * The trains a stop waits for before it leaves, each with the station it leaves or runs through and
+   * the longest wait, and a train and a station to add one.
+   */
+  function waitsCell(train, i) {
+    const stop = train.stops[i];
+    const number = train.number;
+    const NONE = rt.edit.NONE;
+    const waits = stop.waits === undefined ? [] : stop.waits;
+    const set = next => change(rt.edit.setStopWaits(state.timetable, number, i, next));
+    const parts = [h('span', { class: 'waits-title' }, t('waitsFor'))];
+    waits.forEach((wait, w) => {
+      parts.push(h('span', { class: 'wait' }, t('waitFor', wait.train, rt.problems.waitStation(wait, stop.station)), ' ',
+        h('label', null, t('maxWaitShort'), ' ',
+          secondsInput(wait.maxWait, t('serverDefault'), rt.problems.MAX_WAIT_SECONDS, t('badWait'),
+            seconds => set(waits.map((each, k) => k === w ? { train: each.train, at: each.at, maxWait: seconds } : each))),
+          ' ', t('seconds')),
+        h('button', { type: 'button', title: t('removeWait'), onclick: () => set(waits.filter((each, k) => k !== w)) }, '×')));
+    });
+    const others = state.timetable.trains.map(each => each.number).filter(each => each !== number)
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    const trainSelect = h('select', { title: t('waitTrain') },
+      h('option', { value: '' }, t('waitTrain')), others.map(each => h('option', { value: each }, each)));
+    const stationSelect = h('select', { title: t('waitStation') });
+    // The stations of the chosen train's line, the stop's own first chosen if it is one of them.
+    const fill = () => {
+      const other = state.timetable.trains.find(each => each.number === trainSelect.value);
+      const line = other === undefined ? undefined : state.timetable.lines.find(each => each.id === other.line);
+      const stations = line === undefined ? [] : line.stations;
+      stationSelect.replaceChildren(...stations.map(station => h('option', { value: station, selected: station === stop.station }, station)));
+    };
+    trainSelect.addEventListener('change', fill);
+    const add = h('button', {
+      type: 'button',
+      onclick: () => {
+        if (trainSelect.value === '' || stationSelect.value === '')
+          return;
+        set(waits.concat([{ train: trainSelect.value, at: stationSelect.value === stop.station ? '' : stationSelect.value, maxWait: NONE }]));
+      },
+    }, t('addWait'));
+    parts.push(h('span', { class: 'wait-add' }, trainSelect, ' ', stationSelect, ' ', add));
+    return h('div', { class: 'waits' }, parts);
   }
 
   /**
@@ -1100,6 +1154,7 @@
     if (trainNote !== '')
       panel.append(h('p', { class: 'note held' }, trainNote));
     panel.append(h('p', { class: 'note' }, t('stopTimesHelp')));
+    panel.append(h('p', { class: 'note' }, t('waitsHelp')));
     panel.append(h('p', { class: 'note' }, t('dragHelp')));
     panel.append(h('div', { class: 'buttons' }, h('button', {
       type: 'button',
