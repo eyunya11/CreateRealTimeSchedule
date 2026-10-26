@@ -1,5 +1,5 @@
 /*
- * Reads and writes a timetable as JSON (up to version 3 of the format), as TimetableJson does in the mod.
+ * Reads and writes a timetable as JSON (up to version 4 of the format), as TimetableJson does in the mod.
  *
  * Writing gives the same text as the mod, member for member and line for line. Reading checks the
  * same things in the same order and says them in the same words, with one difference: the browser's
@@ -24,10 +24,11 @@
 
   /**
    * The newest version of the JSON the editor reads. Version 3 added the stations' times and the
-   * stops' minimum stops; a timetable is written in the oldest version that holds it (version()), so
-   * that a mod that reads only version 2 still takes one that has none of them.
+   * stops' minimum stops, and version 4 the trains that are never cancelled to get a late set back on
+   * time (keep); a timetable is written in the oldest version that holds it (version()), so that a mod
+   * that reads only version 2 still takes one that has none of them.
    */
-  const VERSION = 3;
+  const VERSION = 4;
 
   /** The most problems reported at once; the rest are counted. */
   const MAX_PROBLEMS = 50;
@@ -253,9 +254,13 @@
     const line = orEmpty(f.string('line', true));
     const type = orEmpty(f.string('type', false));
     const deadhead = f.bool('deadhead', false);
+    const keep = f.bool('keep', false);
     const stops = f.objects('stops', true).map(readStop);
     f.finish();
-    return { number, line, type, stops, deadhead };
+    const train = { number, line, type, stops, deadhead };
+    if (keep)
+      train.keep = true;
+    return train;
   }
 
   function readDuty(f) {
@@ -318,16 +323,21 @@
     return stop.minimumStop !== undefined && stop.minimumStop !== NONE;
   }
 
-  /** The oldest version of the JSON that holds the timetable: 3 if it has anything version 3 added, else 2. */
+  /**
+   * The oldest version of the JSON that holds the timetable: 4 if it has a train that is never
+   * cancelled, else 3 if it has anything version 3 added, else 2.
+   */
   function version(timetable) {
+    if (timetable.trains.some(train => train.keep === true))
+      return 4;
     const three = stationsOf(timetable).length > 0 || timetable.trains.some(train => train.stops.some(hasMinimumStop));
     return three ? 3 : 2;
   }
 
   /**
    * The timetable as JSON, laid out as the mod lays it out, in the oldest version that holds it:
-   * members with their default value (loop and deadhead false, type empty, a time or a minimum stop
-   * a stop does not have, no stations with times of their own) are left out.
+   * members with their default value (loop, deadhead and keep false, type empty, a time or a minimum
+   * stop a stop does not have, no stations with times of their own) are left out.
    */
   function write(timetable) {
     const lines = timetable.lines.map(line => {
@@ -350,6 +360,8 @@
         entries.push(['type', out.text(train.type)]);
       if (train.deadhead)
         entries.push(['deadhead', out.raw('true')]);
+      if (train.keep === true)
+        entries.push(['keep', out.raw('true')]);
       const stops = train.stops.map(stop => {
         const stopEntries = [['station', out.text(stop.station)]];
         if (stop.arrive !== NONE)

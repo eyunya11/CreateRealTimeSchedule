@@ -211,6 +211,36 @@ class TimetableJsonTest {
         assertEquals(3, withStopTimes().version());
     }
 
+    /** A train that is never cancelled, which version 4 added. */
+    private static Timetable kept(Timetable timetable) {
+        Train train = timetable.trains().getFirst();
+        return new Timetable(timetable.name(), timetable.lines(), timetable.stations(),
+            List.of(new Train(train.number(), train.line(), train.type(), train.stops(), train.deadhead(), true)), timetable.duties());
+    }
+
+    @Test
+    void readsAndWritesATrainThatIsNeverCancelledAsVersionFour() {
+        Timetable timetable = kept(night());
+        String json = TimetableJson.write(timetable);
+        assertTrue(json.contains("\"version\": 4,"), json);
+        assertTrue(json.contains("\"type\": \"night\",\n      \"keep\": true,\n      \"stops\""), json);
+        assertEquals(timetable, accepted(json));
+        assertTrue(accepted(json).trains().getFirst().keep());
+        assertEquals(4, timetable.version());
+        // Version 4 comes before what version 3 added, which it holds too.
+        assertEquals(4, kept(withStopTimes()).version());
+        assertFalse(accepted(EXAMPLE).trains().getFirst().keep());
+    }
+
+    /** The example the editor's tests read too (src/test/js), which both have to write back as it is. */
+    @Test
+    void writesTheKeepExampleBackIdenticallyToTheCharacter() {
+        String text = resource("example-keep.json");
+        Timetable timetable = accepted(text);
+        assertEquals(List.of(false, false, true, false), timetable.trains().stream().map(Train::keep).toList());
+        assertEquals(text, TimetableJson.write(timetable));
+    }
+
     @Test
     void refusesSecondsThatAreNotAWholeNumber() {
         String json = TimetableJson.write(withStopTimes());
@@ -400,8 +430,8 @@ class TimetableJsonTest {
         for (String version : List.of("0", "-1"))
             assertOnlyProblem("{\"format\": \"createrealtimeschedule.timetable\", \"version\": " + version + "}", "version: must be 1 or more");
         // A newer version may have members this one has never heard of; they are not worth listing.
-        assertOnlyProblem("{\"format\": \"createrealtimeschedule.timetable\", \"version\": 4, \"colours\": [1, 2]}",
-            "version: is 4, but this mod reads timetables up to version 3");
+        assertOnlyProblem("{\"format\": \"createrealtimeschedule.timetable\", \"version\": 5, \"colours\": [1, 2]}",
+            "version: is 5, but this mod reads timetables up to version 4");
     }
 
     @Test

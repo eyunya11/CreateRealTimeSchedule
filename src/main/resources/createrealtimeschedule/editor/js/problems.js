@@ -5,7 +5,7 @@
  *
  * A timetable here is plain data, as timetable.js reads it: {name, lines, stations, trains, duties},
  * a line {id, name, stations, loop}, a station {name, dwell, minimumStop} with seconds or NONE, a
- * train {number, line, type, stops, deadhead}, a stop {station, arrive, depart} with the times in
+ * train {number, line, type, stops, deadhead} with keep true if it is never cancelled, a stop {station, arrive, depart} with the times in
  * seconds or NONE and a minimumStop if it has one of its own, and a duty {id, depot, trains}. A
  * timetable without stations (one made before version 3) has none with times of their own.
  */

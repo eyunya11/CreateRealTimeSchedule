@@ -67,10 +67,23 @@ test('a timetable not of the right shape is not read', () => {
 });
 
 test('a newer version is not read, and says the editor needs updating', () => {
-  const result = timetable.read('{"format": "createrealtimeschedule.timetable", "version": 4, "whatever": 1}');
+  const result = timetable.read('{"format": "createrealtimeschedule.timetable", "version": 5, "whatever": 1}');
   assert.equal(result.timetable, null);
   assert.deepEqual(result.problems,
-    ['version: is 4, but this editor reads timetables up to version 3; the editor needs updating to read this one']);
+    ['version: is 5, but this editor reads timetables up to version 4; the editor needs updating to read this one']);
+});
+
+test('a train that is never cancelled is read and written back as the mod writes it, as version 4', () => {
+  const text = readText(path.join(RESOURCES, 'timetable', 'example-keep.json'));
+  const result = timetable.read(text);
+  assert.deepEqual(result.problems, []);
+  assert.deepEqual(result.timetable.trains.map(train => train.keep === true), [false, false, true, false]);
+  assert.equal('keep' in result.timetable.trains[0], false, 'a train that may be cancelled has no keep');
+  assert.equal(timetable.version(result.timetable), 4);
+  assert.equal(timetable.write(result.timetable), text);
+  const stopTimes = timetable.read(readText(path.join(RESOURCES, 'timetable', 'example-stop-times.json'))).timetable;
+  stopTimes.trains[0].keep = true;
+  assert.equal(timetable.version(stopTimes), 4, 'version 4 holds what version 3 added too');
 });
 
 test('the stations\' times and the stops\' minimum stops are read and written back as the mod writes them, as version 3', () => {

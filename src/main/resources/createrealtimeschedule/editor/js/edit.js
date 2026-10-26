@@ -20,19 +20,27 @@
     return made;
   }
 
+  /** A train as it is, with a keep mark only if it is never to be cancelled. */
+  function copyTrain(train) {
+    const made = {
+      number: train.number,
+      line: train.line,
+      type: train.type,
+      stops: train.stops.map(copyStop),
+      deadhead: train.deadhead,
+    };
+    if (train.keep === true)
+      made.keep = true;
+    return made;
+  }
+
   /** A copy to change; a timetable from before version 3 gets its (empty) stations. */
   function copy(timetable) {
     return {
       name: timetable.name,
       lines: timetable.lines.map(line => ({ id: line.id, name: line.name, stations: line.stations.slice(), loop: line.loop })),
       stations: (timetable.stations || []).map(station => ({ name: station.name, dwell: station.dwell, minimumStop: station.minimumStop })),
-      trains: timetable.trains.map(train => ({
-        number: train.number,
-        line: train.line,
-        type: train.type,
-        stops: train.stops.map(copyStop),
-        deadhead: train.deadhead,
-      })),
+      trains: timetable.trains.map(copyTrain),
       duties: timetable.duties.map(duty => ({ id: duty.id, depot: duty.depot, trains: duty.trains.slice() })),
     };
   }
@@ -156,7 +164,7 @@
     return next;
   }
 
-  /** Changes a train's number, type and deadhead mark; its duties follow a new number. */
+  /** Changes a train's number, type, deadhead mark and keep mark; its duties follow a new number. */
   function setTrain(timetable, number, fields) {
     const next = copy(timetable);
     const train = trainAt(next, number);
@@ -164,6 +172,10 @@
       train.type = fields.type;
     if (fields.deadhead !== undefined)
       train.deadhead = fields.deadhead;
+    if (fields.keep === true)
+      train.keep = true;
+    else if (fields.keep === false)
+      delete train.keep;
     if (fields.number !== undefined && fields.number !== number) {
       train.number = fields.number;
       for (const duty of next.duties)

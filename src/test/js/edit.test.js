@@ -73,6 +73,18 @@ test('a train taken out leaves its duties, and a train renumbered takes its duti
   assert.deepEqual(renamed.duties[0].trains, ['101', '2']);
 });
 
+test('a train is marked never to be cancelled, and keeps the mark through other changes', () => {
+  const kept = edit.setTrain(timetable(), '1', { keep: true });
+  assert.equal(kept.trains[0].keep, true);
+  assert.equal('keep' in kept.trains[1], false, 'the other train is not marked');
+  // Any change copies the timetable, and the copy must not lose the mark.
+  assert.equal(edit.copy(kept).trains[0].keep, true);
+  assert.equal(edit.setTrain(kept, '1', { type: 'rapid' }).trains[0].keep, true);
+  assert.equal(edit.shiftTrain(kept, '1', 60).trains[0].keep, true);
+  const unmarked = edit.setTrain(kept, '1', { keep: false });
+  assert.equal('keep' in unmarked.trains[0], false, 'a train that may be cancelled has no keep');
+});
+
 test('a stop moves with its dwell kept, and a train moves as a whole', () => {
   const three = edit.addTrain(timetable(), { number: '3', line: 'a', type: '', deadhead: false, stops: [
     { station: 'X', arrive: NONE, depart: t('09:00') }, { station: 'Y', arrive: t('09:05'), depart: t('09:06') }, { station: 'X', arrive: t('09:10'), depart: NONE }] });
