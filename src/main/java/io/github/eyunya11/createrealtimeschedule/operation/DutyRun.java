@@ -245,8 +245,7 @@ public final class DutyRun {
 
     /** The minimum stop at a call, in ticks: the timetable's, or else {@code defaultMinimumStop}. */
     public long minimumStop(int index, long defaultMinimumStop) {
-        int seconds = calls.get(index).minimumStop();
-        return seconds < 0 ? defaultMinimumStop : seconds * (long) RealClock.TICKS_PER_SECOND;
+        return DutyPlan.minimumStop(calls.get(index), defaultMinimumStop);
     }
 
     // ------------------------------------------------------------------ what it is
@@ -323,7 +322,7 @@ public final class DutyRun {
     }
 
     private long at(int seconds) {
-        return day * RealClock.TICKS_PER_DAY + seconds * (long) RealClock.TICKS_PER_SECOND;
+        return DutyPlan.at(day, seconds);
     }
 
     /** When the set arrived at each call, or {@link #NOT_YET}. */

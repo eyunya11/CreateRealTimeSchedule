@@ -6,6 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import io.github.eyunya11.createrealtimeschedule.clock.RealClock;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Duty;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Stop;
@@ -54,6 +55,20 @@ public final class DutyPlan {
     /** When the duty first leaves, as {@code ServiceTime} seconds. */
     public static int firstDeparture(List<Call> calls) {
         return calls.getFirst().depart();
+    }
+
+    /**
+     * The clock value of {@code seconds} of the timetable on service {@code day}. The timetable's times
+     * count from 00:00 of the service day, and run on past midnight.
+     */
+    public static long at(long day, int seconds) {
+        return day * RealClock.TICKS_PER_DAY + seconds * (long) RealClock.TICKS_PER_SECOND;
+    }
+
+    /** The minimum stop at {@code call}, in ticks: the timetable's, or else {@code defaultMinimumStop}. */
+    public static long minimumStop(Call call, long defaultMinimumStop) {
+        int seconds = call.minimumStop();
+        return seconds < 0 ? defaultMinimumStop : seconds * (long) RealClock.TICKS_PER_SECOND;
     }
 
     /**

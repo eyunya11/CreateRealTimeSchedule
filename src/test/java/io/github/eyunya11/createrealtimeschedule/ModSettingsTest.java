@@ -22,6 +22,7 @@ class ModSettingsTest {
         assertEquals(RealClock.ticksOf(6, 0, 0), ModSettings.startTimeTicks());
         assertEquals(20, ModSettings.defaultMinimumStopSeconds());
         assertEquals(60, ModSettings.dutyLeadSeconds());
+        assertEquals(600, ModSettings.recoveryThresholdSeconds());
     }
 
     @Test
@@ -32,6 +33,8 @@ class ModSettingsTest {
         assertEquals(ModSettings.MAX_MINIMUM_STOP_SECONDS, Timetable.MAX_STOP_SECONDS, "a timetable's minimum stop goes as far as the config's");
         assertEquals(60, ModSettings.DEFAULT_DUTY_LEAD_SECONDS);
         assertEquals(3600, ModSettings.MAX_DUTY_LEAD_SECONDS);
+        assertEquals(600, ModSettings.DEFAULT_RECOVERY_THRESHOLD_SECONDS);
+        assertEquals(7200, ModSettings.MAX_RECOVERY_THRESHOLD_SECONDS);
     }
 
     @Test
