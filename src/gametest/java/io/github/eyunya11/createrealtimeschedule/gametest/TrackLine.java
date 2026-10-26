@@ -64,6 +64,9 @@ import net.minecraft.world.phys.Vec3;
  * navigation and the movement, is Create's. A test calls {@link #cleanUpWhenTheTestEnds()} once,
  * then {@link #setUp()} once a tick until it answers true, and gives the train its schedule.
  *
+ * <p>More trains can be assembled the same way at other stations and left standing there
+ * ({@link #parkATrainAt}), so that those platforms have a train at them.
+ *
  * <p>A line can have a {@link Bend}, a curved track of Create's that takes it over to a row of blocks
  * further south, or a {@link Turn}, one that turns it south, for a test of what a curve does to a
  * train.
@@ -161,6 +164,9 @@ final class TrackLine {
     private Phase phase = Phase.BUILD_TRACK;
     private int phaseTicks;
     private Train train;
+    /** The stations a train is parked at, besides the first; see {@link #parkATrainAt}. */
+    private final List<Integer> parkedAt = new ArrayList<>();
+    private final List<Train> parked = new ArrayList<>();
 
     /** A line that leaves the clock alone, for a test that does not read it. */
     TrackLine(GameTestHelper helper, int lastX, int[] stationX, String[] names) {
@@ -294,6 +300,23 @@ final class TrackLine {
 
     Train train() {
         return train;
+    }
+
+    /**
+     * Has another train assembled at the station {@code index} when the line is set up, as at the
+     * first, which stands there, so that the platform has a train at it. The station has to be on the
+     * first row, with track a block either side of its own. Called before {@link #setUp()}.
+     */
+    TrackLine parkATrainAt(int index) {
+        if (index <= 0 || index >= stationTracks.length || southward(stationTracks[index]))
+            throw new IllegalArgumentException("a train can be parked at a station of the first row other than the first, not at " + index);
+        parkedAt.add(index);
+        return this;
+    }
+
+    /** The train parked at the {@code i}-th station given to {@link #parkATrainAt}, once the line is set up. */
+    Train parked(int i) {
+        return parked.get(i);
     }
 
     GlobalStation station(int index) {
@@ -540,13 +563,22 @@ final class TrackLine {
             stations[i] = stationEntity(i).getStation();
         }
 
-        assembleAtFirstStation();
-        train = stations[0].getPresentTrain();
-        if (train == null) {
-            AssemblyException problem = AssemblyException.read(stationEntity(0).saveWithoutMetadata(level.registryAccess()), level.registryAccess());
-            helper.fail("no train was assembled at " + names[0] + (problem == null ? "" : ": " + problem.component.getString()));
-        }
+        train = assembleAt(0);
+        for (int index : parkedAt)
+            parked.add(assembleAt(index));
         enter(Phase.WAIT_FOR_CONDUCTOR);
+    }
+
+    /** The train assembled at the station {@code index}, standing there. */
+    private Train assembleAt(int index) {
+        placeTrainBlocks(index);
+        stationEntity(index).assemble(owner);
+        Train made = stations[index].getPresentTrain();
+        if (made == null) {
+            AssemblyException problem = AssemblyException.read(stationEntity(index).saveWithoutMetadata(level.registryAccess()), level.registryAccess());
+            helper.fail("no train was assembled at " + names[index] + (problem == null ? "" : ": " + problem.component.getString()));
+        }
+        return made;
     }
 
     /**
@@ -554,8 +586,8 @@ final class TrackLine {
      * the train controls beyond it facing back at it, all glued together: the burner is the
      * conductor, which Create wants before it lets a train follow a schedule.
      */
-    private void assembleAtFirstStation() {
-        BlockPos trackFirst = stationTracks[0];
+    private void placeTrainBlocks(int index) {
+        BlockPos trackFirst = stationTracks[index];
         BlockPos bogey = trackFirst.offset(-1, 1, 0);
         BlockPos burner = trackFirst.offset(0, 1, 0);
         BlockPos controls = trackFirst.offset(1, 1, 0);
@@ -566,8 +598,6 @@ final class TrackLine {
         helper.setBlock(burner, AllBlocks.BLAZE_BURNER.getDefaultState().setValue(BlazeBurnerBlock.HEAT_LEVEL, BlazeBurnerBlock.HeatLevel.SMOULDERING));
         helper.setBlock(controls, AllBlocks.TRAIN_CONTROLS.getDefaultState().setValue(ControlsBlock.FACING, Direction.WEST));
         level.addFreshEntity(new SuperGlueEntity(level, SuperGlueEntity.span(helper.absolutePos(bogey), helper.absolutePos(controls))));
-
-        stationEntity(0).assemble(owner);
     }
 
     /** Create finds out who is driving a tick after the train's entities are made, so the schedule waits for that. */
@@ -581,18 +611,21 @@ final class TrackLine {
 
     // ------------------------------------------------------------------ putting it all back
 
-    /** Takes the train, the stations and the track out of Create's railways and the world, and gives the clock back. */
+    /** Takes the trains, the stations and the track out of Create's railways and the world, and gives the clock back. */
     void cleanUp() {
         try {
-            if (train != null) {
-                for (var carriage : train.carriages)
+            List<Train> trains = new ArrayList<>(parked);
+            if (train != null)
+                trains.add(train);
+            for (Train each : trains) {
+                for (var carriage : each.carriages)
                     carriage.forEachPresentEntity(Entity::discard);
                 for (GlobalStation station : stations)
                     if (station != null)
-                        station.cancelReservation(train);
-                Create.RAILWAYS.removeTrain(train.id);
-                CatnipServices.NETWORK.sendToAllClients(new RemoveTrainPacket(train));
-                TrainSlotMemory.get(server).forget(train.id);
+                        station.cancelReservation(each);
+                Create.RAILWAYS.removeTrain(each.id);
+                CatnipServices.NETWORK.sendToAllClients(new RemoveTrainPacket(each));
+                TrainSlotMemory.get(server).forget(each.id);
             }
             List<Entity> leftovers = new ArrayList<>(level.getEntitiesOfClass(Entity.class, helper.getBounds().inflate(1.0), e -> !(e instanceof Player)));
             leftovers.forEach(Entity::discard);
@@ -600,9 +633,11 @@ final class TrackLine {
                 level.setBlock(helper.absolutePos(stationBlock(i)), Blocks.AIR.defaultBlockState(), 3);
             for (Signal signal : signals)
                 level.setBlock(helper.absolutePos(signalBlock(signal)), Blocks.AIR.defaultBlockState(), 3);
-            BlockPos trackFirst = stationTracks[0];
-            for (int dx = -1; dx <= 1; dx++)
-                level.setBlock(helper.absolutePos(trackFirst.offset(dx, 1, 0)), Blocks.AIR.defaultBlockState(), 3);
+            List<Integer> assembledAt = new ArrayList<>(parkedAt);
+            assembledAt.add(0);
+            for (int index : assembledAt)
+                for (int dx = -1; dx <= 1; dx++)
+                    level.setBlock(helper.absolutePos(stationTracks[index].offset(dx, 1, 0)), Blocks.AIR.defaultBlockState(), 3);
             for (int x = FIRST_X; x <= lastX; x++)
                 if (straightAt(x))
                     level.setBlock(helper.absolutePos(track(x)), Blocks.AIR.defaultBlockState(), 3);

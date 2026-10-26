@@ -1,0 +1,78 @@
+{
+  "about": "Stop times (version 3): a station listed twice or on no line, dwells and minimum stops out of range, and a minimum stop at the last stop.",
+  "timetable": {
+    "format": "createrealtimeschedule.timetable",
+    "version": 3,
+    "name": "",
+    "lines": [
+      {
+        "id": "l",
+        "name": "L",
+        "stations": [
+          "A",
+          "B",
+          "C"
+        ]
+      }
+    ],
+    "stations": [
+      {
+        "name": "A",
+        "dwell": 30,
+        "minimum_stop": 15
+      },
+      {
+        "name": "B",
+        "dwell": 601,
+        "minimum_stop": 1000
+      },
+      {
+        "name": "A",
+        "dwell": 0
+      },
+      {
+        "name": "X",
+        "minimum_stop": 600
+      },
+      {
+        "name": " ",
+        "minimum_stop": 700
+      }
+    ],
+    "trains": [
+      {
+        "number": "1",
+        "line": "l",
+        "stops": [
+          {
+            "station": "A",
+            "depart": "08:00",
+            "minimum_stop": 10
+          },
+          {
+            "station": "B",
+            "arrive": "08:05",
+            "depart": "08:06",
+            "minimum_stop": 601
+          },
+          {
+            "station": "C",
+            "arrive": "08:10",
+            "minimum_stop": 0
+          }
+        ]
+      }
+    ],
+    "duties": []
+  },
+  "problems": [
+    "station \"B\": the dwell must be 0 to 600 seconds",
+    "station \"B\": the minimum stop must be 0 to 600 seconds",
+    "station \"A\": is listed twice",
+    "station \"X\": is not a station of any line",
+    "stations[4]: the name must not be empty, start or end with a space, or contain a control character",
+    "stations[4]: the minimum stop must be 0 to 600 seconds",
+    "train \"1\", stop 2 \"B\": the minimum stop must be 0 to 600 seconds",
+    "train \"1\", stop 3 \"C\": is the last stop, which the train does not leave, so it has no minimum stop"
+  ]
+}

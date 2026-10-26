@@ -1,0 +1,115 @@
+{
+  "about": "Stops: off the line, the same station twice, times missing or out of order, a train that turns back, a line that is not there.",
+  "timetable": {
+    "format": "createrealtimeschedule.timetable",
+    "version": 2,
+    "name": "",
+    "lines": [
+      {
+        "id": "l",
+        "name": "L",
+        "stations": [
+          "A",
+          "B",
+          "C"
+        ]
+      }
+    ],
+    "trains": [
+      {
+        "number": "1",
+        "line": "l",
+        "stops": [
+          {
+            "station": "A",
+            "arrive": "08:00",
+            "depart": "08:01"
+          },
+          {
+            "station": "X",
+            "depart": "08:05"
+          },
+          {
+            "station": "X",
+            "arrive": "08:10"
+          }
+        ]
+      },
+      {
+        "number": "2",
+        "line": "l",
+        "stops": [
+          {
+            "station": "C",
+            "depart": "09:00"
+          },
+          {
+            "station": "B",
+            "arrive": "08:59",
+            "depart": "08:58"
+          },
+          {
+            "station": "C",
+            "arrive": "09:10",
+            "depart": "09:11"
+          }
+        ]
+      },
+      {
+        "number": "3",
+        "line": "nope",
+        "stops": [
+          {
+            "station": "A",
+            "depart": "10:00"
+          }
+        ]
+      },
+      {
+        "number": "3",
+        "line": "l",
+        "type": " fast",
+        "stops": [
+          {
+            "station": "A",
+            "depart": "10:00"
+          },
+          {
+            "station": "B"
+          }
+        ]
+      },
+      {
+        "number": "",
+        "line": "l",
+        "stops": [
+          {
+            "station": "A",
+            "depart": "10:00"
+          },
+          {
+            "station": "B",
+            "arrive": "10:05"
+          }
+        ]
+      }
+    ],
+    "duties": []
+  },
+  "problems": [
+    "train \"1\", stop 1 \"A\": is the first stop, which only has a departure time",
+    "train \"1\", stop 2 \"X\": is not a station of line \"l\"",
+    "train \"1\", stop 3 \"X\": is not a station of line \"l\"",
+    "train \"1\", stop 3 \"X\": is the same station as the stop before it",
+    "train \"2\", stop 2 \"B\": arrives at 08:59, which is not after the train leaves the stop before at 09:00",
+    "train \"2\", stop 2 \"B\": leaves at 08:58, before it arrives at 08:59",
+    "train \"2\", stop 3 \"C\": is the last stop, which only has an arrival time",
+    "train \"2\", stop 3 \"C\": turns back along line \"l\"; a train goes one way along a line, and a loop line is marked as one",
+    "train \"3\": there is no line \"nope\"",
+    "train \"3\": needs at least 2 stops",
+    "train \"3\": another train has the same number",
+    "train \"3\": the type must not start or end with a space or contain a control character",
+    "train \"3\", stop 2 \"B\": needs an arrival time",
+    "trains[4]: the number must be 1 to 32 characters, with no space at either end and no control character"
+  ]
+}

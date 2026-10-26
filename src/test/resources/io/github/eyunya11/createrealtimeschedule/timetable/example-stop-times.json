@@ -1,0 +1,38 @@
+{
+  "format": "createrealtimeschedule.timetable",
+  "version": 3,
+  "name": "Stop times",
+  "lines": [
+    {
+      "id": "l",
+      "name": "Line",
+      "stations": ["Depot", "A", "M", "B"]
+    }
+  ],
+  "stations": [
+    {"name": "A", "dwell": 30, "minimum_stop": 15},
+    {"name": "B", "dwell": 45},
+    {"name": "Depot", "minimum_stop": 0}
+  ],
+  "trains": [
+    {
+      "number": "D1",
+      "line": "l",
+      "deadhead": true,
+      "stops": [
+        {"station": "Depot", "depart": "07:59"},
+        {"station": "A", "arrive": "07:59:30"}
+      ]
+    },
+    {
+      "number": "1",
+      "line": "l",
+      "stops": [
+        {"station": "A", "depart": "08:00"},
+        {"station": "M", "arrive": "08:03", "depart": "08:03:30", "minimum_stop": 10},
+        {"station": "B", "arrive": "08:05"}
+      ]
+    }
+  ],
+  "duties": []
+}

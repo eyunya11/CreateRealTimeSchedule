@@ -40,10 +40,14 @@ import net.minecraft.world.level.storage.LevelResource;
  * what has gone wrong lately.</li>
  * <li>{@code unload} stops running the timetable.</li>
  * </ul>
+ *
+ * <p>The timetable goes through the player's clipboard with {@code /rteditor copy timetable} and
+ * {@code /rteditor paste}, which are commands of the client (see {@link ClipboardService}).
  */
 public final class RtTimetableCommand {
 
-    private static final String KEY = "commands.createrealtimeschedule.rttimetable.";
+    /** The prefix of the messages of /rttimetable, which ClipboardService shares. */
+    static final String KEY = "commands.createrealtimeschedule.rttimetable.";
 
     /** The most problems of a refused timetable said in the chat; all of them go to the log. */
     private static final int PROBLEMS_SHOWN = 10;
@@ -86,12 +90,22 @@ public final class RtTimetableCommand {
                 "Could not read %1$s: %2$s", file.toString(), String.valueOf(e.getMessage())));
             return 0;
         }
+        return loadText(source, json, Component.literal(file.toString()));
+    }
 
+    /**
+     * Runs the timetable that {@code json} is the text of, read from {@code from}, if nothing is wrong
+     * with it; if anything is, says what and keeps the timetable that was run before.
+     *
+     * @return the number of duties loaded, or 0 if the timetable was refused
+     */
+    public static int loadText(CommandSourceStack source, String json, Component from) {
+        MinecraftServer server = source.getServer();
         TimetableJson.Result result = TimetableJson.parse(json);
         if (!result.ok()) {
             List<String> problems = result.problems();
             source.sendFailure(Component.translatableWithFallback(KEY + "refused",
-                "The timetable in %1$s was not loaded; what is wrong with it (%2$s):", file.toString(), problems.size()));
+                "The timetable in %1$s was not loaded; what is wrong with it (%2$s):", from, problems.size()));
             for (String problem : problems.subList(0, Math.min(PROBLEMS_SHOWN, problems.size())))
                 source.sendFailure(Component.literal("- " + problem));
             return 0;
@@ -157,7 +171,7 @@ public final class RtTimetableCommand {
             duty.id(), duty.depot(), TimeText.clock(DutyCalendar.startOf(day, first)));
     }
 
-    private static String name(Timetable timetable) {
+    static String name(Timetable timetable) {
         return timetable.name().isEmpty() ? "-" : timetable.name();
     }
 

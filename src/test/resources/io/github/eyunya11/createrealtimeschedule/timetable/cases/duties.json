@@ -1,0 +1,138 @@
+{
+  "about": "Duties: a train that leaves before the one before arrives, trains that do not meet, a train twice or in two duties, depots.",
+  "timetable": {
+    "format": "createrealtimeschedule.timetable",
+    "version": 2,
+    "name": "",
+    "lines": [
+      {
+        "id": "l",
+        "name": "L",
+        "stations": [
+          "Depot",
+          "A",
+          "B"
+        ]
+      }
+    ],
+    "trains": [
+      {
+        "number": "D1",
+        "line": "l",
+        "deadhead": true,
+        "stops": [
+          {
+            "station": "Depot",
+            "depart": "07:00"
+          },
+          {
+            "station": "A",
+            "arrive": "07:05"
+          }
+        ]
+      },
+      {
+        "number": "1",
+        "line": "l",
+        "stops": [
+          {
+            "station": "A",
+            "depart": "07:10"
+          },
+          {
+            "station": "B",
+            "arrive": "07:20"
+          }
+        ]
+      },
+      {
+        "number": "2",
+        "line": "l",
+        "stops": [
+          {
+            "station": "B",
+            "depart": "07:15"
+          },
+          {
+            "station": "A",
+            "arrive": "07:25"
+          }
+        ]
+      },
+      {
+        "number": "3",
+        "line": "l",
+        "stops": [
+          {
+            "station": "A",
+            "depart": "08:00"
+          },
+          {
+            "station": "B",
+            "arrive": "08:10"
+          }
+        ]
+      },
+      {
+        "number": "D2",
+        "line": "l",
+        "deadhead": true,
+        "stops": [
+          {
+            "station": "A",
+            "depart": "08:30"
+          },
+          {
+            "station": "Depot",
+            "arrive": "08:35"
+          }
+        ]
+      }
+    ],
+    "duties": [
+      {
+        "id": "1A",
+        "depot": "Depot",
+        "trains": [
+          "D1",
+          "1",
+          "2",
+          "D2"
+        ]
+      },
+      {
+        "id": "1A",
+        "depot": "A",
+        "trains": [
+          "3",
+          "1",
+          "9"
+        ]
+      },
+      {
+        "id": "2B",
+        "depot": "Depot",
+        "trains": [
+          "3"
+        ]
+      },
+      {
+        "id": "3C",
+        "depot": "",
+        "trains": []
+      }
+    ]
+  },
+  "problems": [
+    "duty \"1A\": train \"2\" leaves at 07:15, which is not after train \"1\" arrives at 07:20",
+    "duty \"1A\": another duty has the same id",
+    "duty \"1A\": train \"1\" is listed twice in this duty",
+    "duty \"1A\": train \"1\" starts at \"A\" but the train before it, \"3\", ends at \"B\"",
+    "duty \"1A\": there is no train \"9\"",
+    "duty \"2B\": train \"3\" is also in duty \"1A\"",
+    "duty \"2B\": the first train, \"3\", starts at \"A\", not at the depot \"Depot\"",
+    "duty \"2B\": the last train, \"3\", ends at \"B\", not at the depot \"Depot\"",
+    "duty \"3C\": the depot, a station name, must not be empty, start or end with a space, or contain a control character",
+    "duty \"3C\": needs at least 1 train"
+  ]
+}

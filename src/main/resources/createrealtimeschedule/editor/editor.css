@@ -1,0 +1,565 @@
+:root {
+  --bg: #f6f7f9;
+  --panel: #ffffff;
+  --text: #1f2933;
+  --muted: #65727e;
+  --line: #d5dbe1;
+  --grid: #e6eaee;
+  --grid-strong: #c3cbd3;
+  --accent: #2563c9;
+  --accent-soft: #dbe6f8;
+  --danger: #b42318;
+  --warn: #b25e00;
+  --plot: #ffffff;
+  --train: #5a6b7d;
+  --deadhead: #8a8f96;
+  font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Yu Gothic UI", sans-serif;
+  font-size: 14px;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #15191e;
+    --panel: #1d232a;
+    --text: #e3e8ee;
+    --muted: #94a0ac;
+    --line: #333c46;
+    --grid: #262e37;
+    --grid-strong: #3c4652;
+    --accent: #6ea2ff;
+    --accent-soft: #24344f;
+    --danger: #ff8a80;
+    --warn: #f0a640;
+    --plot: #11151a;
+    --train: #9aa9b8;
+    --deadhead: #858b93;
+    color-scheme: dark;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  background: var(--bg);
+  color: var(--text);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+button.active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+input[type="text"],
+input[type="number"],
+select,
+textarea {
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+}
+
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.bar h1 {
+  margin: 0 8px 0 0;
+  font-size: 16px;
+}
+
+.bar .gap {
+  flex: 1;
+}
+
+.bar .language {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+}
+
+#timetable-name {
+  width: 220px;
+}
+
+.main {
+  display: grid;
+  grid-template-columns: minmax(170px, 230px) 1fr minmax(230px, 300px);
+  min-height: 0;
+}
+
+/* On a narrow screen the inspector goes under the diagram, which keeps the width. */
+@media (max-width: 1000px) {
+  .main {
+    grid-template-columns: minmax(150px, 200px) 1fr;
+    grid-template-rows: 1fr auto;
+  }
+
+  /* A height of its own, so that the diagram does not change size, and its rows move, with what is in it. */
+  .side.right {
+    grid-column: 1 / -1;
+    height: 32vh;
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+}
+
+.side {
+  overflow-y: auto;
+  padding: 8px 12px;
+  background: var(--panel);
+}
+
+.side.left {
+  border-right: 1px solid var(--line);
+}
+
+.side.right {
+  border-left: 1px solid var(--line);
+}
+
+h2 {
+  margin: 12px 0 6px;
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.list {
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.list li {
+  padding: 4px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.list li:hover {
+  background: var(--accent-soft);
+}
+
+.list li.selected {
+  background: var(--accent-soft);
+  outline: 1px solid var(--accent);
+}
+
+.list .sub {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+#diagram-area {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--plot);
+}
+
+#diagram {
+  display: block;
+  width: 100%;
+  height: 100%;
+  user-select: none;
+  touch-action: none;
+}
+
+#empty-message {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+#diagram.drawing {
+  cursor: crosshair;
+}
+
+input.bad {
+  border-color: var(--danger);
+  outline: 1px solid var(--danger);
+}
+
+input.warn {
+  border-color: var(--warn);
+  outline: 1px solid var(--warn);
+}
+
+input.seconds {
+  width: 56px;
+}
+
+#draw-train,
+#add-duty,
+#add-line {
+  margin-bottom: 6px;
+}
+
+#diagram .train.dim {
+  opacity: 0.3;
+}
+
+#diagram .train.in-duty .shown {
+  stroke-width: 3;
+}
+
+#inspector .duty-trains li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+}
+
+#inspector .duty-trains button,
+#inspector .candidates button {
+  padding: 0 6px;
+}
+
+#diagram .grid {
+  stroke: var(--grid);
+}
+
+#diagram .grid.strong {
+  stroke: var(--grid-strong);
+}
+
+#diagram .label {
+  fill: var(--muted);
+  font-size: 12px;
+}
+
+/* The time scale: the hours large and dark, the minutes between them small and pale. */
+#diagram .label.hour {
+  fill: var(--text);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+#diagram .label.minute {
+  font-size: 11px;
+}
+
+#diagram .station {
+  fill: var(--text);
+  font-size: 12px;
+}
+
+#diagram .train .shown {
+  fill: none;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+
+#diagram .train.deadhead .shown {
+  stroke-dasharray: 5 4;
+}
+
+#diagram .train.selected .shown {
+  stroke-width: 3.2;
+}
+
+#diagram .train .hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 12;
+  cursor: grab;
+}
+
+/* The way between two stops, which moves alone, along the time. */
+#diagram .train .hit.run {
+  cursor: ew-resize;
+}
+
+#diagram .train .number {
+  font-size: 11px;
+}
+
+#diagram .point {
+  stroke: var(--panel);
+  stroke-width: 1.5;
+  cursor: move;
+}
+
+/* A point that makes a stop stand longer or shorter (its arrival, or its departure) rather than moving it. */
+#diagram .point.stretch {
+  cursor: col-resize;
+}
+
+/* While a stop or a way is dragged, the way as the train would run it fastest, by the track. */
+#diagram .guide {
+  fill: none;
+  stroke: var(--danger);
+  stroke-width: 1.8;
+  stroke-dasharray: 5 4;
+  pointer-events: none;
+}
+
+/* The times a drag has come to, beside the pointer. */
+#diagram .drag-box {
+  fill: var(--panel);
+  stroke: var(--line);
+  pointer-events: none;
+}
+
+#diagram .drag-text {
+  fill: var(--text);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+#diagram .preview {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.6;
+  stroke-dasharray: 3 3;
+}
+
+footer {
+  max-height: 25vh;
+  overflow-y: auto;
+  padding: 6px 12px 8px;
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+}
+
+footer h2 {
+  margin: 6px 0 4px;
+}
+
+.status {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.problems li {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 12px;
+  color: var(--danger);
+}
+
+/* A train faster than the track: not a mistake the mod refuses, but one to look at. */
+.problems li.warning {
+  color: var(--warn);
+}
+
+#inspector .note.held {
+  color: var(--warn);
+}
+
+#inspector table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+#inspector th,
+#inspector td {
+  padding: 2px 3px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  font-weight: normal;
+}
+
+#inspector th {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+#inspector td input {
+  width: 80px;
+}
+
+/* The row under a stop's times, with how long the train stands there. */
+#inspector tr.stop-times td {
+  padding-top: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+#inspector tr.stop-times label {
+  margin-right: 10px;
+  white-space: nowrap;
+}
+
+#inspector tr.stop-times input.seconds {
+  width: 52px;
+}
+
+#inspector tr:has(+ tr.stop-times) td {
+  border-bottom: none;
+}
+
+#inspector .field {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0;
+}
+
+#inspector .buttons,
+dialog .buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+dialog {
+  width: min(720px, 92vw);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--text);
+  padding: 16px;
+}
+
+dialog::backdrop {
+  background: rgba(0, 0, 0, 0.35);
+}
+
+dialog h2 {
+  margin-top: 0;
+  font-size: 15px;
+  color: var(--text);
+}
+
+dialog textarea {
+  width: 100%;
+  height: 240px;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 12px;
+}
+
+dialog .help {
+  color: var(--muted);
+  margin: 0 0 8px;
+}
+
+dialog .error {
+  color: var(--danger);
+  white-space: pre-wrap;
+  font-size: 12px;
+}
+
+dialog .note {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+dialog .columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+dialog .picker {
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px;
+}
+
+dialog .picker li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px;
+}
+
+dialog .picker li button {
+  padding: 0 6px;
+}
+
+dialog .field {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+}
+
+dialog .scroll {
+  max-height: 55vh;
+  overflow-y: auto;
+}
+
+dialog table.station-times {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+dialog table.station-times th,
+dialog table.station-times td {
+  padding: 3px 6px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  font-weight: normal;
+}
+
+dialog table.station-times th {
+  color: var(--muted);
+  font-size: 12px;
+}

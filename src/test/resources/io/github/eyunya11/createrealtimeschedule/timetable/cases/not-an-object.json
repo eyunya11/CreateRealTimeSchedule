@@ -1,0 +1,10 @@
+{
+  "about": "A timetable that is not a JSON object.",
+  "timetable": [
+    1,
+    2
+  ],
+  "problems": [
+    "the timetable must be a JSON object"
+  ]
+}

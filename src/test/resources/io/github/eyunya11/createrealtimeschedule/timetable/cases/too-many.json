@@ -1,0 +1,195 @@
+{
+  "about": "More problems than are told: the first 50, and how many more.",
+  "timetable": {
+    "format": "createrealtimeschedule.timetable",
+    "version": 2,
+    "name": "",
+    "lines": [],
+    "trains": [
+      {
+        "number": "t1",
+        "line": "x",
+        "stops": []
+      },
+      {
+        "number": "t2",
+        "line": "x",
+        "stops": []
+      },
+      {
+        "number": "t3",
+        "line": "x",
+        "stops": []
+      },
+      {
+        "number": "t4",
+        "line": "x",
+        "stops": []
+      },
+      {
+        "number": "t5",
+        "line": "x",
+        "stops": []
+      },
+      {
+        "number": "t6",
+        "line": "x",
+        "stops": []
+      },
+      {
+        "number": "t7",
+        "line": "x",
+        "stops": []
+      },
+      {
+        "number": "t8",
+        "line": "x",
+        "stops": []
+      },
+      {
+        "number": "t9",
+        "line": "x",
+        "stops": []
+      },
+      {
+        "number": "t10",
+        "line": "x",
+        "stops": []
+      },
+      {
+        "number": "t11",
+        "line": "x",
+        "stops": []
+      },
+      {
+        "number": "t12",
+        "line": "x",
+        "stops": []
+      },
+      {
+        "number": "t13",
+        "line": "x",
+        "stops": []
+      },
+      {
+        "number": "t14",
+        "line": "x",
+        "stops": []
+      },
+      {
+        "number": "t15",
+        "line": "x",
+        "stops": []
+      },
+      {
+        "number": "t16",
+        "line": "x",
+        "stops": []
+      },
+      {
+        "number": "t17",
+        "line": "x",
+        "stops": []
+      },
+      {
+        "number": "t18",
+        "line": "x",
+        "stops": []
+      },
+      {
+        "number": "t19",
+        "line": "x",
+        "stops": []
+      },
+      {
+        "number": "t20",
+        "line": "x",
+        "stops": []
+      },
+      {
+        "number": "t21",
+        "line": "x",
+        "stops": []
+      },
+      {
+        "number": "t22",
+        "line": "x",
+        "stops": []
+      },
+      {
+        "number": "t23",
+        "line": "x",
+        "stops": []
+      },
+      {
+        "number": "t24",
+        "line": "x",
+        "stops": []
+      },
+      {
+        "number": "t25",
+        "line": "x",
+        "stops": []
+      },
+      {
+        "number": "t26",
+        "line": "x",
+        "stops": []
+      }
+    ],
+    "duties": []
+  },
+  "problems": [
+    "train \"t1\": there is no line \"x\"",
+    "train \"t1\": needs at least 2 stops",
+    "train \"t2\": there is no line \"x\"",
+    "train \"t2\": needs at least 2 stops",
+    "train \"t3\": there is no line \"x\"",
+    "train \"t3\": needs at least 2 stops",
+    "train \"t4\": there is no line \"x\"",
+    "train \"t4\": needs at least 2 stops",
+    "train \"t5\": there is no line \"x\"",
+    "train \"t5\": needs at least 2 stops",
+    "train \"t6\": there is no line \"x\"",
+    "train \"t6\": needs at least 2 stops",
+    "train \"t7\": there is no line \"x\"",
+    "train \"t7\": needs at least 2 stops",
+    "train \"t8\": there is no line \"x\"",
+    "train \"t8\": needs at least 2 stops",
+    "train \"t9\": there is no line \"x\"",
+    "train \"t9\": needs at least 2 stops",
+    "train \"t10\": there is no line \"x\"",
+    "train \"t10\": needs at least 2 stops",
+    "train \"t11\": there is no line \"x\"",
+    "train \"t11\": needs at least 2 stops",
+    "train \"t12\": there is no line \"x\"",
+    "train \"t12\": needs at least 2 stops",
+    "train \"t13\": there is no line \"x\"",
+    "train \"t13\": needs at least 2 stops",
+    "train \"t14\": there is no line \"x\"",
+    "train \"t14\": needs at least 2 stops",
+    "train \"t15\": there is no line \"x\"",
+    "train \"t15\": needs at least 2 stops",
+    "train \"t16\": there is no line \"x\"",
+    "train \"t16\": needs at least 2 stops",
+    "train \"t17\": there is no line \"x\"",
+    "train \"t17\": needs at least 2 stops",
+    "train \"t18\": there is no line \"x\"",
+    "train \"t18\": needs at least 2 stops",
+    "train \"t19\": there is no line \"x\"",
+    "train \"t19\": needs at least 2 stops",
+    "train \"t20\": there is no line \"x\"",
+    "train \"t20\": needs at least 2 stops",
+    "train \"t21\": there is no line \"x\"",
+    "train \"t21\": needs at least 2 stops",
+    "train \"t22\": there is no line \"x\"",
+    "train \"t22\": needs at least 2 stops",
+    "train \"t23\": there is no line \"x\"",
+    "train \"t23\": needs at least 2 stops",
+    "train \"t24\": there is no line \"x\"",
+    "train \"t24\": needs at least 2 stops",
+    "train \"t25\": there is no line \"x\"",
+    "train \"t25\": needs at least 2 stops",
+    "... and 2 more"
+  ]
+}

@@ -1,8 +1,15 @@
 package io.github.eyunya11.createrealtimeschedule.gametest;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import org.jetbrains.annotations.Nullable;
@@ -167,6 +174,56 @@ public class OperationTests {
         }.begin();
     }
 
+    /**
+     * M7's goal: a timetable made with the editor's own code runs as it says. The timetable is the one
+     * src/test/js/editor-made-timetable.js makes with the editor's changes only (a line, two trains
+     * drawn from A to B, two duties, and the deadheads the editor adds to them), written out beside
+     * this class. Both duties leave every call on time and come back to the depot.
+     */
+    @GameTest(template = TURN, batch = "realtimeoperation_editor_made", timeoutTicks = 6000)
+    public static void aTimetableMadeInTheEditorRunsAsItSays(GameTestHelper helper) {
+        Timetable timetable = editorMade();
+        TrackLine north = new TrackLine(helper, NORTH, STATION_X, NAMES);
+        TrackLine south = new TrackLine(helper, SOUTH, STATION_X, NAMES);
+        new Operation(helper, timetable, north, south) {
+            final List<DutyRun> seen = new ArrayList<>();
+
+            @Override
+            boolean watch(OperationData data, long now) {
+                for (DutyRun run : data.runs().values())
+                    if (!seen.contains(run))
+                        seen.add(run);
+                if (seen.size() < 2 || seen.stream().anyMatch(run -> !run.finished()))
+                    return false;
+                for (DutyRun run : seen) {
+                    log(run);
+                    assertOnTime(run);
+                }
+                helper.assertTrue(seen.stream().map(DutyRun::duty).sorted().toList().equals(List.of("1A", "2A")),
+                    "the duties run are not the editor's two: " + seen.stream().map(DutyRun::duty).toList());
+                for (TrackLine line : List.of(north, south))
+                    helper.assertTrue(TrainDriver.standsAt(line.train(), "Depot") && data.freeSince().containsKey(line.train().id),
+                        "a set is not back and free at the depot (" + line.describe() + ")");
+                helper.assertTrue(newNotes(data).isEmpty(), "something went wrong: " + newNotes(data));
+                return true;
+            }
+        }.begin();
+    }
+
+    /** The timetable that src/test/js/editor-made-timetable.js makes with the editor's own code. */
+    private static Timetable editorMade() {
+        try (InputStream in = OperationTests.class.getResourceAsStream("editor-made-timetable.json")) {
+            if (in == null)
+                throw new IllegalStateException("editor-made-timetable.json is not beside OperationTests");
+            TimetableJson.Result result = TimetableJson.parse(new String(in.readAllBytes(), StandardCharsets.UTF_8));
+            if (!result.ok())
+                throw new IllegalStateException("the timetable the editor made is refused: " + result.problems());
+            return result.timetable();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
     // ------------------------------------------------------------------ the timetable
 
     /** A duty of the loop: out of the depot to A, train {@code number} on to B, and round to the depot, {@code later} seconds after 1A's times. */
@@ -252,8 +309,13 @@ public class OperationTests {
         private final MinecraftServer server;
         private int ready;
         private boolean loaded;
-        /** The notes there were when the timetable was loaded: the server keeps those of the tests before. */
-        private int notesBefore;
+        /**
+         * The notes there were when the timetable was loaded, the very objects: the server keeps those
+         * of the tests before, and of the runs before, since the test world is saved. Not how many there
+         * were, since the server keeps only the last 50; nor what they say, since every run sets the
+         * same clock and so makes the same notes as the run before.
+         */
+        private Set<OperationData.Note> notesBefore = Set.of();
 
         Operation(GameTestHelper helper, Timetable timetable, TrackLine... lines) {
             this.helper = helper;
@@ -267,8 +329,13 @@ public class OperationTests {
 
         /** The notes made since the timetable was loaded. */
         List<OperationData.Note> newNotes(OperationData data) {
-            List<OperationData.Note> notes = data.notes();
-            return notes.subList(Math.min(notesBefore, notes.size()), notes.size());
+            return data.notes().stream().filter(note -> !notesBefore.contains(note)).toList();
+        }
+
+        private static Set<OperationData.Note> identities(List<OperationData.Note> notes) {
+            Set<OperationData.Note> set = Collections.newSetFromMap(new IdentityHashMap<>());
+            set.addAll(notes);
+            return set;
         }
 
         void begin() {
@@ -304,7 +371,7 @@ public class OperationTests {
             OperationData data = OperationData.get(server);
             long now = ClockService.now(server);
             if (!loaded) {
-                notesBefore = data.notes().size();
+                notesBefore = identities(data.notes());
                 data.loadTimetable(TimetableJson.write(timetable), timetable, now);
                 loaded = true;
             }

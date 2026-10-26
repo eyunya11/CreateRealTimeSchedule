@@ -41,7 +41,13 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      # Compiles the mod and the game tests, runs the unit tests, and makes the jar.
+      # For the timetable editor's tests, which are in JavaScript; the build runs them as part of check.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # Compiles the mod and the game tests, runs the unit tests (the editor's too), and makes the jar.
       - name: Build and run the unit tests
         run: ./gradlew build --console=plain
 

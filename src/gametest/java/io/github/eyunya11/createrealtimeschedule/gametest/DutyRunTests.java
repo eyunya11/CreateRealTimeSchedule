@@ -89,6 +89,28 @@ public class DutyRunTests {
     }
 
     /**
+     * As {@link #aLateSetStopsForTheMinimumAndGoes}, but the timetable gives A a minimum stop of its own,
+     * 5 seconds, which is the one the late set makes there, not the 2 seconds the server would give it.
+     */
+    @GameTest(template = TURN, batch = "realtimeduty_late_station_minimum", timeoutTicks = TIMEOUT_TICKS)
+    public static void aLateSetStopsForTheMinimumItsStationHas(GameTestHelper helper) {
+        Timetable plain = timetable("12:00:08", "12:00:35");
+        Timetable timetable = new Timetable(plain.name(), plain.lines(), List.of(new Timetable.Station("A", Stop.NONE, 5)),
+            plain.trains(), plain.duties());
+        if (!timetable.problems().isEmpty())
+            throw new IllegalStateException(timetable.problems().toString());
+        long serverMinimum = 2 * RealClock.TICKS_PER_SECOND;
+        new DutyTrip(helper, timetable, serverMinimum, (run, stop) -> {
+            long arrivedAtA = run.arrivals().get(1);
+            helper.assertTrue(arrivedAtA > run.plannedDeparture(1), "the set was not late at A, arriving at " + TestTimes.show(arrivedAtA));
+            helper.assertTrue(run.departures().get(1) == arrivedAtA + 5 * RealClock.TICKS_PER_SECOND + SENT_TO_GONE,
+                "the set left A at " + TestTimes.show(run.departures().get(1)) + ", not A's own minimum stop of 5 seconds after it arrived at "
+                    + TestTimes.show(arrivedAtA));
+            helper.assertTrue(run.departures().get(2) == run.plannedDeparture(2) + SENT_TO_GONE, "the set did not leave B on time");
+        }).begin();
+    }
+
+    /**
      * The depot, A and B on a loop line, and the one duty: deadhead D1 to A at 12:00:05, train 1 from
      * A at {@code leavesA} to B, deadhead D2 from B at {@code leavesB} round to the depot.
      */

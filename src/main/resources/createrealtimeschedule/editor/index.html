@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Timetable Editor</title>
+  <link rel="stylesheet" href="editor.css">
+</head>
+<body>
+  <header class="bar">
+    <h1 data-i18n="title">ダイヤの編集</h1>
+    <input id="timetable-name" type="text" data-i18n-placeholder="timetableName" spellcheck="false">
+    <button id="new" type="button" data-i18n="new">新しいダイヤ</button>
+    <button id="open" type="button" data-i18n="open">ダイヤを開く</button>
+    <button id="load-network" type="button" data-i18n="network">線路を読み込む</button>
+    <button id="export" type="button" data-i18n="export">書き出す</button>
+    <span class="gap"></span>
+    <button id="undo" type="button" data-i18n="undo">元に戻す</button>
+    <button id="redo" type="button" data-i18n="redo">やり直す</button>
+    <label class="language"><span data-i18n="language">言語</span>
+      <select id="language">
+        <option value="ja">日本語</option>
+        <option value="en">English</option>
+      </select>
+    </label>
+  </header>
+
+  <div class="main">
+    <aside class="side left">
+      <section>
+        <h2 data-i18n="lines">路線</h2>
+        <ul id="lines" class="list"></ul>
+        <button id="add-line" type="button" data-i18n="addLine">路線を足す</button>
+        <button id="station-times" type="button" data-i18n="stationTimes">駅の停車時間</button>
+      </section>
+      <section>
+        <h2 data-i18n="trains">列車</h2>
+        <button id="draw-train" type="button" data-i18n="drawTrain">列車を描く</button>
+        <ul id="trains" class="list"></ul>
+      </section>
+      <section>
+        <h2 data-i18n="duties">運用</h2>
+        <button id="add-duty" type="button" data-i18n="addDuty">運用を足す</button>
+        <ul id="duties" class="list"></ul>
+      </section>
+    </aside>
+
+    <main id="diagram-area">
+      <svg id="diagram" xmlns="http://www.w3.org/2000/svg"></svg>
+      <p id="empty-message"></p>
+    </main>
+
+    <aside class="side right" id="inspector"></aside>
+  </div>
+
+  <footer>
+    <div class="status"><span id="status"></span><span id="versions"></span></div>
+    <h2 id="problems-title"></h2>
+    <ul id="problems" class="list problems"></ul>
+  </footer>
+
+  <dialog id="dialog"></dialog>
+
+  <script src="js/time.js"></script>
+  <script src="js/json-output.js"></script>
+  <script src="js/problems.js"></script>
+  <script src="js/timetable.js"></script>
+  <script src="js/network.js"></script>
+  <script src="js/axis.js"></script>
+  <script src="js/layout.js"></script>
+  <script src="js/edit.js"></script>
+  <script src="js/duties.js"></script>
+  <script src="js/i18n.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

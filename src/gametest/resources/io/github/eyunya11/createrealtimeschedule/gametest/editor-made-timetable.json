@@ -1,0 +1,81 @@
+{
+  "format": "createrealtimeschedule.timetable",
+  "version": 2,
+  "name": "Made in the editor",
+  "lines": [
+    {
+      "id": "loop",
+      "name": "Loop",
+      "stations": ["Depot", "A", "B"],
+      "loop": true
+    }
+  ],
+  "trains": [
+    {
+      "number": "1",
+      "line": "loop",
+      "type": "local",
+      "stops": [
+        {"station": "A", "depart": "12:03"},
+        {"station": "B", "arrive": "12:03:10"}
+      ]
+    },
+    {
+      "number": "D1",
+      "line": "loop",
+      "deadhead": true,
+      "stops": [
+        {"station": "Depot", "depart": "12:02:25"},
+        {"station": "A", "arrive": "12:02:35"}
+      ]
+    },
+    {
+      "number": "D2",
+      "line": "loop",
+      "deadhead": true,
+      "stops": [
+        {"station": "B", "depart": "12:03:35"},
+        {"station": "Depot", "arrive": "12:04:05"}
+      ]
+    },
+    {
+      "number": "2",
+      "line": "loop",
+      "type": "local",
+      "stops": [
+        {"station": "A", "depart": "12:03:30"},
+        {"station": "B", "arrive": "12:03:40"}
+      ]
+    },
+    {
+      "number": "D3",
+      "line": "loop",
+      "deadhead": true,
+      "stops": [
+        {"station": "Depot", "depart": "12:02:55"},
+        {"station": "A", "arrive": "12:03:05"}
+      ]
+    },
+    {
+      "number": "D4",
+      "line": "loop",
+      "deadhead": true,
+      "stops": [
+        {"station": "B", "depart": "12:04:05"},
+        {"station": "Depot", "arrive": "12:04:35"}
+      ]
+    }
+  ],
+  "duties": [
+    {
+      "id": "1A",
+      "depot": "Depot",
+      "trains": ["D1", "1", "D2"]
+    },
+    {
+      "id": "2A",
+      "depot": "Depot",
+      "trains": ["D3", "2", "D4"]
+    }
+  ]
+}

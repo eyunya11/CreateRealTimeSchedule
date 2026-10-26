@@ -1,0 +1,51 @@
+{
+  "about": "The shape: members of the wrong kind, times that are no times, members the format does not have.",
+  "timetable": {
+    "format": "createrealtimeschedule.timetable",
+    "version": 2,
+    "name": 5,
+    "extra": true,
+    "lines": [
+      {
+        "id": "l",
+        "stations": [
+          "A",
+          3
+        ],
+        "loop": "yes"
+      }
+    ],
+    "trains": [
+      {
+        "number": "1",
+        "line": "l",
+        "stops": [
+          {
+            "station": "A",
+            "depart": "25:61"
+          },
+          {
+            "station": "B",
+            "arrive": "8.30",
+            "wait": 1
+          }
+        ]
+      },
+      "not a train"
+    ],
+    "duties": {
+      "id": "x"
+    }
+  },
+  "problems": [
+    "name: must be a string",
+    "lines[0].stations[1]: must be a string",
+    "lines[0].loop: must be true or false",
+    "trains[1]: must be an object",
+    "trains[0].stops[0].depart: must be a time such as \"08:10\" or \"08:10:30\", up to 47:59:59",
+    "trains[0].stops[1].arrive: must be a time such as \"08:10\" or \"08:10:30\", up to 47:59:59",
+    "trains[0].stops[1].wait: is not a member of this format",
+    "duties: must be an array",
+    "extra: is not a member of this format"
+  ]
+}

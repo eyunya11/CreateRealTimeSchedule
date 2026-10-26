@@ -6,6 +6,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
+import org.jetbrains.annotations.Nullable;
+
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.context.CommandContext;
 import com.simibubi.create.Create;
@@ -22,16 +24,22 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.world.level.storage.LevelResource;
 
 /**
- * {@code /rtnetwork export}: writes the stations of the track network and the running time between
- * them to {@code createrealtimeschedule/network.json} in the world folder. The name is provisional.
+ * {@code /rtnetwork}: the stations of the track network and the running time between them, as JSON
+ * for the timetable editor and the diagram (see {@link NetworkJson}). The name is provisional.
  *
- * <p>The times are for a train without fuel at full throttle, by the server's config. The file is
- * for the timetable editor and the diagram (see {@link NetworkJson}); getting it to a player's
- * clipboard comes with the editor.
+ * <ul>
+ * <li>{@code export} writes it to {@code createrealtimeschedule/network.json} in the world folder.</li>
+ * </ul>
+ *
+ * <p>{@code /rteditor copy network}, a command of the client, puts it on the player's clipboard (see
+ * {@link ClipboardService}).
+ *
+ * <p>The times are for a train without fuel at full throttle, by the server's config.
  */
 public final class RtNetworkCommand {
 
-    private static final String KEY = "commands.createrealtimeschedule.rtnetwork.";
+    /** The prefix of the messages of /rtnetwork, which ClipboardService shares. */
+    static final String KEY = "commands.createrealtimeschedule.rtnetwork.";
 
     private RtNetworkCommand() {}
 
@@ -42,34 +50,42 @@ public final class RtNetworkCommand {
                 .executes(RtNetworkCommand::export)));
     }
 
-    private static int export(CommandContext<CommandSourceStack> context) {
-        CommandSourceStack source = context.getSource();
+    /** The network as JSON, with how many stations and legs it has. */
+    record Written(String json, int stations, int legs) {}
+
+    /** The network as JSON; null after saying why there is none. */
+    static @Nullable Written write(CommandSourceStack source) {
         TrainSpec spec;
         try {
             spec = TrainSpecs.unpowered();
         } catch (IllegalArgumentException e) {
             source.sendFailure(Component.translatableWithFallback(KEY + "no_train",
                 "Create's config leaves no train that can move (%1$s)", e.getMessage()));
-            return 0;
+            return null;
         }
-
         RailNetwork network = CreateNetwork.read(Create.RAILWAYS.trackNetworks.values());
         List<String> names = network.names();
         List<Leg> legs = network.legs();
-        String json = NetworkJson.write(names, legs, spec, 1.0);
+        return new Written(NetworkJson.write(names, legs, spec, 1.0), names.size(), legs.size());
+    }
 
+    private static int export(CommandContext<CommandSourceStack> context) {
+        CommandSourceStack source = context.getSource();
+        Written written = write(source);
+        if (written == null)
+            return 0;
         Path file = source.getServer().getWorldPath(LevelResource.ROOT).resolve("createrealtimeschedule").resolve("network.json")
             .toAbsolutePath().normalize();
         try {
             Files.createDirectories(file.getParent());
-            Files.writeString(file, json, StandardCharsets.UTF_8);
+            Files.writeString(file, written.json(), StandardCharsets.UTF_8);
         } catch (IOException e) {
             source.sendFailure(Component.translatableWithFallback(KEY + "failed",
                 "Could not write %1$s: %2$s", file.toString(), String.valueOf(e.getMessage())));
             return 0;
         }
         source.sendSuccess(() -> Component.translatableWithFallback(KEY + "done",
-            "Wrote %1$s stations and %2$s legs to %3$s", names.size(), legs.size(), file.toString()), true);
-        return legs.size();
+            "Wrote %1$s stations and %2$s legs to %3$s", written.stations(), written.legs(), file.toString()), true);
+        return written.legs();
     }
 }

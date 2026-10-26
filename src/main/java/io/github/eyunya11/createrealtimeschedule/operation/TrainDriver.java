@@ -50,7 +50,7 @@ public final class TrainDriver {
         return null;
     }
 
-    /** One tick of the run on {@code train}, at clock {@code now}; {@code minimumStop} is in ticks. */
+    /** One tick of the run on {@code train}, at clock {@code now}; {@code minimumStop}, in ticks, is for a call the timetable gives none. */
     public static Outcome step(DutyRun run, Train train, long now, long minimumStop) {
         switch (run.phase()) {
             case FINISHED:

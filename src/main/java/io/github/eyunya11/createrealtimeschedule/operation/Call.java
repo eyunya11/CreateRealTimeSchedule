@@ -14,13 +14,21 @@ import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Stop;
  * @param depart        when it leaves, or {@link Stop#NONE} at the last call
  * @param arrivingTrain the number of the train it arrives as; empty at the first call
  * @param leavingTrain  the number of the train it leaves as; empty at the last call
+ * @param minimumStop   how many seconds a late set stands here at the least, as the timetable has it
+ *                      for the stop it leaves from ({@code Timetable.minimumStop}), or {@link Stop#NONE}
+ *                      for the server's config
  */
-public record Call(String station, int arrive, int depart, String arrivingTrain, String leavingTrain) {
+public record Call(String station, int arrive, int depart, String arrivingTrain, String leavingTrain, int minimumStop) {
 
     public Call {
         Objects.requireNonNull(station, "station");
         Objects.requireNonNull(arrivingTrain, "arrivingTrain");
         Objects.requireNonNull(leavingTrain, "leavingTrain");
+    }
+
+    /** A call with the server's minimum stop. */
+    public Call(String station, int arrive, int depart, String arrivingTrain, String leavingTrain) {
+        this(station, arrive, depart, arrivingTrain, leavingTrain, Stop.NONE);
     }
 
     public boolean hasArrive() {

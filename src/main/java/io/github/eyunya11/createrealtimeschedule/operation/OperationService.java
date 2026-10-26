@@ -71,7 +71,7 @@ public final class OperationService {
         stepRuns(data, now, ModSettings.defaultMinimumStopSeconds() * (long) RealClock.TICKS_PER_SECOND);
     }
 
-    private static void stepRuns(OperationData data, long now, long minimumStop) {
+    private static void stepRuns(OperationData data, long now, long defaultMinimumStop) {
         Iterator<Map.Entry<UUID, DutyRun>> runs = data.runs().entrySet().iterator();
         while (runs.hasNext()) {
             Map.Entry<UUID, DutyRun> entry = runs.next();
@@ -88,7 +88,7 @@ public final class OperationService {
             }
             int call = run.call();
             DutyRun.Phase phase = run.phase();
-            Outcome outcome = TrainDriver.step(run, train, now, minimumStop);
+            Outcome outcome = TrainDriver.step(run, train, now, defaultMinimumStop);
             if (run.call() != call || run.phase() != phase) {
                 data.timesChanged();
                 data.setDirty();

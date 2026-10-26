@@ -1,0 +1,51 @@
+{
+  "about": "Text: a name with a space at the end, a station name that starts with an em space (a space), a name that ends with a no-break space (not one), too long a number, a control character in an id.",
+  "timetable": {
+    "format": "createrealtimeschedule.timetable",
+    "version": 2,
+    "name": " padded",
+    "lines": [
+      {
+        "id": "l",
+        "name": "Main ",
+        "stations": [
+          "A",
+          "B",
+          " East"
+        ]
+      }
+    ],
+    "trains": [
+      {
+        "number": "123456789012345678901234567890123",
+        "line": "l",
+        "stops": [
+          {
+            "station": "A",
+            "depart": "08:00"
+          },
+          {
+            "station": "B",
+            "arrive": "08:05"
+          }
+        ]
+      }
+    ],
+    "duties": [
+      {
+        "id": "d\u0001",
+        "depot": "A",
+        "trains": [
+          "123456789012345678901234567890123"
+        ]
+      }
+    ]
+  },
+  "problems": [
+    "the name must not start or end with a space or contain a control character",
+    "line \"l\": a station name must not be empty, start or end with a space, or contain a control character",
+    "train \"123456789012345678901234567890123\": the number must be 1 to 32 characters, with no space at either end and no control character",
+    "duty \"d\u0001\": the id must be 1 to 32 characters, with no space at either end and no control character",
+    "duty \"d\u0001\": there is no train \"123456789012345678901234567890123\""
+  ]
+}

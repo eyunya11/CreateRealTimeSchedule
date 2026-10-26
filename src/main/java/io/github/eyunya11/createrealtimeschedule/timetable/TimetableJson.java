@@ -94,7 +94,7 @@ public final class TimetableJson {
             "this is not strict JSON (no comments, single quotes, unquoted names, trailing commas or text after the end)");
     }
 
-    /** A JSON number as the text it was written with; the only number the format has is the version. */
+    /** A JSON number as the text it was written with: the version, and the seconds of a dwell or a minimum stop. */
     private record NumberText(String text) {}
 
     /** Reads one value into maps, lists, strings, booleans, {@link NumberText}s and null. */
@@ -159,6 +159,9 @@ public final class TimetableJson {
         List<Timetable.Line> lines = new ArrayList<>();
         for (Fields line : top.objects("lines", false))
             lines.add(readLine(line));
+        List<Timetable.Station> stations = new ArrayList<>();
+        for (Fields station : top.objects("stations", false))
+            stations.add(readStation(station));
         List<Timetable.Train> trains = new ArrayList<>();
         for (Fields train : top.objects("trains", false))
             trains.add(readTrain(train));
@@ -166,7 +169,7 @@ public final class TimetableJson {
         for (Fields duty : top.objects("duties", false))
             duties.add(readDuty(duty));
         top.finish();
-        return new Timetable(name == null ? "" : name, lines, trains, duties);
+        return new Timetable(name == null ? "" : name, lines, stations, trains, duties);
     }
 
     /** False if the text is of a newer version: nothing else in it can be read, and that is all there is to say. */
@@ -200,6 +203,14 @@ public final class TimetableJson {
         return new Timetable.Line(id, name == null ? id : name, stations, loop);
     }
 
+    private static Timetable.Station readStation(Fields f) {
+        String name = orEmpty(f.string("name", true));
+        int dwell = f.seconds("dwell");
+        int minimumStop = f.seconds("minimum_stop");
+        f.finish();
+        return new Timetable.Station(name, dwell, minimumStop);
+    }
+
     private static Timetable.Train readTrain(Fields f) {
         String number = orEmpty(f.string("number", true));
         String line = orEmpty(f.string("line", true));
@@ -216,8 +227,9 @@ public final class TimetableJson {
         String station = orEmpty(f.string("station", true));
         int arrive = readTime(f, "arrive");
         int depart = readTime(f, "depart");
+        int minimumStop = f.seconds("minimum_stop");
         f.finish();
-        return new Timetable.Stop(station, arrive, depart);
+        return new Timetable.Stop(station, arrive, depart, minimumStop);
     }
 
     private static int readTime(Fields f, String key) {
@@ -295,6 +307,24 @@ public final class TimetableJson {
                 return flag;
             problems.add(at(key), "must be true or false");
             return fallback;
+        }
+
+        /**
+         * A whole number of seconds, or {@link Timetable.Stop#NONE} if it is not there. One that is too
+         * long is for {@link Timetable#problems()}; one below 0 is refused here, as it would read as none.
+         */
+        int seconds(String key) {
+            Object value = get(key);
+            if (value == null)
+                return Timetable.Stop.NONE;
+            if (!(value instanceof NumberText number) || !WHOLE_NUMBER.matcher(number.text()).matches()) {
+                problems.add(at(key), "must be a whole number of seconds");
+                return Timetable.Stop.NONE;
+            }
+            int seconds = Integer.parseInt(number.text());
+            if (seconds < 0)
+                problems.add(at(key), "must be 0 to " + Timetable.MAX_STOP_SECONDS + " seconds");
+            return Math.max(seconds, Timetable.Stop.NONE);
         }
 
         /** The elements of an array of objects; none if the array is not there. */
@@ -379,15 +409,17 @@ public final class TimetableJson {
 
     /**
      * The timetable as JSON, laid out the same way every time: two spaces of indent, the members in a
-     * fixed order, and a stop or a list of names on one line. Members that have their default value
-     * ({@code loop} and {@code deadhead} false, {@code type} empty, a time a stop does not have) are left out. A timetable that
+     * fixed order, and a stop or a list of names on one line, in the oldest version that holds it
+     * ({@link Timetable#version()}). Members that have their default value ({@code loop} and
+     * {@code deadhead} false, {@code type} empty, a time or a minimum stop a stop does not have, no
+     * stations with times of their own) are left out. A timetable that
      * {@link Timetable#problems()} finds fault with is written as it is, and is refused when read back;
      * a time outside the service day is written as {@link ServiceTime#show} has it, which is no time.
      */
     public static String write(Timetable timetable) {
         MapNode root = new MapNode();
         root.put("format", text(Timetable.FORMAT));
-        root.put("version", raw(Integer.toString(Timetable.VERSION)));
+        root.put("version", raw(Integer.toString(timetable.version())));
         root.put("name", text(timetable.name()));
 
         ListNode lines = new ListNode();
@@ -401,6 +433,20 @@ public final class TimetableJson {
             lines.add(node);
         }
         root.put("lines", lines);
+
+        if (!timetable.stations().isEmpty()) {
+            ListNode stations = new ListNode();
+            for (Timetable.Station station : timetable.stations()) {
+                MapNode node = new MapNode();
+                node.put("name", text(station.name()));
+                if (station.dwell() != Timetable.Stop.NONE)
+                    node.put("dwell", raw(Integer.toString(station.dwell())));
+                if (station.minimumStop() != Timetable.Stop.NONE)
+                    node.put("minimum_stop", raw(Integer.toString(station.minimumStop())));
+                stations.add(node);
+            }
+            root.put("stations", stations);
+        }
 
         ListNode trains = new ListNode();
         for (Timetable.Train train : timetable.trains()) {
@@ -419,6 +465,8 @@ public final class TimetableJson {
                     stopNode.put("arrive", text(ServiceTime.show(stop.arrive())));
                 if (stop.hasDepart())
                     stopNode.put("depart", text(ServiceTime.show(stop.depart())));
+                if (stop.hasMinimumStop())
+                    stopNode.put("minimum_stop", raw(Integer.toString(stop.minimumStop())));
                 stops.add(stopNode);
             }
             node.put("stops", stops);

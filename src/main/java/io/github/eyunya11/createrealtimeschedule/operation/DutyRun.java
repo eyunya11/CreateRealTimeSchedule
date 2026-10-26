@@ -14,7 +14,8 @@ import io.github.eyunya11.createrealtimeschedule.schedule.DeparturePlanner;
  * can be tested without a game; what drives the train tells it what happened, and asks it what to do.
  *
  * <p>The set leaves a call at {@code max(T, A + M)}, by the rule of {@link DeparturePlanner}: T is the
- * timetable's departure on this service day, A when the set arrived, and M the minimum stop. An early
+ * timetable's departure on this service day, A when the set arrived, and M the minimum stop: the
+ * timetable's for the call (the stop's own, or else the station's), or else the server's config. An early
  * set waits for its time, and a late one stops for the minimum and goes, which is how it gets back to
  * the timetable. At the first call, where the set has been waiting at the depot, there is no minimum
  * stop.
@@ -152,8 +153,11 @@ public final class DutyRun {
         phase = Phase.RUNNING;
     }
 
-    /** The set has arrived at the call it was running to; it is to leave after {@code minimumStop} ticks at the least. */
-    public void arrived(long now, long minimumStop) {
+    /**
+     * The set has arrived at the call it was running to; it is to leave after the call's minimum stop
+     * at the least, or after {@code defaultMinimumStop} ticks if the timetable gives the call none.
+     */
+    public void arrived(long now, long defaultMinimumStop) {
         if (phase != Phase.RUNNING)
             throw new IllegalStateException("duty " + duty + " is not running but " + phase);
         arrivals[call] = now;
@@ -162,7 +166,13 @@ public final class DutyRun {
             return;
         }
         phase = Phase.STANDING;
-        departure = DeparturePlanner.departure(plannedDeparture(call), now, minimumStop);
+        departure = DeparturePlanner.departure(plannedDeparture(call), now, minimumStop(call, defaultMinimumStop));
+    }
+
+    /** The minimum stop at a call, in ticks: the timetable's, or else {@code defaultMinimumStop}. */
+    public long minimumStop(int index, long defaultMinimumStop) {
+        int seconds = calls.get(index).minimumStop();
+        return seconds < 0 ? defaultMinimumStop : seconds * (long) RealClock.TICKS_PER_SECOND;
     }
 
     // ------------------------------------------------------------------ what it is
