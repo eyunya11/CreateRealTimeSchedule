@@ -308,7 +308,7 @@ input.seconds {
   fill: none;
   stroke: transparent;
   stroke-width: 12;
-  cursor: pointer;
+  cursor: grab;
 }
 
 #diagram .train .number {

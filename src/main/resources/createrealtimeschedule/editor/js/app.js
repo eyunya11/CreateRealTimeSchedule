@@ -515,12 +515,11 @@
           change(rt.duties.appendTrain(state.timetable, duty.id, planned.number));
           return;
         }
-        if (isSelected && (event.ctrlKey || event.metaKey)) {
-          startDrag(planned.number, -1, event);
-          return;
-        }
-        event.stopPropagation();
-        select({ kind: 'train', number: planned.number });
+        // A press on a train's line chooses it, and dragging it on moves the whole train in time; a
+        // press that does not move is only the choosing.
+        if (!isSelected)
+          select({ kind: 'train', number: planned.number });
+        startDrag(planned.number, -1, event);
       });
       group.append(hit);
       if (!Number.isNaN(planned.labelSecond)) {
