@@ -38,4 +38,13 @@ public record Call(String station, int arrive, int depart, String arrivingTrain,
     public boolean hasDepart() {
         return depart != Stop.NONE;
     }
+
+    /**
+     * When the set comes in: its arrival, or its departure at a call the timetable gives only a
+     * departure, where the set stands no longer than it takes to stop and go; {@link Stop#NONE} at the
+     * first call.
+     */
+    public int comesIn() {
+        return hasArrive() ? arrive : depart;
+    }
 }

@@ -1,7 +1,10 @@
 package io.github.eyunya11.createrealtimeschedule.operation;
 
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Duty;
@@ -51,5 +54,47 @@ public final class DutyPlan {
     /** When the duty first leaves, as {@code ServiceTime} seconds. */
     public static int firstDeparture(List<Call> calls) {
         return calls.getFirst().depart();
+    }
+
+    /**
+     * Which of the ways from one call to the next are not run, by the call each leaves from: those from
+     * or to a call the set does not make, having been held past it ({@link DutyRun#hold}).
+     *
+     * @param skipped the calls not made
+     */
+    public static boolean[] cancelledWays(List<Call> calls, Collection<Integer> skipped) {
+        boolean[] cancelled = new boolean[calls.size() - 1];
+        for (int index : skipped) {
+            cancelled[index - 1] = true;
+            cancelled[index] = true;
+        }
+        return cancelled;
+    }
+
+    /** The trains of the duty none of whose way is run, in order, as {@link #cancelledWays} has it. */
+    public static List<String> cancelledTrains(List<Call> calls, Collection<Integer> skipped) {
+        return trains(calls, skipped, true);
+    }
+
+    /** The trains of the duty some, but not all, of whose way is not run, in order. */
+    public static List<String> partlyCancelledTrains(List<Call> calls, Collection<Integer> skipped) {
+        return trains(calls, skipped, false);
+    }
+
+    private static List<String> trains(List<Call> calls, Collection<Integer> skipped, boolean whole) {
+        boolean[] cancelled = cancelledWays(calls, skipped);
+        Map<String, int[]> counts = new LinkedHashMap<>(); // a train's ways, and how many of them are not run
+        for (int way = 0; way < cancelled.length; way++) {
+            int[] count = counts.computeIfAbsent(calls.get(way).leavingTrain(), number -> new int[2]);
+            count[0]++;
+            if (cancelled[way])
+                count[1]++;
+        }
+        List<String> trains = new ArrayList<>();
+        counts.forEach((number, count) -> {
+            if (count[1] > 0 && (count[1] == count[0]) == whole)
+                trains.add(number);
+        });
+        return trains;
     }
 }

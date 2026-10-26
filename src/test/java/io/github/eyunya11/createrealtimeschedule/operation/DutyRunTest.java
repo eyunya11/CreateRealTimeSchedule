@@ -147,6 +147,75 @@ class DutyRunTest {
         assertThrows(IllegalArgumentException.class, () -> DutyRun.restore(state, CALLS.subList(0, 3)));
     }
 
+    /** The shuttle's set, late at A, held there until the call at A the duty comes back to (call 4), so that 1 and 2 do not run. */
+    private static DutyRun heldAtA() {
+        DutyRun run = started();
+        run.left(at("07:50"));
+        run.arrived(at("08:15"), MINIMUM);
+        run.hold(4, at("08:30"));
+        return run;
+    }
+
+    @Test
+    void aSetHeldAtAStationLeavesFromTheLaterCallThereAndMakesNoneInBetween() {
+        DutyRun run = heldAtA();
+        assertEquals(4, run.call());
+        assertEquals(Phase.STANDING, run.phase());
+        assertEquals(at("08:30"), run.departure());
+        assertEquals(0, run.delay(at("08:20")), "it leaves on time from the call it is held to");
+        assertEquals("Depot", run.nextStation());
+        assertEquals(List.of(2, 3), run.skipped());
+        assertTrue(run.skipped(2) && run.skipped(3) && !run.skipped(1) && !run.skipped(4));
+        assertFalse(run.dueToLeave(at("08:30") - 1));
+        run.left(at("08:30"));
+        assertEquals(5, run.call());
+        assertEquals(0, run.delay(at("08:31")), "on the way, it is as late as it left the call it was held to");
+        run.arrived(at("08:35"), MINIMUM);
+        assertTrue(run.finished());
+        // It came into A at 08:15 and left it at 08:30; it neither left call 1 nor came into call 4.
+        assertEquals(List.of(DutyRun.NOT_YET, at("08:15"), DutyRun.NOT_YET, DutyRun.NOT_YET, DutyRun.NOT_YET, at("08:35")), run.arrivals());
+        assertEquals(List.of(at("07:50"), DutyRun.NOT_YET, DutyRun.NOT_YET, DutyRun.NOT_YET, at("08:30"), DutyRun.NOT_YET), run.departures());
+    }
+
+    @Test
+    void aSetIsHeldOnlyToALaterCallAtTheSameStationThatItCanLeave() {
+        DutyRun run = started();
+        run.left(at("07:50"));
+        run.arrived(at("08:15"), MINIMUM);
+        assertThrows(IllegalArgumentException.class, () -> run.hold(3, at("08:15")), "B is another station");
+        assertThrows(IllegalArgumentException.class, () -> run.hold(5, at("08:40")), "the last call is not left");
+        assertThrows(IllegalArgumentException.class, () -> run.hold(1, at("08:00")), "the call it stands at is no later one");
+        run.left(at("08:15"));
+        assertThrows(IllegalStateException.class, () -> run.hold(4, at("08:30")), "a running set is not held");
+    }
+
+    @Test
+    void aHeldRunIsMadeAgainFromWhatIsSaved() {
+        DutyRun run = heldAtA();
+        DutyRun again = DutyRun.restore(run.state(), CALLS);
+        assertEquals(run.state(), again.state());
+        assertEquals(List.of(2, 3), again.state().skipped());
+        assertEquals("Depot", again.nextStation());
+        again.left(again.departure());
+        assertEquals(5, again.call());
+        assertEquals(List.of(), started().state().skipped(), "a run that makes every call leaves none out");
+    }
+
+    @Test
+    void aSavedRunThatLeavesOutCallsItCannotIsRefused() {
+        DutyRun.State held = heldAtA().state();
+        for (List<Integer> skipped : List.of(List.of(2), List.of(1, 2, 3), List.of(3, 2), List.of(0), List.of(5), List.of(2, 3, 4)))
+            assertThrows(IllegalArgumentException.class, () -> DutyRun.restore(withSkipped(held, skipped), CALLS), skipped::toString);
+        // Saved before calls could be left out: none are.
+        DutyRun.State old = new DutyRun.State(held.duty(), held.day(), 1, Phase.STANDING, held.departure(), held.arrivals(), held.departures());
+        assertEquals(List.of(), DutyRun.restore(old, CALLS).skipped());
+    }
+
+    private static DutyRun.State withSkipped(DutyRun.State state, List<Integer> skipped) {
+        return new DutyRun.State(state.duty(), state.day(), state.call(), state.phase(), state.departure(), state.arrivals(), state.departures(),
+            skipped);
+    }
+
     @Test
     void theSetCannotLeaveWhileItIsRunningNorArriveWhileItStands() {
         DutyRun run = started();

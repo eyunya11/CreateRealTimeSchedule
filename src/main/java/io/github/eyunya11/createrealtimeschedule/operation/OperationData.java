@@ -88,6 +88,7 @@ public final class OperationData extends SavedData {
     private static final String TAG_DEPARTURE = "Departure";
     private static final String TAG_ARRIVALS = "Arrivals";
     private static final String TAG_DEPARTURES = "Departures";
+    private static final String TAG_SKIPPED = "Skipped";
     private static final String TAG_SINCE = "Since";
     private static final String TAG_CLOCK = "Clock";
     private static final String TAG_WHAT = "What";
@@ -364,6 +365,8 @@ public final class OperationData extends SavedData {
         entry.putLong(TAG_DEPARTURE, state.departure());
         entry.put(TAG_ARRIVALS, new LongArrayTag(state.arrivals()));
         entry.put(TAG_DEPARTURES, new LongArrayTag(state.departures()));
+        if (!state.skipped().isEmpty())
+            entry.putIntArray(TAG_SKIPPED, state.skipped());
         return entry;
     }
 
@@ -374,9 +377,10 @@ public final class OperationData extends SavedData {
         if (dutyCalls == null)
             return null;
         try {
+            // A run saved before calls could be left out has no list of them, which reads as none.
             DutyRun.State state = DutyRun.State.of(duty, entry.getLong(TAG_DAY), entry.getInt(TAG_CALL),
                 DutyRun.Phase.valueOf(entry.getString(TAG_PHASE)), entry.getLong(TAG_DEPARTURE),
-                entry.getLongArray(TAG_ARRIVALS), entry.getLongArray(TAG_DEPARTURES));
+                entry.getLongArray(TAG_ARRIVALS), entry.getLongArray(TAG_DEPARTURES), entry.getIntArray(TAG_SKIPPED));
             return DutyRun.restore(state, dutyCalls);
         } catch (IllegalArgumentException e) {
             LOGGER.error("The saved run of duty {} does not fit the timetable, and is dropped", duty, e);
