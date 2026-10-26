@@ -351,6 +351,19 @@ input.seconds {
   pointer-events: none;
 }
 
+/* The times a drag has come to, beside the pointer. */
+#diagram .drag-box {
+  fill: var(--panel);
+  stroke: var(--line);
+  pointer-events: none;
+}
+
+#diagram .drag-text {
+  fill: var(--text);
+  font-size: 12px;
+  pointer-events: none;
+}
+
 #diagram .preview {
   fill: none;
   stroke: var(--accent);

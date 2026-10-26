@@ -582,6 +582,48 @@
       plot.append(s('path', { class: 'guide', d: pathOf(guide, length) }));
     plot.append(s('g', { id: 'preview' }));
     renderPreview();
+    svg.append(s('g', { id: 'drag-label' }));
+    renderDragLabel();
+  }
+
+  /** What a drag going on has made of the times it takes hold of, in words, for the label beside the pointer. */
+  function dragText() {
+    const stops = shownTimetable().trains.find(each => each.number === dragging.number).stops;
+    if (dragging.index < 0)
+      return t('departAt', time.show(stops[0].depart));
+    const stop = stops[dragging.index];
+    const standing = stop.arrive !== rt.edit.NONE && stop.depart !== rt.edit.NONE ? ' ' + t('standing', stop.depart - stop.arrive) : '';
+    switch (dragging.part) {
+      case 'arrive':
+        return t('arriveAt', time.show(stop.arrive)) + standing;
+      case 'stretch':
+        return t('departAt', time.show(stop.depart)) + standing;
+      case 'run': {
+        const next = stops[dragging.index + 1];
+        return t('departAt', time.show(stop.depart)) + ' → ' + t('arriveAt', time.show(next.arrive !== rt.edit.NONE ? next.arrive : next.depart));
+      }
+      default:
+        return stop.depart !== rt.edit.NONE ? t('departAt', time.show(stop.depart)) : t('arriveAt', time.show(stop.arrive));
+    }
+  }
+
+  /** The times a drag going on has come to, beside the pointer, kept inside the diagram. */
+  function renderDragLabel() {
+    const group = document.getElementById('drag-label');
+    if (group === null)
+      return;
+    group.replaceChildren();
+    if (dragging === null || dragging.px === undefined)
+      return;
+    const text = dragText();
+    const width = textWidth(text) + 12;
+    const area = $('diagram').clientWidth;
+    const x = dragging.px + 14 + width <= area ? dragging.px + 14 : Math.max(0, dragging.px - 14 - width);
+    const y = Math.max(0, dragging.py - 34);
+    group.append(s('rect', { class: 'drag-box', x, y, width, height: 20, rx: 4 }));
+    const label = s('text', { class: 'drag-text', x: x + 6, y: y + 14 });
+    label.textContent = text;
+    group.append(label);
   }
 
   /**
@@ -700,11 +742,12 @@
    */
   function startDrag(number, index, event, part) {
     event.stopPropagation();
-    dragging = { number, index, part: part || 'stop', x0: event.clientX, base: state.timetable, delta: 0, id: event.pointerId };
+    const box = $('diagram').getBoundingClientRect();
+    dragging = { number, index, part: part || 'stop', x0: event.clientX, base: state.timetable, delta: 0, id: event.pointerId,
+      px: event.clientX - box.left, py: event.clientY - box.top };
     capture(event.pointerId);
-    // The guide of the fastest ways, from the first moment of a drag that changes them.
-    if (index >= 0)
-      renderDiagram();
+    // The guide of the fastest ways, and the label of the times, from the first moment of a drag.
+    renderDiagram();
   }
 
   function startDrawing() {
@@ -768,6 +811,9 @@
     });
     svg.addEventListener('pointermove', event => {
       if (dragging !== null && event.pointerId === dragging.id) {
+        const box = svg.getBoundingClientRect();
+        dragging.px = event.clientX - box.left;
+        dragging.py = event.clientY - box.top;
         const raw = (event.clientX - dragging.x0) / view.width * view.span;
         // The time dragged lands on the step, not just the way it is dragged by.
         const step = state.settings.snap;
@@ -785,6 +831,8 @@
                   ? rt.edit.moveRun(dragging.base, dragging.number, dragging.index, delta, running, step)
                   : rt.edit.moveStop(dragging.base, dragging.number, dragging.index, delta, running, step);
           renderDiagram();
+        } else {
+          renderDragLabel();
         }
         return;
       }
