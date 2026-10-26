@@ -108,3 +108,9 @@ test('a deadhead stands at the station of the train it meets as long as that sta
   assert.equal(result.timetable.trains.find(each => each.number === 'D1').stops[1].arrive, t('07:59'));
   assert.equal(result.timetable.trains.find(each => each.number === 'D2').stops[0].depart, t('08:31'));
 });
+
+test('a duty whose last train has no stops yet has no train to come next', () => {
+  const tt = timetable();
+  tt.trains.push({ number: '9', line: 'l', type: '', deadhead: false, stops: [] });
+  assert.deepEqual(duties.candidates(duties.appendTrain(tt, '1A', '9'), '1A'), []);
+});

@@ -6,6 +6,7 @@ const { script } = require('./editor.js');
 
 const time = script('time');
 const edit = script('edit');
+const problems = script('problems');
 
 const NONE = edit.NONE;
 
@@ -179,14 +180,14 @@ test('a stop stretched stands longer or shorter, and the stops after it move by 
 
 test('a click on the row of the stop just arrived at says when the train leaves it, and a click elsewhere goes on', () => {
   let drawn = edit.drawClick([], false, 'X', t('08:00'), null, 20, 5);
-  assert.deepEqual(drawn, { stops: [{ station: 'X', arrive: NONE, depart: t('08:00') }], leaving: false }, 'the first stop is only left');
+  assert.deepEqual(drawn, { stops: [{ station: 'X', arrive: NONE, depart: t('08:00') }], leaving: false, left: false }, 'the first stop is only left');
   // 60 seconds of running time from X: arrived at 08:01, and to be left by the next click.
   drawn = edit.drawClick(drawn.stops, drawn.leaving, 'Y', t('08:00:30'), 60, 20, 5);
   assert.equal(drawn.leaving, true);
   assert.deepEqual(drawn.stops[1], { station: 'Y', arrive: t('08:01'), depart: t('08:01:20') }, 'until then it stands the dwell');
   // Clicked on Y's row at 08:01:47: the train leaves Y then, to the step.
   const left = edit.drawClick(drawn.stops, drawn.leaving, 'Y', t('08:01:47'), 0, 20, 5);
-  assert.deepEqual(left, { stops: [drawn.stops[0], { station: 'Y', arrive: t('08:01'), depart: t('08:01:45') }], leaving: false });
+  assert.deepEqual(left, { stops: [drawn.stops[0], { station: 'Y', arrive: t('08:01'), depart: t('08:01:45') }], leaving: false, left: true });
   // Clicked before the train arrives: it leaves as it arrives.
   assert.equal(edit.drawClick(drawn.stops, drawn.leaving, 'Y', t('08:00:10'), 0, 20, 5).stops[1].depart, t('08:01'));
   // Clicked on another row instead: the train leaves Y after the dwell and goes on to Z.
@@ -195,5 +196,17 @@ test('a click on the row of the stop just arrived at says when the train leaves 
     [['X', NONE, t('08:00')], ['Y', t('08:01'), t('08:01:20')], ['Z', t('08:02'), t('08:02:20')]]);
   assert.equal(on.leaving, true);
   // Once Y is left, a click on its row again changes nothing.
-  assert.deepEqual(edit.drawClick(left.stops, left.leaving, 'Y', t('08:03'), 0, 20, 5), { stops: left.stops, leaving: false });
+  assert.deepEqual(edit.drawClick(left.stops, left.leaving, 'Y', t('08:03'), 0, 20, 5), { stops: left.stops, leaving: false, left: false });
+});
+
+test('the times of a station no line has any more go with the line, and stay while another line has it', () => {
+  const tt = edit.setStations(timetable(), [{ name: 'X', dwell: 30, minimumStop: NONE }, { name: 'Y', dwell: NONE, minimumStop: 10 }]);
+  // Y is on both lines: it keeps its times when line a goes; X, only on line a, does not.
+  assert.deepEqual(edit.removeLine(tt, 'a').stations, [{ name: 'Y', dwell: NONE, minimumStop: 10 }]);
+  // Line b without Y: Y is still on line a.
+  assert.deepEqual(edit.putLine(tt, 'b', { id: 'b', name: 'B Line', stations: ['Z', 'W'] }).stations.map(station => station.name), ['X', 'Y']);
+  // Line a without X: X goes.
+  const without = edit.putLine(tt, 'a', { id: 'a', name: 'A Line', stations: ['Y', 'V'] });
+  assert.deepEqual(without.stations.map(station => station.name), ['Y']);
+  assert.deepEqual(problems.problems(without).filter(problem => problem.startsWith('station')), [], 'no station is left on no line');
 });

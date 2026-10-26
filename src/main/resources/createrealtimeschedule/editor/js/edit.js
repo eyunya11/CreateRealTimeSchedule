@@ -46,8 +46,19 @@
   }
 
   /**
+   * Leaves out the times of stations that no line has any more, which the timetable would otherwise
+   * be refused for, once a line has lost them.
+   */
+  function dropStationsOffTheLines(next) {
+    const onLines = new Set(next.lines.flatMap(line => line.stations));
+    next.stations = next.stations.filter(station => onLines.has(station.name));
+    return next;
+  }
+
+  /**
    * Puts a line in: in place of the line of id oldId, or at the end if oldId is null. The trains of
-   * the line follow a change of its id.
+   * the line follow a change of its id, and the times of a station it no longer has, which no other
+   * line has, go.
    */
   function putLine(timetable, oldId, line) {
     const next = copy(timetable);
@@ -62,10 +73,10 @@
           if (train.line === oldId)
             train.line = line.id;
     }
-    return next;
+    return dropStationsOffTheLines(next);
   }
 
-  /** Takes a line out, with its trains, which also leave the duties they were in. */
+  /** Takes a line out, with its trains, which also leave the duties they were in, and the times of stations no other line has. */
   function removeLine(timetable, id) {
     const next = copy(timetable);
     const gone = new Set(next.trains.filter(train => train.line === id).map(train => train.number));
@@ -73,7 +84,7 @@
     next.trains = next.trains.filter(train => train.line !== id);
     for (const duty of next.duties)
       duty.trains = duty.trains.filter(number => !gone.has(number));
-    return next;
+    return dropStationsOffTheLines(next);
   }
 
   // ------------------------------------------------------------------ the stations' times
@@ -310,14 +321,15 @@
    * be left by the next click, unless it is the first, which is only left. Until then the stop stands
    * the dwell, which is how the train leaves if the next click is on another row.
    *
-   * @returns {{stops: object[], leaving: boolean}} the stops, and whether the last is still to be left
+   * @returns {{stops: object[], leaving: boolean, left: boolean}} the stops, whether the last is still
+   *   to be left, and whether the click said when the train leaves it
    */
   function drawClick(stops, leaving, station, clicked, running, dwell, step) {
     const last = stops[stops.length - 1];
     if (leaving && last !== undefined && last.station === station)
-      return { stops: setDrawnDwell(stops, stops.length - 1, Math.max(0, snap(clicked, step) - last.arrive)), leaving: false };
+      return { stops: setDrawnDwell(stops, stops.length - 1, Math.max(0, snap(clicked, step) - last.arrive)), leaving: false, left: true };
     const next = drawStop(stops, station, clicked, running, dwell, step);
-    return { stops: next, leaving: next !== stops && next.length > 1 };
+    return { stops: next, leaving: next !== stops && next.length > 1, left: false };
   }
 
   /** The stops of a train drawn to the end: the last stop is only arrived at. Null if there are fewer than two. */

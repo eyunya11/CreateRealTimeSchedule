@@ -14,6 +14,8 @@
   const STORE = 'createrealtimeschedule-editor';
   const SVG = 'http://www.w3.org/2000/svg';
   const MAX_UNDO = 200;
+  /** How far apart, in pixels, the two points of a stop are drawn at the least, so that both can be taken. */
+  const STRETCH_GAP = 10;
 
   /** Colours of the types of train, as the game's diagram picks them, for a light and a dark page alike. */
   const TYPE_COLOURS = ['#3b7dd8', '#3a9d5d', '#d9822b', '#c94c4c', '#2f9e9e', '#b59a1c', '#a65fb0'];
@@ -518,19 +520,29 @@
         group.append(number);
       }
       plot.append(group);
-      if (isSelected && drawing === null)
-        for (const point of planned.points)
-          for (const [second, position, leaving] of [[point.arriveSecond, point.arrivePosition, false], [point.departSecond, point.departPosition, true]])
+      if (isSelected && drawing === null) {
+        const stops = shownTimetable().trains.find(each => each.number === planned.number).stops;
+        for (const point of planned.points) {
+          // The point a stop is left at stretches the stop if it is arrived at too, by the timetable
+          // (the diagram draws a stop with no arrival time as arrived at when it is left); any other moves it.
+          const stop = stops[point.stop];
+          const stretchable = stop.arrive !== rt.edit.NONE && stop.depart !== rt.edit.NONE;
+          for (const [second, position, stretches] of [[point.arriveSecond, point.arrivePosition, false], [point.departSecond, point.departPosition, stretchable]])
             if (!Number.isNaN(second) && !Number.isNaN(position)) {
-              // The point a stop is left at, after it is arrived at, stretches the stop; any other moves it.
-              const stretches = leaving && !Number.isNaN(point.arriveSecond);
-              const handle = s('circle', { class: stretches ? 'point stretch' : 'point', cx: view.x(second), cy: view.y(position, length), r: 5, fill: colour });
+              let x = view.x(second);
+              // A stop stood at for no time, or next to none, has its two points in one place: the one
+              // it is left at goes beside the other, so that either can be taken.
+              if (stretches && x - view.x(point.arriveSecond) < STRETCH_GAP)
+                x = view.x(point.arriveSecond) + STRETCH_GAP;
+              const handle = s('circle', { class: stretches ? 'point stretch' : 'point', cx: x, cy: view.y(position, length), r: 5, fill: colour });
               handle.addEventListener('pointerdown', event => {
                 if (event.button === 0)
                   startDrag(planned.number, point.stop, event, stretches);
               });
               plot.append(handle);
             }
+        }
+      }
     }
 
     plot.append(s('g', { id: 'preview' }));
@@ -545,8 +557,9 @@
     group.replaceChildren();
     if (drawing === null)
       return;
-    const stops = hover === null ? drawing.stops : drawnWith(hover);
-    const following = hover !== null && leavesAt(hover);
+    const click = hover === null ? null : clickAt(hover);
+    const stops = click === null ? drawing.stops : click.stops;
+    const following = click !== null && click.left;
     if (stops.length === 0)
       return;
     const train = { number: '', line: drawn.axis.line, type: drawing.type, deadhead: drawing.deadhead,
@@ -572,22 +585,11 @@
     group.append(label);
   }
 
-  /** Whether a click at point says when the train being drawn leaves its last stop: one on the row of that stop, while it is still to be left. */
-  function leavesAt(point) {
-    const last = drawing.stops[drawing.stops.length - 1];
-    return drawing.leaving && last !== undefined && last.station === point.station;
-  }
-
   /** What a click at point does to the train being drawn (see edit.drawClick). */
   function clickAt(point) {
     const last = drawing.stops[drawing.stops.length - 1];
     return rt.edit.drawClick(drawing.stops, drawing.leaving, point.station, point.second,
       last === undefined ? null : running(last.station, point.station), drawingDwellAt(point.station), state.settings.snap);
-  }
-
-  /** The stops of the train being drawn as a click at point would leave them. */
-  function drawnWith(point) {
-    return clickAt(point).stops;
   }
 
   /** The station row nearest the pointer, and the time under it. */
@@ -709,9 +711,11 @@
     const end = event => {
       if (dragging !== null && event.pointerId === dragging.id) {
         const next = shown;
+        const base = dragging.base;
         shown = null;
         dragging = null;
-        if (next !== null && event.type === 'pointerup')
+        // A drag that changed nothing (a stop stretched no shorter than nothing) is not a change to undo.
+        if (next !== null && event.type === 'pointerup' && rt.timetable.write(next) !== rt.timetable.write(base))
           change(next);
         else
           renderDiagram();
@@ -1411,7 +1415,9 @@
       render();
     });
     document.addEventListener('keydown', event => {
-      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || $('dialog').open)
+      // Keys typed into a box or a list are the box's: Delete in a list of stations does not remove the train.
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement
+        || event.target instanceof HTMLSelectElement || $('dialog').open)
         return;
       const key = event.key.toLowerCase();
       if (event.key === 'Enter' && drawing !== null) {

@@ -3,8 +3,9 @@
  *
  * Writing gives the same text as the mod, member for member and line for line. Reading checks the
  * same things in the same order and says them in the same words, with one difference: the browser's
- * JSON reader takes a member written twice (the last one wins) and a version such as 2.0, which the
- * mod refuses. That does no harm, since what the editor hands the mod is always what it writes.
+ * JSON reader takes a member written twice (the last one wins), and numbers written as a version such
+ * as 2.0 or seconds such as 30.0 or 3e1, which the mod refuses ("must be a whole number"). That does no
+ * harm, since what the editor hands the mod is always what it writes, with whole numbers.
  *
  * Unlike the mod, reading keeps a timetable that is of the right shape but has mistakes in what it
  * says, such as a train that stops at a station its line does not have, so that it can be opened in

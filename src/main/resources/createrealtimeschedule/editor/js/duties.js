@@ -90,7 +90,8 @@
     const inDuties = new Set(timetable.duties.flatMap(each => each.trains));
     const byNumber = new Map(timetable.trains.map(train => [train.number, train]));
     const before = duty.trains.length === 0 ? null : byNumber.get(duty.trains[duty.trains.length - 1]);
-    if (before === undefined)
+    // A train that is not there, or has no stops yet (a timetable being put right may have one), ends nowhere.
+    if (before === undefined || before !== null && before.stops.length === 0)
       return [];
     const station = before === null ? duty.depot : last(before).station;
     const after = before === null ? -Infinity : last(before).arrive;
