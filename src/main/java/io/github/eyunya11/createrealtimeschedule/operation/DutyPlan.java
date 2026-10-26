@@ -11,6 +11,7 @@ import io.github.eyunya11.createrealtimeschedule.timetable.Timetable;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Duty;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Stop;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Train;
+import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Wait;
 
 /**
  * The calls a duty makes, in order, from the depot and back: what the operation follows. It has no
@@ -35,21 +36,27 @@ public final class DutyPlan {
             List<Stop> stops = train.stops();
             Stop first = stops.getFirst();
             if (previous == null) {
-                calls.add(new Call(first.station(), Stop.NONE, first.depart(), "", number, timetable.minimumStop(first)));
+                calls.add(new Call(first.station(), Stop.NONE, first.depart(), "", number, timetable.minimumStop(first), waits(first)));
             } else {
                 // The train before has come in here; the set leaves as this one, so this one's stop says how long it stands at the least.
                 Call end = calls.removeLast();
-                calls.add(new Call(end.station(), end.arrive(), first.depart(), previous.number(), number, timetable.minimumStop(first)));
+                calls.add(new Call(end.station(), end.arrive(), first.depart(), previous.number(), number, timetable.minimumStop(first),
+                    waits(first)));
             }
             for (int k = 1; k < stops.size(); k++) {
                 Stop stop = stops.get(k);
                 boolean last = k == stops.size() - 1;
                 calls.add(new Call(stop.station(), stop.arrive(), last ? Stop.NONE : stop.depart(), number, last ? "" : number,
-                    last ? Stop.NONE : timetable.minimumStop(stop)));
+                    last ? Stop.NONE : timetable.minimumStop(stop), last ? List.of() : waits(stop)));
             }
             previous = train;
         }
         return calls;
+    }
+
+    /** The trains {@code stop} waits for, each with its station filled in. */
+    private static List<Wait> waits(Stop stop) {
+        return stop.waits().stream().map(wait -> new Wait(wait.train(), wait.station(stop.station()), wait.maxWait())).toList();
     }
 
     /** When the duty first leaves, as {@code ServiceTime} seconds. */

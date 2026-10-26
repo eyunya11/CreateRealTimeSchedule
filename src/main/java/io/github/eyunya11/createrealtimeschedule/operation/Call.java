@@ -1,8 +1,10 @@
 package io.github.eyunya11.createrealtimeschedule.operation;
 
+import java.util.List;
 import java.util.Objects;
 
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Stop;
+import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Wait;
 
 /**
  * One stop a duty's rolling stock makes, as the timetable has it. Where one train of the duty ends and
@@ -17,13 +19,21 @@ import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Stop;
  * @param minimumStop   how many seconds a late set stands here at the least, as the timetable has it
  *                      for the stop it leaves from ({@code Timetable.minimumStop}), or {@link Stop#NONE}
  *                      for the server's config
+ * @param waits         the trains the set waits for before it leaves, as the stop it leaves from has
+ *                      them, each with its station filled in ({@link Wait#station})
  */
-public record Call(String station, int arrive, int depart, String arrivingTrain, String leavingTrain, int minimumStop) {
+public record Call(String station, int arrive, int depart, String arrivingTrain, String leavingTrain, int minimumStop, List<Wait> waits) {
 
     public Call {
         Objects.requireNonNull(station, "station");
         Objects.requireNonNull(arrivingTrain, "arrivingTrain");
         Objects.requireNonNull(leavingTrain, "leavingTrain");
+        waits = List.copyOf(waits);
+    }
+
+    /** A call that waits for no train. */
+    public Call(String station, int arrive, int depart, String arrivingTrain, String leavingTrain, int minimumStop) {
+        this(station, arrive, depart, arrivingTrain, leavingTrain, minimumStop, List.of());
     }
 
     /** A call with the server's minimum stop. */

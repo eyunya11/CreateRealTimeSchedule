@@ -217,6 +217,26 @@ class DutyRunTest {
     }
 
     @Test
+    void theStationsASetRunsThroughAreKeptOnceAndSaved() {
+        DutyRun run = started();
+        run.left(at("07:50"));
+        run.arrived(at("07:55"), MINIMUM);
+        run.left(at("08:00"));
+        run.passed(1, "X", at("08:02"));
+        run.passed(1, "X", at("08:03"));
+        assertTrue(run.passedBy(1, "X"));
+        assertFalse(run.passedBy(2, "X"));
+        assertEquals(List.of(new DutyRun.Pass(1, "X", at("08:02"))), run.passes(), "the first time it is seen");
+        DutyRun again = DutyRun.restore(run.state(), CALLS);
+        assertEquals(run.state(), again.state());
+        assertTrue(again.passedBy(1, "X"));
+        DutyRun.State state = run.state();
+        assertThrows(IllegalArgumentException.class, () -> DutyRun.restore(new DutyRun.State(state.duty(), state.day(), state.call(), state.phase(),
+            state.departure(), state.arrivals(), state.departures(), state.skipped(), List.of(new DutyRun.Pass(5, "X", 0))), CALLS),
+            "the last call has no way on");
+    }
+
+    @Test
     void theSetCannotLeaveWhileItIsRunningNorArriveWhileItStands() {
         DutyRun run = started();
         assertThrows(IllegalStateException.class, () -> run.arrived(at("07:50"), MINIMUM));

@@ -5,10 +5,12 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import org.jetbrains.annotations.Nullable;
@@ -98,6 +100,10 @@ public final class OperationData extends SavedData {
     private static final String TAG_NAME = "Name";
     private static final String TAG_ENDING = "Ending";
     private static final String TAG_LOADED_AT = "LoadedAt";
+    private static final String TAG_PASSES = "Passes";
+    private static final String TAG_WAY = "Way";
+    private static final String TAG_STATION = "Station";
+    private static final String TAG_AT = "At";
 
     private String json = "";
     private @Nullable Timetable timetable;
@@ -121,6 +127,14 @@ public final class OperationData extends SavedData {
     private @Nullable Map<String, LineAxis> axes;
     /** Not saved: the ways between the timetable's stations by their ends, worked out with the axes ({@link TrackFacts}). */
     private @Nullable Map<List<String>, Leg> legs;
+    /** Not saved: the trains the sets wait for, worked out from the timetable when first needed; null until then. */
+    private @Nullable Waits waits;
+    /** Not saved: the end of each train watched for running through a station, on the tick before ({@link PassWatch}). */
+    private final Map<UUID, PassWatch.Tail> tails = new HashMap<>();
+    /** Not saved: the waits given up, by duty, day, call and wait; a set that waits no more leaves on the tick it gives up. */
+    private final Set<String> waitsGivenUp = new HashSet<>();
+    /** Not saved: the waits found to have ended without the train being seen to run through the station, noted once. */
+    private final Set<String> waitsUnseen = new HashSet<>();
 
     public static OperationData get(MinecraftServer server) {
         return server.overworld().getDataStorage().computeIfAbsent(FACTORY, NAME);
@@ -145,6 +159,32 @@ public final class OperationData extends SavedData {
     /** The calls of each of the timetable's duties, by its id. */
     public Map<String, List<Call>> allCalls() {
         return Collections.unmodifiableMap(calls);
+    }
+
+    /** The trains the timetable's sets wait for; null with no timetable. */
+    public @Nullable Waits waits() {
+        if (waits == null && timetable != null)
+            waits = Waits.of(timetable, calls);
+        return waits;
+    }
+
+    /** The end of each train watched for running through a station, on the tick before, by the train. */
+    public Map<UUID, PassWatch.Tail> tails() {
+        return tails;
+    }
+
+    /** Whether the wait of {@code about} (duty, day, call and wait) has been given up. */
+    public boolean waitGivenUp(String about) {
+        return waitsGivenUp.contains(about);
+    }
+
+    public void giveUpWait(String about) {
+        waitsGivenUp.add(about);
+    }
+
+    /** Whether the wait of {@code about} is found to have ended unseen for the first time. */
+    public boolean firstUnseen(String about) {
+        return waitsUnseen.add(about);
     }
 
     /**
@@ -208,6 +248,10 @@ public final class OperationData extends SavedData {
     }
 
     private void use(Timetable timetable) {
+        waits = null;
+        tails.clear();
+        waitsGivenUp.clear();
+        waitsUnseen.clear();
         this.timetable = timetable;
         calls.clear();
         for (Duty duty : timetable.duties())
@@ -406,6 +450,17 @@ public final class OperationData extends SavedData {
         entry.put(TAG_DEPARTURES, new LongArrayTag(state.departures()));
         if (!state.skipped().isEmpty())
             entry.putIntArray(TAG_SKIPPED, state.skipped());
+        if (!state.passes().isEmpty()) {
+            ListTag passes = new ListTag();
+            for (DutyRun.Pass pass : state.passes()) {
+                CompoundTag passTag = new CompoundTag();
+                passTag.putInt(TAG_WAY, pass.way());
+                passTag.putString(TAG_STATION, pass.station());
+                passTag.putLong(TAG_AT, pass.at());
+                passes.add(passTag);
+            }
+            entry.put(TAG_PASSES, passes);
+        }
         return entry;
     }
 
@@ -420,6 +475,13 @@ public final class OperationData extends SavedData {
             DutyRun.State state = DutyRun.State.of(duty, entry.getLong(TAG_DAY), entry.getInt(TAG_CALL),
                 DutyRun.Phase.valueOf(entry.getString(TAG_PHASE)), entry.getLong(TAG_DEPARTURE),
                 entry.getLongArray(TAG_ARRIVALS), entry.getLongArray(TAG_DEPARTURES), entry.getIntArray(TAG_SKIPPED));
+            List<DutyRun.Pass> passes = new ArrayList<>();
+            for (Tag element : entry.getList(TAG_PASSES, Tag.TAG_COMPOUND)) {
+                CompoundTag passTag = (CompoundTag) element;
+                passes.add(new DutyRun.Pass(passTag.getInt(TAG_WAY), passTag.getString(TAG_STATION), passTag.getLong(TAG_AT)));
+            }
+            state = new DutyRun.State(state.duty(), state.day(), state.call(), state.phase(), state.departure(), state.arrivals(),
+                state.departures(), state.skipped(), passes);
             return DutyRun.restore(state, dutyCalls);
         } catch (IllegalArgumentException e) {
             LOGGER.error("The saved run of duty {} does not fit the timetable, and is dropped", duty, e);

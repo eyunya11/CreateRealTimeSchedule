@@ -58,15 +58,23 @@ public final class DutyRun {
      * @param arrivals   when it arrived at each call, or {@link #NOT_YET}
      * @param departures when it left each call, or {@link #NOT_YET}
      * @param skipped    the calls it does not make, in order (see {@link #hold})
+     * @param passes     the stations its set has been seen to run through, in order (see {@link #passed})
      */
     public record State(String duty, long day, int call, Phase phase, long departure, List<Long> arrivals, List<Long> departures,
-                        List<Integer> skipped) {
+                        List<Integer> skipped, List<Pass> passes) {
         public State {
             Objects.requireNonNull(duty, "duty");
             Objects.requireNonNull(phase, "phase");
             arrivals = List.copyOf(arrivals);
             departures = List.copyOf(departures);
             skipped = List.copyOf(skipped);
+            passes = List.copyOf(passes);
+        }
+
+        /** A state of a run that has run through no station it was watched at. */
+        public State(String duty, long day, int call, Phase phase, long departure, List<Long> arrivals, List<Long> departures,
+                     List<Integer> skipped) {
+            this(duty, day, call, phase, departure, arrivals, departures, skipped, List.of());
         }
 
         /** A state of a run that makes all its calls. */
@@ -95,6 +103,18 @@ public final class DutyRun {
     private final long[] arrivals;
     private final long[] departures;
     private final boolean[] skipped;
+    private final List<Pass> passes = new ArrayList<>();
+
+    /**
+     * The set ran through a station without stopping, its last carriage gone past it: on the way from
+     * call {@code way} to the next, at clock {@code at}. Only stations a train waits for the set to run
+     * through are watched (see {@link Waits}).
+     */
+    public record Pass(int way, String station, long at) {
+        public Pass {
+            Objects.requireNonNull(station, "station");
+        }
+    }
 
     private DutyRun(String duty, long day, List<Call> calls, int call, Phase phase, long departure, long[] arrivals, long[] departures,
                     boolean[] skipped) {
@@ -136,10 +156,15 @@ public final class DutyRun {
         int size = calls.size();
         if (state.arrivals().size() != size || state.departures().size() != size || state.call() < 0 || state.call() >= size)
             throw new IllegalArgumentException("the run of duty " + state.duty() + " does not fit its " + size + " calls");
-        return new DutyRun(state.duty(), state.day(), calls, state.call(), state.phase(), state.departure(),
+        DutyRun run = new DutyRun(state.duty(), state.day(), calls, state.call(), state.phase(), state.departure(),
             state.arrivals().stream().mapToLong(Long::longValue).toArray(),
             state.departures().stream().mapToLong(Long::longValue).toArray(),
             skipped(state, calls));
+        for (Pass pass : state.passes())
+            if (pass.way() < 0 || pass.way() >= size - 1)
+                throw new IllegalArgumentException("the run of duty " + state.duty() + " has no way " + pass.way());
+        run.passes.addAll(state.passes());
+        return run;
     }
 
     /**
@@ -176,7 +201,9 @@ public final class DutyRun {
         for (int index = 0; index < skipped.length; index++)
             if (skipped[index])
                 left[count++] = index;
-        return State.of(duty, day, call, phase, departure, arrivals, departures, Arrays.copyOf(left, count));
+        State state = State.of(duty, day, call, phase, departure, arrivals, departures, Arrays.copyOf(left, count));
+        return new State(state.duty(), state.day(), state.call(), state.phase(), state.departure(), state.arrivals(), state.departures(),
+            state.skipped(), passes);
     }
 
     private static List<Long> boxed(long[] values) {
@@ -283,6 +310,22 @@ public final class DutyRun {
     /** The station the set goes to next: the call it is running to, or the next it makes after the call it stands at. */
     public String nextStation() {
         return calls.get(phase == Phase.STANDING || phase == Phase.DEPARTING ? nextMade(call) : call).station();
+    }
+
+    /** The set has run through {@code station} on the way from call {@code way} at {@code now}; once is enough. */
+    public void passed(int way, String station, long now) {
+        if (!passedBy(way, station))
+            passes.add(new Pass(way, station, now));
+    }
+
+    /** Whether the set has been seen to run through {@code station} on the way from call {@code way}. */
+    public boolean passedBy(int way, String station) {
+        return passes.stream().anyMatch(pass -> pass.way() == way && pass.station().equals(station));
+    }
+
+    /** The stations the set has been seen to run through, in order. */
+    public List<Pass> passes() {
+        return List.copyOf(passes);
     }
 
     /** Whether the set does not make call {@code index}, having been held past it. */
