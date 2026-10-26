@@ -63,21 +63,15 @@ public final class Recovery {
      */
     public record Hold(int to, long departure, List<String> cancelled, List<String> cutShort) {}
 
-    /** What becomes of a set late at a station. */
-    enum Outcome {
-        /** It is no later than the threshold. */
-        WITHIN,
-        /** It makes up enough on the way to be within the threshold when it next leaves the station. */
-        MAKES_UP,
-        /** It is held. */
-        HELD,
-        /** It runs on late: there is no call it can be held to. */
-        LATE
-    }
-
-    private record Plan(Outcome outcome, @Nullable Hold hold) {}
-
     private Recovery() {}
+
+    /**
+     * Whether the set of {@code run} stands at a call to leave later than the threshold: the sets the
+     * recovery looks at. None is, with the threshold at nothing.
+     */
+    public static boolean tooLate(DutyRun run, long threshold) {
+        return threshold > 0 && run.phase() == DutyRun.Phase.STANDING && run.departure() - run.plannedDeparture(run.call()) > threshold;
+    }
 
     /**
      * Whether the set of {@code run}, which has just arrived at the call it stands at, is to be held
@@ -86,22 +80,20 @@ public final class Recovery {
      * @param reach the set's track, and the trains around it
      */
     public static Optional<Hold> onArrival(Rules rules, DutyRun run, long now, Reach reach) {
-        if (rules.threshold() <= 0 || run.phase() != DutyRun.Phase.STANDING)
+        if (!tooLate(run, rules.threshold()))
             return Optional.empty();
         int call = run.call();
         long arrived = run.arrivals().get(call);
-        if (arrived == DutyRun.NOT_YET)
+        if (arrived == DutyRun.NOT_YET || makesUp(rules, run.calls(), run.day(), call, run.departure(), reach))
             return Optional.empty();
-        return Optional.ofNullable(
-            plan(rules, run.duty(), run.calls(), run.day(), call, arrived, run.departure(), now, reach, reach, true, false).hold());
+        return hold(rules, run.duty(), run.calls(), run.day(), call, arrived, now, reach, reach, true);
     }
 
     /**
      * Whether duty {@code duty} of service {@code day}, which has had no free set by its time to leave,
      * can still start with a set that leaves the depot now: it would leave the first station after the
      * depot within the threshold, or make up enough on the way to be within it when it next leaves
-     * there, or could be held there until a later call from which a train that carries passengers
-     * still runs (one held to run only deadheads back to the depot is of no use).
+     * there, or could be held there until a later call.
      *
      * @param times how long the track takes
      * @param set   the track and trains around the set that would take the duty, to find whether it
@@ -115,39 +107,53 @@ public final class Recovery {
         if (calls.size() == 2)
             return arrives - DutyPlan.at(day, calls.get(1).arrive()) <= rules.threshold();
         long departure = Math.max(DutyPlan.at(day, calls.get(1).depart()), arrives + DutyPlan.minimumStop(calls.get(1), rules.defaultMinimumStop()));
-        return plan(rules, duty, calls, day, 1, arrives, departure, arrives, times, set, false, true).outcome() != Outcome.LATE;
+        if (departure - DutyPlan.at(day, calls.get(1).depart()) <= rules.threshold() || makesUp(rules, calls, day, 1, departure, times))
+            return true;
+        return hold(rules, duty, calls, day, 1, arrives, now, times, set, false).isPresent();
+    }
+
+    /** The later calls of the duty at the station of call {@code call} that the set can be held until, in order. */
+    private static List<Integer> laterCalls(List<Call> calls, int call) {
+        List<Integer> later = new ArrayList<>();
+        for (int to = call + 2; to < calls.size() - 1; to++)
+            if (calls.get(to).station().equals(calls.get(call).station()))
+                later.add(to);
+        return later;
     }
 
     /**
-     * What becomes of the set of {@code duty} that arrived at {@code call} at {@code arrived} and is to
-     * leave at {@code departure}.
-     *
-     * @param reach       the set's track and the trains around it, to keep it out of their way; null not
-     *                    to look
-     * @param findWay     whether to look for a way on from where the set stands now ({@code reach} has
-     *                    to be there then)
-     * @param needService whether a call it is held to has to have a train that carries passengers after it
+     * Whether a set that leaves call {@code call} at {@code departure} makes up enough on the way
+     * ({@link Forecast}) to be within the threshold when it next leaves the station of that call; false
+     * if the duty does not come back to it.
      */
-    private static Plan plan(Rules rules, String duty, List<Call> calls, long day, int call, long arrived, long departure, long now,
-                             RunTimes times, @Nullable Reach reach, boolean findWay, boolean needService) {
-        long threshold = rules.threshold();
-        if (departure - DutyPlan.at(day, calls.get(call).depart()) <= threshold)
-            return new Plan(Outcome.WITHIN, null);
-        String station = calls.get(call).station();
-        List<Integer> later = new ArrayList<>();
-        for (int to = call + 2; to < calls.size() - 1; to++)
-            if (calls.get(to).station().equals(station))
-                later.add(to);
+    private static boolean makesUp(Rules rules, List<Call> calls, long day, int call, long departure, RunTimes times) {
+        List<Integer> later = laterCalls(calls, call);
         if (later.isEmpty())
-            return new Plan(Outcome.LATE, null);
+            return false;
         int first = later.getFirst();
-        long running = Forecast.leaves(calls, day, call, departure, first, times, rules.defaultMinimumStop());
-        if (running - DutyPlan.at(day, calls.get(first).depart()) <= threshold)
-            return new Plan(Outcome.MAKES_UP, null);
-        for (int to : later) {
+        long leaves = Forecast.leaves(calls, day, call, departure, first, times, rules.defaultMinimumStop());
+        return leaves - DutyPlan.at(day, calls.get(first).depart()) <= rules.threshold();
+    }
+
+    /**
+     * The first later call at the station that the set of {@code duty}, there from {@code arrived}, can
+     * be held until; empty if there is none. The call has a train that carries passengers after it: a
+     * set held only to run deadheads back to the depot has cancelled all its duty is for.
+     *
+     * @param now     the clock now
+     * @param reach   the set's track and the trains around it, to keep it out of their way; null not to
+     *                look
+     * @param findWay whether to look for a way on from where the set stands now ({@code reach} has to be
+     *                there then)
+     */
+    private static Optional<Hold> hold(Rules rules, String duty, List<Call> calls, long day, int call, long arrived, long now, RunTimes times,
+                                       @Nullable Reach reach, boolean findWay) {
+        long threshold = rules.threshold();
+        String station = calls.get(call).station();
+        for (int to : laterCalls(calls, call)) {
             if (keeps(rules.timetable(), calls, call, to))
                 break; // and so would every later call
-            if (needService && !servedFrom(rules.timetable(), calls, to))
+            if (!servedFrom(rules.timetable(), calls, to))
                 break; // nor would any later call be
             long time = DutyPlan.at(day, calls.get(to).depart());
             long leaves = Math.max(Math.max(time, now), arrived + DutyPlan.minimumStop(calls.get(to), rules.defaultMinimumStop()));
@@ -160,9 +166,9 @@ public final class Recovery {
             List<Integer> skipped = new ArrayList<>();
             for (int index = call + 1; index < to; index++)
                 skipped.add(index);
-            return new Plan(Outcome.HELD, new Hold(to, leaves, DutyPlan.cancelledTrains(calls, skipped), DutyPlan.partlyCancelledTrains(calls, skipped)));
+            return Optional.of(new Hold(to, leaves, DutyPlan.cancelledTrains(calls, skipped), DutyPlan.partlyCancelledTrains(calls, skipped)));
         }
-        return new Plan(Outcome.LATE, null);
+        return Optional.empty();
     }
 
     /** Whether a train the timetable marks keep runs on one of the ways from call {@code from} to call {@code to}. */
@@ -183,13 +189,18 @@ public final class Recovery {
 
     /**
      * Whether the set can stand at {@code station} from {@code from} to {@code to} out of every other
-     * train's way: no train runs through meanwhile, and there are platforms for it, the trains standing
-     * there now, and the sets that come to stand there meanwhile.
+     * train's way: no train runs through meanwhile, and there are platforms for it and for the other
+     * sets there meanwhile. A set that is there now counts the trains standing there now, and the sets
+     * that come to stand there later by the timetable. One that is to come later counts the sets the
+     * timetable has there while it is, those come in already as well: trains there now may be gone
+     * by then.
      */
     private static boolean roomFor(Rules rules, String duty, long day, String station, long from, long to, long now, Reach reach) {
         if (StationUse.passedBy(rules.timetable(), rules.calls(), rules.axes(), duty, day, station, from, to))
             return false;
-        int others = reach.standing(station) + StationUse.mostStanding(rules.calls(), duty, day, station, from, to, now, rules.lead());
+        int others = from <= now
+            ? reach.standing(station) + StationUse.mostStanding(rules.calls(), duty, day, station, from, to, now, rules.lead())
+            : StationUse.mostStanding(rules.calls(), duty, day, station, from, to, Long.MIN_VALUE, rules.lead());
         return others + 1 <= reach.platforms(station);
     }
 

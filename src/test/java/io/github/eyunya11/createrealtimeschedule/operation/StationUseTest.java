@@ -95,6 +95,22 @@ class StationUseTest {
         assertTrue(StationUse.runsThrough(timetable, Map.of("o", up), train, "A", "C", "D"));
     }
 
+    @Test
+    void aTrainAcrossTheFirstStationOfALoopRunsThroughIt() {
+        Line loop = new Line("o", "Loop", List.of("A", "B", "C", "D"), true);
+        Train train = new Train("1", "o", "", List.of(Stop.leaving("C", t("08:00")), Stop.arriving("B", t("08:10"))));
+        Timetable timetable = new Timetable("", List.of(loop), List.of(train), List.of());
+        // The track takes it down the axis from C round to B: through D, A and nothing else.
+        LineAxis down = new LineAxis("o", true, List.of("A", "B", "C", "D", "A"), List.of(0.0, 10.0, 20.0, 30.0, 40.0),
+            List.of(new LineAxis.Way("C", "B", true)));
+        assertTrue(StationUse.runsThrough(timetable, Map.of("o", down), train, "C", "B", "D"));
+        assertTrue(StationUse.runsThrough(timetable, Map.of("o", down), train, "C", "B", "A"));
+        assertFalse(StationUse.runsThrough(timetable, Map.of("o", down), train, "C", "B", "C"));
+        // The other way round it passes no station.
+        assertFalse(StationUse.runsThrough(timetable, Map.of(), train, "C", "B", "A"));
+        assertFalse(StationUse.runsThrough(timetable, Map.of(), train, "C", "B", "D"));
+    }
+
     /** The laps of 1A, and the set of 3A, which comes from the depot to stand at A from 08:26 to 08:29. */
     static Timetable withSetStandingAtA() {
         Train in = new Train("S1", "l", "", List.of(Stop.leaving("Depot", t("08:20")), Stop.arriving("A", t("08:26"))), true);

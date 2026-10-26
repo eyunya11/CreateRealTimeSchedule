@@ -168,6 +168,36 @@ class RecoveryTest {
         assertFalse(Recovery.canStartLate(rules, "1A", calls, DAY, at("09:40"), ForecastTest.TRACK, null));
     }
 
+    /** At 09:15 the only call at A it can leave in time is 09:30, from which only the deadhead to the depot runs. */
+    @Test
+    void aSetIsNotHeldOnlyToRunADeadheadBackToTheDepot() {
+        assertEquals(Optional.empty(), onArrival(OperationTimetables.laps(), at("09:15"), CLEAR));
+    }
+
+    /** The laps of 1A, and the set of 3A, which comes from the depot to stand at A from 08:22 to 08:29. */
+    private static Timetable withSetComingToA() {
+        Timetable.Train in = new Timetable.Train("S1", "l", "", List.of(Stop.leaving("Depot", t("08:16")), Stop.arriving("A", t("08:22"))), true);
+        Timetable.Train out = new Timetable.Train("S2", "l", "", List.of(Stop.leaving("A", t("08:29")), Stop.arriving("Depot", t("08:35"))), true);
+        return OperationTimetables.laps(Stop.NONE, List.of(), List.of(in, out),
+            List.of(new Timetable.Duty("3A", "Depot", List.of("S1", "S2"))));
+    }
+
+    /**
+     * A set that would get to A at 08:24 counts the set of 3A, which comes in at 08:22 while it is on
+     * its way, and not the trains at A now, which may have gone by then.
+     */
+    @Test
+    void aDutyStartingLateCountsTheSetsAtTheStationWhenItGetsThere() {
+        Timetable timetable = withSetComingToA();
+        List<Call> calls = DutyPlan.calls(timetable, timetable.duties().getFirst());
+        assertFalse(Recovery.canStartLate(rules(timetable), "1A", calls, DAY, at("08:20"), ForecastTest.TRACK, CLEAR));
+        assertTrue(Recovery.canStartLate(rules(timetable), "1A", calls, DAY, at("08:20"), ForecastTest.TRACK,
+            new Around(2, 0, OptionalLong.of(720 * SECOND))));
+        Timetable laps = OperationTimetables.laps();
+        assertTrue(Recovery.canStartLate(rules(laps), "1A", DutyPlan.calls(laps, laps.duties().getFirst()), DAY, at("08:20"), ForecastTest.TRACK,
+            new Around(1, 1, OptionalLong.of(720 * SECOND))), "a train standing at A now is gone by 08:24 as far as anyone knows");
+    }
+
     @Test
     void aDutyStartsLateOnlyWhereItsSetCouldBeHeld() {
         Timetable timetable = StationUseTest.withExpress("08:20");

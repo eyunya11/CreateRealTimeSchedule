@@ -107,8 +107,8 @@ public final class OperationData extends SavedData {
     private final Map<UUID, Long> freeSince = new HashMap<>();
     private final Deque<Note> notes = new ArrayDeque<>();
     private final List<Record> history = new ArrayList<>();
-    /** When the timetable was loaded, or far in the past if that is not known. */
-    private long loadedAt = Long.MIN_VALUE;
+    /** When each duty was loaded as it is, by its id: not changed by loading a timetable that has it the same. */
+    private final Map<String, Long> loadedAt = new HashMap<>();
     /** Not saved: the call at which each running train was last found to have no way on, so that it is logged once a call. */
     private final Map<UUID, Integer> noWay = new HashMap<>();
     /** Not saved: no duty starts before this clock value, so there is nothing to look for until a lead before it. */
@@ -156,12 +156,16 @@ public final class OperationData extends SavedData {
      */
     public void loadTimetable(String json, Timetable timetable, long now) {
         this.json = json;
+        Map<String, List<Call>> before = new HashMap<>(calls);
         use(timetable);
+        for (Map.Entry<String, List<Call>> duty : calls.entrySet())
+            if (!duty.getValue().equals(before.get(duty.getKey())))
+                loadedAt.put(duty.getKey(), now);
+        loadedAt.keySet().retainAll(calls.keySet());
         for (Duty duty : timetable.duties()) {
             long started = DutyCalendar.lastDayStartedBy(now, DutyPlan.firstDeparture(calls.get(duty.id())));
             lastDays.merge(duty.id(), started - 1, Math::max);
         }
-        loadedAt = now;
         lastDays.keySet().retainAll(calls.keySet());
         runs.entrySet().removeIf(entry -> {
             DutyRun run = entry.getValue();
@@ -192,6 +196,7 @@ public final class OperationData extends SavedData {
         timetable = null;
         calls.clear();
         lastDays.clear();
+        loadedAt.clear();
         runs.clear();
         history.clear();
         timesChanged();
@@ -222,11 +227,12 @@ public final class OperationData extends SavedData {
     }
 
     /**
-     * When the timetable was loaded; far in the past if that is not known. A duty that was to start
-     * before then and did not is no duty that did not run.
+     * When duty {@code id} was loaded as it is now, by a timetable that brought it new or changed; far in
+     * the past if that is not known. A duty that was to start before then and did not is no duty that
+     * did not run.
      */
-    public long loadedAt() {
-        return loadedAt;
+    public long loadedAt(String id) {
+        return loadedAt.getOrDefault(id, Long.MIN_VALUE);
     }
 
     /** No duty starts before this clock value; {@link Long#MIN_VALUE} if that is not known. */
@@ -342,7 +348,9 @@ public final class OperationData extends SavedData {
     @Override
     public CompoundTag save(CompoundTag tag, HolderLookup.Provider registries) {
         tag.putString(TAG_TIMETABLE, json);
-        tag.putLong(TAG_LOADED_AT, loadedAt);
+        CompoundTag loaded = new CompoundTag();
+        loadedAt.forEach(loaded::putLong);
+        tag.put(TAG_LOADED_AT, loaded);
         CompoundTag days = new CompoundTag();
         lastDays.forEach(days::putLong);
         tag.put(TAG_LAST_DAYS, days);
@@ -429,8 +437,9 @@ public final class OperationData extends SavedData {
             else
                 LOGGER.error("The saved timetable no longer reads, and is not run: {}", result.problems());
         }
-        if (tag.contains(TAG_LOADED_AT))
-            data.loadedAt = tag.getLong(TAG_LOADED_AT);
+        CompoundTag loaded = tag.getCompound(TAG_LOADED_AT);
+        for (String duty : loaded.getAllKeys())
+            data.loadedAt.put(duty, loaded.getLong(duty));
         CompoundTag days = tag.getCompound(TAG_LAST_DAYS);
         for (String duty : days.getAllKeys())
             data.lastDays.put(duty, days.getLong(duty));

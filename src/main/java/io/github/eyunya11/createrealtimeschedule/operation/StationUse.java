@@ -59,27 +59,28 @@ public final class StationUse {
 
     /**
      * Whether {@code train}, going from its stop at {@code from} on to its next stop at {@code to},
-     * passes {@code station} of its line on the way.
+     * passes {@code station} of its line on the way: the way the diagram draws it ({@link LineAxis#hops}),
+     * through the rows between its ends, and across the first station of a loop line.
      */
     static boolean runsThrough(Timetable timetable, Map<String, LineAxis> axes, Train train, String from, String to, String station) {
         Line line = timetable.line(train.line()).orElse(null);
-        if (line == null)
+        if (line == null || station.equals(from) || station.equals(to))
             return false;
-        List<String> stations = line.stations();
-        int a = stations.indexOf(from);
-        int b = stations.indexOf(to);
-        int q = stations.indexOf(station);
-        if (a < 0 || b < 0 || q < 0 || q == a || q == b)
-            return false;
-        if (!line.loop())
-            return Math.min(a, b) < q && q < Math.max(a, b);
         LineAxis axis = axes.get(line.id());
         if (axis == null)
             axis = LineAxis.of(line, List.of());
         Boolean shown = axis.down(from, to);
         boolean down = shown != null ? shown : axis.down(train.stops().stream().map(Stop::station).toList());
-        int n = stations.size();
-        return down ? Math.floorMod(q - a, n) < Math.floorMod(b - a, n) : Math.floorMod(a - q, n) < Math.floorMod(a - b, n);
+        List<LineAxis.Hop> hops = axis.hops(from, to, down);
+        for (int k = 0; k < hops.size(); k++) {
+            LineAxis.Hop hop = hops.get(k);
+            if (k > 0 && axis.stations().get(hop.fromRow()).equals(station))
+                return true;
+            for (int row = Math.min(hop.fromRow(), hop.toRow()) + 1; row < Math.max(hop.fromRow(), hop.toRow()); row++)
+                if (axis.stations().get(row).equals(station))
+                    return true;
+        }
+        return false;
     }
 
     /**

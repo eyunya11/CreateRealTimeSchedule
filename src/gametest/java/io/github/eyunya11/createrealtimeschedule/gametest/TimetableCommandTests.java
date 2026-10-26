@@ -179,7 +179,12 @@ public class TimetableCommandTests {
         List<OperationData.Record> history = again.history();
         helper.assertTrue(history.size() == 1 && history.getFirst().run().state().equals(done.state())
             && history.getFirst().run().skipped().equals(List.of(2)), "the record of the held run did not come back the same: " + history);
-        helper.assertTrue(again.loadedAt() == now && data.loadedAt() == now, "when the timetable was loaded did not come back");
+        helper.assertTrue(again.loadedAt("1A") == now && data.loadedAt("1A") == now, "when the duty was loaded did not come back");
+        // Loading the same timetable again leaves the duty as loaded when it was; a changed one is loaded anew.
+        data.loadTimetable(BACK_TO_A, timetable, now + 100);
+        helper.assertTrue(data.loadedAt("1A") == now, "loading the same duty again moved when it was loaded");
+        data.loadTimetable(TIMETABLE, TimetableJson.parse(TIMETABLE).timetable(), now + 200);
+        helper.assertTrue(data.loadedAt("1A") == now + 200, "a changed duty is not loaded anew");
         helper.succeed();
     }
 

@@ -75,7 +75,7 @@ public final class OperationService {
         long lead = ModSettings.dutyLeadSeconds() * (long) RealClock.TICKS_PER_SECOND;
         long defaultMinimumStop = ModSettings.defaultMinimumStopSeconds() * (long) RealClock.TICKS_PER_SECOND;
         long threshold = ModSettings.recoveryThresholdSeconds() * (long) RealClock.TICKS_PER_SECOND;
-        startDuties(data, timetable, now, lead, defaultMinimumStop, threshold);
+        startDuties(data, timetable, now, lead, defaultMinimumStop, threshold, server.getTickCount() % FREE_CHECK_TICKS == 0);
         stepRuns(data, timetable, now, defaultMinimumStop, threshold, lead);
     }
 
@@ -97,7 +97,7 @@ public final class OperationService {
             int call = run.call();
             DutyRun.Phase phase = run.phase();
             Outcome outcome = TrainDriver.step(run, train, now, defaultMinimumStop);
-            if (threshold > 0 && phase == DutyRun.Phase.RUNNING && run.phase() == DutyRun.Phase.STANDING)
+            if (phase == DutyRun.Phase.RUNNING && run.phase() == DutyRun.Phase.STANDING)
                 recover(data, timetable, run, train, now, defaultMinimumStop, threshold, lead);
             if (run.call() != call || run.phase() != phase) {
                 data.timesChanged();
@@ -129,7 +129,7 @@ public final class OperationService {
      */
     private static void recover(OperationData data, Timetable timetable, DutyRun run, Train train, long now, long defaultMinimumStop,
                                 long threshold, long lead) {
-        if (run.departure() - run.plannedDeparture(run.call()) <= threshold)
+        if (!Recovery.tooLate(run, threshold))
             return; // as most sets are: the track need not be looked at
         Optional<CreateReach> reach = CreateReach.of(train, TrackFacts.legs(data, timetable));
         if (reach.isEmpty())
@@ -177,10 +177,12 @@ public final class OperationService {
      * Gives the duties that are due their sets: those on time first, by when they leave, then those
      * whose time to leave has gone by (else these, due first, would take the sets first). A late duty
      * is given a set while that still gets it back on time, and does not run that day once it does
-     * not. Until a lead before the next start of any duty, which is worked out again only once that
-     * comes or the duties change, there is nothing to do.
+     * not. That is looked at only on the ticks {@code lateChecks} says, once a second, as it reads the
+     * track and the trains. Until a lead before the next start of any duty, which is worked out again
+     * only once that comes or the duties change, there is nothing to do.
      */
-    private static void startDuties(OperationData data, Timetable timetable, long now, long lead, long defaultMinimumStop, long threshold) {
+    private static void startDuties(OperationData data, Timetable timetable, long now, long lead, long defaultMinimumStop, long threshold,
+                                    boolean lateChecks) {
         if (now + lead < data.nextStart())
             return;
         Map<String, Duty> byId = new HashMap<>();
@@ -198,6 +200,10 @@ public final class OperationService {
             Duty duty = byId.get(start.duty());
             List<Call> calls = data.calls(duty.id());
             boolean late = start.missedBy(now);
+            if (late && threshold > 0 && !lateChecks) {
+                waiting = true;
+                continue;
+            }
             if (late && threshold > 0 && rules == null) {
                 rules = new Recovery.Rules(timetable, data.allCalls(), TrackFacts.axes(data, timetable), threshold, defaultMinimumStop, lead);
                 unpowered = unpoweredTimes(data, timetable);
@@ -206,7 +212,7 @@ public final class OperationService {
                 || !Recovery.canStartLate(rules, duty.id(), calls, start.day(), now, unpowered, null))) {
                 data.dealtWith(duty.id(), start.day());
                 // One that was to start before the timetable was loaded is no duty that did not run.
-                if (start.at() >= data.loadedAt())
+                if (start.at() >= data.loadedAt(duty.id()))
                     data.note(now, duty.id(), start.day(), "did not run: no free set at " + duty.depot() + " by its time"
                         + (threshold > 0 ? ", nor in time to start late" : ""));
                 continue;
@@ -237,7 +243,7 @@ public final class OperationService {
             data.dealtWith(duty.id(), start.day());
             data.setDirty();
             if (late)
-                data.note(now, duty.id(), start.day(), "started late: " + (start.at() >= data.loadedAt()
+                data.note(now, duty.id(), start.day(), "started late: " + (start.at() >= data.loadedAt(duty.id())
                     ? "no free set at " + duty.depot() + " by " + RealClock.format(start.at())
                     : "the timetable was loaded after " + RealClock.format(start.at())));
             LOGGER.info("Duty {} of service day {} is given {}, to leave {} at {}", duty.id(), start.day(), set.name.getString(),
