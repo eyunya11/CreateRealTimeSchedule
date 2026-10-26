@@ -232,6 +232,31 @@ class TimetableJsonTest {
         assertFalse(accepted(EXAMPLE).trains().getFirst().keep());
     }
 
+    /** The trains a stop waits for, which version 5 added; the example the editor's tests read too. */
+    @Test
+    void readsAndWritesTheTrainsAStopWaitsForAsVersionFive() {
+        String text = resource("example-waits.json");
+        Timetable timetable = accepted(text);
+        assertEquals(List.of(new Timetable.Wait("3001", "S1", Stop.NONE), new Timetable.Wait("2", "", 120)),
+            timetable.train("1").orElseThrow().stops().get(1).waits());
+        assertEquals("S1", timetable.train("1").orElseThrow().stops().get(1).waits().get(0).station("S2"));
+        assertEquals("S2", timetable.train("1").orElseThrow().stops().get(1).waits().get(1).station("S2"), "no at is the stop's own station");
+        assertEquals(5, timetable.version());
+        assertEquals(text, TimetableJson.write(timetable));
+        assertEquals(4, kept(night()).version(), "a timetable whose stops wait for nothing is no version 5");
+    }
+
+    @Test
+    void refusesALongestWaitThatIsNotAWholeNumberOfSeconds() {
+        String text = resource("example-waits.json");
+        assertOnlyProblem(text.replace("\"max_wait\": 120", "\"max_wait\": -1"),
+            "trains[0].stops[1].wait_for[1].max_wait: must be 0 to 3600 seconds");
+        assertOnlyProblem(text.replace("\"max_wait\": 120", "\"max_wait\": 1.5"),
+            "trains[0].stops[1].wait_for[1].max_wait: must be a whole number of seconds");
+        assertOnlyProblem(text.replace("{\"train\": \"3001\", \"at\": \"S1\"}", "{\"at\": \"S1\"}"),
+            "trains[0].stops[1].wait_for[0].train: is missing");
+    }
+
     /** The example the editor's tests read too (src/test/js), which both have to write back as it is. */
     @Test
     void writesTheKeepExampleBackIdenticallyToTheCharacter() {
@@ -430,8 +455,8 @@ class TimetableJsonTest {
         for (String version : List.of("0", "-1"))
             assertOnlyProblem("{\"format\": \"createrealtimeschedule.timetable\", \"version\": " + version + "}", "version: must be 1 or more");
         // A newer version may have members this one has never heard of; they are not worth listing.
-        assertOnlyProblem("{\"format\": \"createrealtimeschedule.timetable\", \"version\": 5, \"colours\": [1, 2]}",
-            "version: is 5, but this mod reads timetables up to version 4");
+        assertOnlyProblem("{\"format\": \"createrealtimeschedule.timetable\", \"version\": 6, \"colours\": [1, 2]}",
+            "version: is 6, but this mod reads timetables up to version 5");
     }
 
     @Test

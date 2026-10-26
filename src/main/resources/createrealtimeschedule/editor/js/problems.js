@@ -5,7 +5,7 @@
  *
  * A timetable here is plain data, as timetable.js reads it: {name, lines, stations, trains, duties},
  * a line {id, name, stations, loop}, a station {name, dwell, minimumStop} with seconds or NONE, a
- * train {number, line, type, stops, deadhead} with keep true if it is never cancelled, a stop {station, arrive, depart} with the times in
+ * train {number, line, type, stops, deadhead} with keep true if it is never cancelled, a stop {station, arrive, depart, waits?} with the times in
  * seconds or NONE and a minimumStop if it has one of its own, and a duty {id, depot, trains}. A
  * timetable without stations (one made before version 3) has none with times of their own.
  */
@@ -25,6 +25,9 @@
 
   /** The longest dwell or minimum stop, in seconds: the longest minimum stop the server's config takes. */
   const MAX_STOP_SECONDS = 600;
+
+  /** The longest a train waits for another past its own time, in seconds: the longest the server's config takes. */
+  const MAX_WAIT_SECONDS = 3600;
 
   const TEXT_RULE = 'must not be empty, start or end with a space, or contain a control character';
 
@@ -283,6 +286,110 @@
         + ', which is not after train "' + before.number + '" arrives at ' + time.show(end.arrive));
   }
 
+  // ------------------------------------------------------------------ waits
+
+  function hasWaits(stop) {
+    return stop.waits !== undefined && stop.waits.length > 0;
+  }
+
+  /**
+   * Whether a train that makes stops at the stations named in stops, in order, runs through station
+   * of line, without stopping, on its way from stop from to the next: Line.runsThrough of the mod. On
+   * a loop line it goes round the way that passes fewer stations over all its stops, and down the list
+   * if both pass as many.
+   */
+  function runsThrough(line, stops, from, station) {
+    const a = line.stations.indexOf(stops[from]);
+    const b = line.stations.indexOf(stops[from + 1]);
+    const q = line.stations.indexOf(station);
+    if (a < 0 || b < 0 || q < 0 || q === a || q === b)
+      return false;
+    if (!line.loop)
+      return Math.min(a, b) < q && q < Math.max(a, b);
+    const n = line.stations.length;
+    const mod = value => ((value % n) + n) % n;
+    let downSteps = 0;
+    let upSteps = 0;
+    for (let k = 0; k + 1 < stops.length; k++) {
+      const i = line.stations.indexOf(stops[k]);
+      const j = line.stations.indexOf(stops[k + 1]);
+      if (i < 0 || j < 0)
+        continue;
+      downSteps += mod(j - i);
+      upSteps += mod(i - j);
+    }
+    return downSteps <= upSteps ? mod(q - a) < mod(b - a) : mod(a - q) < mod(a - b);
+  }
+
+  /** When train leaves station of its line, or leaves the stop before it to run through it, in seconds, in the order of its stops. */
+  function leavesOrRunsThrough(train, line, station) {
+    const names = train.stops.map(stop => stop.station);
+    const leaves = [];
+    for (let s = 0; s + 1 < names.length; s++) {
+      const stop = train.stops[s];
+      if (hasDepart(stop) && (stop.station === station || runsThrough(line, names, s, station)))
+        leaves.push(stop.depart);
+    }
+    return leaves;
+  }
+
+  /** The station a wait is at, for a stop at stopStation: its own, or the stop's. */
+  function waitStation(wait, stopStation) {
+    return wait.at === undefined || wait.at === '' ? stopStation : wait.at;
+  }
+
+  /**
+   * The trains waited for. Each has to leave the station, or run through it, strictly before the train
+   * that waits for it leaves; so waits never go round in a ring, each going back in time.
+   */
+  function checkWaits(timetable, lineById, trainByNumber, problems) {
+    timetable.trains.forEach((train, i) => {
+      const trainLabel = label('train', 'trains', i, train.number);
+      train.stops.forEach((stop, k) => {
+        if (!hasWaits(stop))
+          return;
+        const where = trainLabel + ', stop ' + (k + 1) + ' "' + stop.station + '"';
+        if (k === train.stops.length - 1) {
+          problems.push(where + ': is the last stop, which the train does not leave, so it waits for no train');
+          return;
+        }
+        const seen = new Set();
+        for (const wait of stop.waits) {
+          const at = waitStation(wait, stop.station);
+          const what = where + ': waits for train "' + wait.train + '" at "' + at + '"';
+          if (seen.has(wait.train + '\n' + at)) {
+            problems.push(what + ' twice');
+            continue;
+          }
+          seen.add(wait.train + '\n' + at);
+          if (wait.maxWait !== undefined && wait.maxWait !== NONE && (wait.maxWait < 0 || wait.maxWait > MAX_WAIT_SECONDS))
+            problems.push(what + ': the longest wait must be 0 to ' + MAX_WAIT_SECONDS + ' seconds');
+          if (wait.train === train.number) {
+            problems.push(what + ', which is itself');
+            continue;
+          }
+          const other = trainByNumber.has(wait.train) ? trainByNumber.get(wait.train) : null;
+          if (other === null) {
+            problems.push(what + ', which is not in the timetable');
+            continue;
+          }
+          const line = lineById.has(other.line) ? lineById.get(other.line) : null;
+          if (line === null || other.stops.length < 2)
+            continue; // said of that train
+          if (!line.stations.includes(at)) {
+            problems.push(what + ', which is not a station of its line "' + line.id + '"');
+            continue;
+          }
+          const leaves = leavesOrRunsThrough(other, line, at);
+          if (leaves.length === 0)
+            problems.push(what + ', which neither leaves it nor runs through it');
+          else if (hasDepart(stop) && !leaves.some(seconds => seconds < stop.depart))
+            problems.push(what + ', which does not leave it or run through it before this train leaves at ' + time.show(stop.depart));
+        }
+      });
+    });
+  }
+
   /** Everything that is wrong with the timetable, in words; empty if it can be used. */
   function problems(timetable) {
     const found = [];
@@ -291,9 +398,10 @@
     const lineById = checkLines(timetable, found);
     checkStations(timetable, found);
     const trainByNumber = checkTrains(timetable, lineById, found);
+    checkWaits(timetable, lineById, trainByNumber, found);
     checkDuties(timetable, trainByNumber, found);
     return found;
   }
 
-  return { NONE, MAX_ID_LENGTH, MAX_STOP_SECONDS, problems, isText, isIdentifier };
+  return { NONE, MAX_ID_LENGTH, MAX_STOP_SECONDS, MAX_WAIT_SECONDS, problems, isText, isIdentifier, runsThrough, leavesOrRunsThrough, waitStation };
 });
