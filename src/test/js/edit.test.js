@@ -254,3 +254,16 @@ test('the ways trains run faster than the track are found', () => {
   const fast = edit.setStopTime(tt, '3', 1, 'arrive', t('09:02'));
   assert.deepEqual(edit.tooFast(fast, running), [{ number: '3', from: 'X', to: 'Y', given: 120, needed: 240 }]);
 });
+
+test('an arrival dragged moves alone, so the train stands longer or shorter, between the running time and its departure', () => {
+  const { tt, running } = threeWithTrack();
+  const y = next => next.trains[2].stops[1];
+  assert.deepEqual(y(edit.moveArrival(tt, '3', 1, -30, running)), { station: 'Y', arrive: t('09:04:30'), depart: t('09:06') }, 'it leaves as before');
+  assert.equal(y(edit.moveArrival(tt, '3', 1, -300, running)).arrive, t('09:04'), 'no sooner than the running time from X');
+  assert.equal(y(edit.moveArrival(tt, '3', 1, 300, running)).arrive, t('09:06'), 'no later than it leaves');
+  assert.deepEqual(edit.moveArrival(tt, '3', 1, 30, running).trains[2].stops[2], tt.trains[2].stops[2], 'the stops after it stay');
+  // The last stop has only its arrival, which moves with nothing after it to hold it.
+  assert.equal(edit.moveArrival(tt, '3', 2, 600, running).trains[2].stops[2].arrive, t('09:20'));
+  // A stop with no arrival time moves as a whole.
+  assert.equal(edit.moveArrival(tt, '3', 0, -60, running).trains[2].stops[0].depart, t('08:59'));
+});

@@ -321,7 +321,7 @@ input.seconds {
   cursor: move;
 }
 
-/* The point a stop is left at, which stretches the stop rather than moving it. */
+/* A point that makes a stop stand longer or shorter (its arrival, or its departure) rather than moving it. */
 #diagram .point.stretch {
   cursor: col-resize;
 }

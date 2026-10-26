@@ -232,6 +232,25 @@
   }
 
   /**
+   * Moves the time a train comes in at one of its stops by delta seconds, and leaves the time it
+   * leaves where it is, so that it stands there shorter or longer: no sooner than the running time
+   * after it leaves the stop before (see stopLimits), and no later than it leaves, nor, at the last
+   * stop, than nothing holds it. A stop already too close to the one before is not moved closer. A
+   * stop with no arrival time is moved as moveStop moves it.
+   */
+  function moveArrival(timetable, number, index, delta, running) {
+    const stops = trainAt(timetable, number).stops;
+    if (stops[index].arrive === NONE)
+      return moveStop(timetable, number, index, delta, running);
+    const next = copy(timetable);
+    const stop = trainAt(next, number).stops[index];
+    const { earliest, latest } = stopLimits(trainAt(next, number).stops, index, running);
+    const highest = stop.depart !== NONE ? stop.depart : latest;
+    stop.arrive += Math.min(Math.max(delta, Math.min(earliest - stop.arrive, 0)), Math.max(highest - stop.arrive, 0));
+    return next;
+  }
+
+  /**
    * Has a train stand delta seconds longer at one of its stops (shorter, for a delta below 0, but
    * never less than nothing): it leaves later, and the stops after it move by as much, so that the
    * running times stay as they were. A stop that is not both arrived at and left has no dwell to
@@ -430,7 +449,7 @@
 
   return {
     NONE, copy, setName, putLine, removeLine, stationTimes, dwellAt, setStations,
-    nextNumber, addTrain, removeTrain, setTrain, stopLimits, moveStop, stretchStop, shiftTrain, setStopTime, setDwell, setStopMinimum, setStopStation,
+    nextNumber, addTrain, removeTrain, setTrain, stopLimits, moveStop, moveArrival, stretchStop, shiftTrain, setStopTime, setDwell, setStopMinimum, setStopStation,
     removeStop, tooFast,
     snap, snapUp, drawStop, drawClick, setDrawnDwell, finishDrawing,
   };

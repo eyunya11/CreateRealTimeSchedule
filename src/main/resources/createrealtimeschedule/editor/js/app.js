@@ -531,21 +531,25 @@
       if (isSelected && drawing === null) {
         const stops = shownTimetable().trains.find(each => each.number === planned.number).stops;
         for (const point of planned.points) {
-          // The point a stop is left at stretches the stop if it is arrived at too, by the timetable
-          // (the diagram draws a stop with no arrival time as arrived at when it is left); any other moves it.
+          // Of a stop both arrived at and left, by the timetable, the point it comes in at moves the
+          // arrival alone and the one it leaves at stretches the stop: either way it stands longer or
+          // shorter. A stop with one time (the first, the last, one with no arrival time, which the
+          // diagram draws as arrived at when it is left) moves by its points as a whole.
           const stop = stops[point.stop];
-          const stretchable = stop.arrive !== rt.edit.NONE && stop.depart !== rt.edit.NONE;
-          for (const [second, position, stretches] of [[point.arriveSecond, point.arrivePosition, false], [point.departSecond, point.departPosition, stretchable]])
+          const both = stop.arrive !== rt.edit.NONE && stop.depart !== rt.edit.NONE;
+          const arrivalPart = stop.arrive !== rt.edit.NONE ? 'arrive' : 'stop';
+          for (const [second, position, part] of [[point.arriveSecond, point.arrivePosition, arrivalPart],
+            [point.departSecond, point.departPosition, both ? 'stretch' : 'stop']])
             if (!Number.isNaN(second) && !Number.isNaN(position)) {
               let x = view.x(second);
               // A stop stood at for no time, or next to none, has its two points in one place: the one
               // it is left at goes beside the other, so that either can be taken.
-              if (stretches && x - view.x(point.arriveSecond) < STRETCH_GAP)
+              if (part === 'stretch' && x - view.x(point.arriveSecond) < STRETCH_GAP)
                 x = view.x(point.arriveSecond) + STRETCH_GAP;
-              const handle = s('circle', { class: stretches ? 'point stretch' : 'point', cx: x, cy: view.y(position, length), r: 5, fill: colour });
+              const handle = s('circle', { class: both ? 'point stretch' : 'point', cx: x, cy: view.y(position, length), r: 5, fill: colour });
               handle.addEventListener('pointerdown', event => {
                 if (event.button === 0)
-                  startDrag(planned.number, point.stop, event, stretches);
+                  startDrag(planned.number, point.stop, event, part);
               });
               plot.append(handle);
             }
@@ -621,10 +625,13 @@
     }
   }
 
-  /** Starts dragging a stop (index), or the whole train (index -1); a stop that stretches stands longer or shorter instead of moving. */
-  function startDrag(number, index, event, stretches) {
+  /**
+   * Starts dragging a stop (index), or the whole train (index -1). part says what of a stop is dragged:
+   * 'stop' moves it as a whole, 'arrive' its arrival alone, and 'stretch' its departure and the stops after it.
+   */
+  function startDrag(number, index, event, part) {
     event.stopPropagation();
-    dragging = { number, index, stretches: !!stretches, x0: event.clientX, base: state.timetable, delta: 0, id: event.pointerId };
+    dragging = { number, index, part: part || 'stop', x0: event.clientX, base: state.timetable, delta: 0, id: event.pointerId };
     capture(event.pointerId);
   }
 
@@ -695,9 +702,11 @@
           dragging.delta = delta;
           shown = delta === 0 ? null : dragging.index < 0
             ? rt.edit.shiftTrain(dragging.base, dragging.number, delta)
-            : dragging.stretches
+            : dragging.part === 'stretch'
               ? rt.edit.stretchStop(dragging.base, dragging.number, dragging.index, delta)
-              : rt.edit.moveStop(dragging.base, dragging.number, dragging.index, delta, running);
+              : dragging.part === 'arrive'
+                ? rt.edit.moveArrival(dragging.base, dragging.number, dragging.index, delta, running)
+                : rt.edit.moveStop(dragging.base, dragging.number, dragging.index, delta, running);
           renderDiagram();
         }
         return;
