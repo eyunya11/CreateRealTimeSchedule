@@ -214,7 +214,7 @@
       tooFastCount: ' ({0} notes)',
       stopTimesHelp: 'Dwell is the seconds from arrival to departure. Min. is how long a late train still stands there; left blank, the station\'s is used, or else the server\'s.',
       snap: 'Time step (seconds)',
-      dragHelp: 'Drag the line between two stations to move that way alone: the train stands longer at one end and shorter at the other. Drag the line where it stands at a station to move the whole train in time; with Ctrl, the line between stations moves it too. While a point or a way is dragged, a red dashed line shows the way as the train would run it in the track's running time. Drag the point a stop is arrived at to move the arrival alone: the departure stays, so the train stands longer or shorter. Drag the point it is left at to make it stand longer or shorter; the stops after it move by as much. The point of the first or last stop moves its time. Delete removes the train.',
+      dragHelp: 'Drag the line between two stations to move that way alone: the train stands longer at one end and shorter at the other. Drag the line where it stands at a station to move the whole train in time; with Ctrl, the line between stations moves it too. While a point or a way is dragged, a red dashed line shows the way as the train would run it in the track\'s running time. Drag the point a stop is arrived at to move the arrival alone: the departure stays, so the train stands longer or shorter. Drag the point it is left at to make it stand longer or shorter; the stops after it move by as much. The point of the first or last stop moves its time. Delete removes the train.',
       noSelection: 'Pick a train or a duty to change it here.',
       addDuty: 'Add duty',
       dutyId: 'Duty',
