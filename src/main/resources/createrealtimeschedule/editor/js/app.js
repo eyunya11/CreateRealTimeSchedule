@@ -314,7 +314,8 @@
       list.append(h('li', {
         class: selected !== null && selected.number === train.number ? 'selected' : null,
         onclick: () => select({ kind: 'train', number: train.number }),
-      }, train.number, train.deadhead ? ' (' + t('deadhead') + ')' : '', ' ', h('span', { class: 'sub' }, route)));
+      }, train.number, train.deadhead ? ' (' + t('deadhead') + ')' : '', train.keep === true ? ' (' + t('keep') + ')' : '', ' ',
+        h('span', { class: 'sub' }, route)));
     }
   }
 
@@ -1067,6 +1068,10 @@
     panel.append(field(t('deadhead'), h('span', null, h('input', {
       type: 'checkbox', checked: train.deadhead,
       onchange: event => change(rt.edit.setTrain(state.timetable, number, { deadhead: event.target.checked })),
+    }))));
+    panel.append(field(t('keep'), h('span', { title: t('keepHelp') }, h('input', {
+      type: 'checkbox', checked: train.keep === true,
+      onchange: event => change(rt.edit.setTrain(state.timetable, number, { keep: event.target.checked })),
     }))));
     panel.append(error);
 

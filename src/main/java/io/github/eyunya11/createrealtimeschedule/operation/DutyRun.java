@@ -20,6 +20,11 @@ import io.github.eyunya11.createrealtimeschedule.schedule.DeparturePlanner;
  * the timetable. At the first call, where the set has been waiting at the depot, there is no minimum
  * stop.
  *
+ * <p>A set that is too late can be held at a station until a later call of its duty at the same
+ * station ({@link #hold}): the calls in between are not made, and the trains that would have made
+ * them are cancelled. The set does not leave the call it was held at, nor arrive at the one it
+ * leaves from, so neither has a time.
+ *
  * <p>Times are clock values. The timetable's times count from 00:00 of the service day, and run on
  * past midnight, so a departure at {@code 24:10} is ten past midnight the day after.
  */
@@ -52,18 +57,32 @@ public final class DutyRun {
      * @param departure  when it is to leave, while it is {@link Phase#STANDING} or {@link Phase#DEPARTING}
      * @param arrivals   when it arrived at each call, or {@link #NOT_YET}
      * @param departures when it left each call, or {@link #NOT_YET}
+     * @param skipped    the calls it does not make, in order (see {@link #hold})
      */
-    public record State(String duty, long day, int call, Phase phase, long departure, List<Long> arrivals, List<Long> departures) {
+    public record State(String duty, long day, int call, Phase phase, long departure, List<Long> arrivals, List<Long> departures,
+                        List<Integer> skipped) {
         public State {
             Objects.requireNonNull(duty, "duty");
             Objects.requireNonNull(phase, "phase");
             arrivals = List.copyOf(arrivals);
             departures = List.copyOf(departures);
+            skipped = List.copyOf(skipped);
+        }
+
+        /** A state of a run that makes all its calls. */
+        public State(String duty, long day, int call, Phase phase, long departure, List<Long> arrivals, List<Long> departures) {
+            this(duty, day, call, phase, departure, arrivals, departures, List.of());
         }
 
         /** A state with the times as arrays, as they are saved. */
         public static State of(String duty, long day, int call, Phase phase, long departure, long[] arrivals, long[] departures) {
-            return new State(duty, day, call, phase, departure, boxed(arrivals), boxed(departures));
+            return of(duty, day, call, phase, departure, arrivals, departures, new int[0]);
+        }
+
+        /** A state with the times and the calls not made as arrays, as they are saved. */
+        public static State of(String duty, long day, int call, Phase phase, long departure, long[] arrivals, long[] departures,
+                               int[] skipped) {
+            return new State(duty, day, call, phase, departure, boxed(arrivals), boxed(departures), Arrays.stream(skipped).boxed().toList());
         }
     }
 
@@ -75,8 +94,10 @@ public final class DutyRun {
     private long departure;
     private final long[] arrivals;
     private final long[] departures;
+    private final boolean[] skipped;
 
-    private DutyRun(String duty, long day, List<Call> calls, int call, Phase phase, long departure, long[] arrivals, long[] departures) {
+    private DutyRun(String duty, long day, List<Call> calls, int call, Phase phase, long departure, long[] arrivals, long[] departures,
+                    boolean[] skipped) {
         this.duty = duty;
         this.day = day;
         this.calls = List.copyOf(calls);
@@ -85,6 +106,7 @@ public final class DutyRun {
         this.departure = departure;
         this.arrivals = arrivals;
         this.departures = departures;
+        this.skipped = skipped;
     }
 
     /**
@@ -100,7 +122,7 @@ public final class DutyRun {
         long[] departures = new long[calls.size()];
         Arrays.fill(arrivals, NOT_YET);
         Arrays.fill(departures, NOT_YET);
-        DutyRun run = new DutyRun(duty, day, calls, 0, Phase.STANDING, 0, arrivals, departures);
+        DutyRun run = new DutyRun(duty, day, calls, 0, Phase.STANDING, 0, arrivals, departures, new boolean[calls.size()]);
         run.departure = DeparturePlanner.departure(run.plannedDeparture(0), now, 0);
         return run;
     }
@@ -116,11 +138,45 @@ public final class DutyRun {
             throw new IllegalArgumentException("the run of duty " + state.duty() + " does not fit its " + size + " calls");
         return new DutyRun(state.duty(), state.day(), calls, state.call(), state.phase(), state.departure(),
             state.arrivals().stream().mapToLong(Long::longValue).toArray(),
-            state.departures().stream().mapToLong(Long::longValue).toArray());
+            state.departures().stream().mapToLong(Long::longValue).toArray(),
+            skipped(state, calls));
+    }
+
+    /**
+     * The calls {@code state} does not make, as flags by call. Each run of them lies between two calls
+     * at the same station, where the set was held, and none is the first or the last call or the one
+     * the set is at or running to.
+     */
+    private static boolean[] skipped(State state, List<Call> calls) {
+        boolean[] skipped = new boolean[calls.size()];
+        int last = 0;
+        for (int index : state.skipped()) {
+            if (index <= last || index >= calls.size() - 1 || index == state.call())
+                throw new IllegalArgumentException("the run of duty " + state.duty() + " does not make call " + index
+                    + ", which it cannot leave out");
+            skipped[index] = true;
+            last = index;
+        }
+        for (int from = 1; from < calls.size() - 1; from++) {
+            if (!skipped[from] || skipped[from - 1])
+                continue;
+            int to = from;
+            while (skipped[to + 1])
+                to++;
+            if (!calls.get(from - 1).station().equals(calls.get(to + 1).station()))
+                throw new IllegalArgumentException("the run of duty " + state.duty() + " leaves out calls " + from + " to " + to
+                    + ", which do not start and end at the same station");
+        }
+        return skipped;
     }
 
     public State state() {
-        return State.of(duty, day, call, phase, departure, arrivals, departures);
+        int[] left = new int[calls.size()];
+        int count = 0;
+        for (int index = 0; index < skipped.length; index++)
+            if (skipped[index])
+                left[count++] = index;
+        return State.of(duty, day, call, phase, departure, arrivals, departures, Arrays.copyOf(left, count));
     }
 
     private static List<Long> boxed(long[] values) {
@@ -144,13 +200,31 @@ public final class DutyRun {
         phase = Phase.DEPARTING;
     }
 
-    /** The set has left the call it stood at, and is running to the next. */
+    /** The set has left the call it stood at, and is running to the next it makes. */
     public void left(long now) {
         if (phase != Phase.STANDING && phase != Phase.DEPARTING)
             throw new IllegalStateException("duty " + duty + " is not at a call but " + phase);
         departures[call] = now;
-        call++;
+        call = nextMade(call);
         phase = Phase.RUNNING;
+    }
+
+    /**
+     * The set, standing at its call, is held there until call {@code to} of the duty at the same
+     * station, and leaves from that at {@code departure}: the calls in between are not made.
+     *
+     * @throws IllegalArgumentException if call {@code to} is not a later call at this station that the
+     *                                  set can leave from, with a call in between
+     */
+    public void hold(int to, long departure) {
+        if (phase != Phase.STANDING)
+            throw new IllegalStateException("duty " + duty + " is not standing at a call but " + phase);
+        if (to <= call + 1 || to >= calls.size() - 1 || !calls.get(to).station().equals(calls.get(call).station()))
+            throw new IllegalArgumentException("duty " + duty + " cannot be held from call " + call + " to call " + to);
+        for (int index = call + 1; index < to; index++)
+            skipped[index] = true;
+        call = to;
+        this.departure = departure;
     }
 
     /**
@@ -171,8 +245,7 @@ public final class DutyRun {
 
     /** The minimum stop at a call, in ticks: the timetable's, or else {@code defaultMinimumStop}. */
     public long minimumStop(int index, long defaultMinimumStop) {
-        int seconds = calls.get(index).minimumStop();
-        return seconds < 0 ? defaultMinimumStop : seconds * (long) RealClock.TICKS_PER_SECOND;
+        return DutyPlan.minimumStop(calls.get(index), defaultMinimumStop);
     }
 
     // ------------------------------------------------------------------ what it is
@@ -207,9 +280,35 @@ public final class DutyRun {
         return departure;
     }
 
-    /** The station the set goes to next: the call it is running to, or the one after the call it stands at. */
+    /** The station the set goes to next: the call it is running to, or the next it makes after the call it stands at. */
     public String nextStation() {
-        return calls.get(phase == Phase.STANDING || phase == Phase.DEPARTING ? call + 1 : call).station();
+        return calls.get(phase == Phase.STANDING || phase == Phase.DEPARTING ? nextMade(call) : call).station();
+    }
+
+    /** Whether the set does not make call {@code index}, having been held past it. */
+    public boolean skipped(int index) {
+        return skipped[index];
+    }
+
+    /** The calls the set does not make, in order. */
+    public List<Integer> skipped() {
+        return state().skipped();
+    }
+
+    /** The first call after {@code index} that the set makes. */
+    private int nextMade(int index) {
+        int next = index + 1;
+        while (skipped[next])
+            next++;
+        return next;
+    }
+
+    /** The last call before {@code index} that the set makes. */
+    private int previousMade(int index) {
+        int previous = index - 1;
+        while (skipped[previous])
+            previous--;
+        return previous;
     }
 
     /** The clock value of the timetable's departure from call {@code index}. */
@@ -223,7 +322,7 @@ public final class DutyRun {
     }
 
     private long at(int seconds) {
-        return day * RealClock.TICKS_PER_DAY + seconds * (long) RealClock.TICKS_PER_SECOND;
+        return DutyPlan.at(day, seconds);
     }
 
     /** When the set arrived at each call, or {@link #NOT_YET}. */
@@ -245,7 +344,7 @@ public final class DutyRun {
         return switch (phase) {
             case STANDING -> departure - plannedDeparture(call);
             case DEPARTING -> Math.max(departure, now) - plannedDeparture(call);
-            case RUNNING -> departures[call - 1] - plannedDeparture(call - 1);
+            case RUNNING -> departures[previousMade(call)] - plannedDeparture(previousMade(call));
             case FINISHED -> calls.get(call).hasArrive() ? arrivals[call] - plannedArrival(call) : 0;
         };
     }

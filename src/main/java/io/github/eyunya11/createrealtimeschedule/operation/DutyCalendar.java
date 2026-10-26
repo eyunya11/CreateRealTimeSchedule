@@ -15,7 +15,9 @@ import io.github.eyunya11.createrealtimeschedule.clock.RealClock;
  * <p>The timetable is for one day, and runs every day. A duty of service day d starts at d's 00:00
  * plus its first departure, which may be on the next day by the clock when the timetable writes it
  * past 24:00. A duty is given a set a lead time before that, and once a day at most. A duty that has
- * not been given a set by the time it was to leave does not run that day.
+ * not been given a set by the time it was to leave can be given one late, as long as it can still get
+ * back on time ({@link Recovery#canStartLate}) and the same duty of the next day is not due
+ * ({@link #mayStartLate}); once it cannot, it does not run that day.
  */
 public final class DutyCalendar {
 
@@ -27,7 +29,7 @@ public final class DutyCalendar {
      * @param at   the clock value it first leaves at
      */
     public record Start(String duty, long day, long at) {
-        /** Whether it is too late to give the duty a set: its time to leave has gone by. */
+        /** Whether its time to leave has gone by: a set given it now leaves late. */
         public boolean missedBy(long now) {
             return now > at;
         }
@@ -68,6 +70,16 @@ public final class DutyCalendar {
         for (long day = firstDay(firstDeparture, lastDay, now); startOf(day, firstDeparture) <= now + lead; day++)
             due.add(new Start(duty, day, startOf(day, firstDeparture)));
         return due;
+    }
+
+    /**
+     * Whether the duty of service {@code day} that first leaves at {@code firstDeparture} seconds may
+     * still be given a set late at {@code now}: until the tick before the same duty of the next day is
+     * due, a lead before it leaves. From that tick {@link #due} no longer has the day before, so it is
+     * given up on the tick before, while it is still there to be.
+     */
+    public static boolean mayStartLate(long day, int firstDeparture, long now, long lead) {
+        return now + lead + 1 < startOf(day + 1, firstDeparture);
     }
 
     /**

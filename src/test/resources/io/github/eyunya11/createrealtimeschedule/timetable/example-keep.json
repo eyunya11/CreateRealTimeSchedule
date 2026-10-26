@@ -1,0 +1,58 @@
+{
+  "format": "createrealtimeschedule.timetable",
+  "version": 4,
+  "name": "Last train",
+  "lines": [
+    {
+      "id": "l",
+      "name": "Line",
+      "stations": ["Depot", "A", "B"]
+    }
+  ],
+  "trains": [
+    {
+      "number": "D1",
+      "line": "l",
+      "deadhead": true,
+      "stops": [
+        {"station": "Depot", "depart": "23:00"},
+        {"station": "A", "arrive": "23:02"}
+      ]
+    },
+    {
+      "number": "1",
+      "line": "l",
+      "type": "local",
+      "stops": [
+        {"station": "A", "depart": "23:10"},
+        {"station": "B", "arrive": "23:20"}
+      ]
+    },
+    {
+      "number": "2",
+      "line": "l",
+      "type": "local",
+      "keep": true,
+      "stops": [
+        {"station": "B", "depart": "23:30"},
+        {"station": "A", "arrive": "23:40"}
+      ]
+    },
+    {
+      "number": "D2",
+      "line": "l",
+      "deadhead": true,
+      "stops": [
+        {"station": "A", "depart": "23:45"},
+        {"station": "Depot", "arrive": "23:47"}
+      ]
+    }
+  ],
+  "duties": [
+    {
+      "id": "1A",
+      "depot": "Depot",
+      "trains": ["D1", "1", "2", "D2"]
+    }
+  ]
+}

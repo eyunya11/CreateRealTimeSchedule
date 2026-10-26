@@ -2,6 +2,7 @@ package io.github.eyunya11.createrealtimeschedule.operation;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -19,6 +20,7 @@ import io.github.eyunya11.createrealtimeschedule.Createrealtimeschedule;
 import io.github.eyunya11.createrealtimeschedule.clock.RealClock;
 import io.github.eyunya11.createrealtimeschedule.diagram.DutyTimes;
 import io.github.eyunya11.createrealtimeschedule.diagram.LineAxis;
+import io.github.eyunya11.createrealtimeschedule.railway.Leg;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Duty;
 import io.github.eyunya11.createrealtimeschedule.timetable.TimetableJson;
@@ -88,12 +90,14 @@ public final class OperationData extends SavedData {
     private static final String TAG_DEPARTURE = "Departure";
     private static final String TAG_ARRIVALS = "Arrivals";
     private static final String TAG_DEPARTURES = "Departures";
+    private static final String TAG_SKIPPED = "Skipped";
     private static final String TAG_SINCE = "Since";
     private static final String TAG_CLOCK = "Clock";
     private static final String TAG_WHAT = "What";
     private static final String TAG_HISTORY = "History";
     private static final String TAG_NAME = "Name";
     private static final String TAG_ENDING = "Ending";
+    private static final String TAG_LOADED_AT = "LoadedAt";
 
     private String json = "";
     private @Nullable Timetable timetable;
@@ -103,6 +107,8 @@ public final class OperationData extends SavedData {
     private final Map<UUID, Long> freeSince = new HashMap<>();
     private final Deque<Note> notes = new ArrayDeque<>();
     private final List<Record> history = new ArrayList<>();
+    /** When each duty was loaded as it is, by its id: not changed by loading a timetable that has it the same. */
+    private final Map<String, Long> loadedAt = new HashMap<>();
     /** Not saved: the call at which each running train was last found to have no way on, so that it is logged once a call. */
     private final Map<UUID, Integer> noWay = new HashMap<>();
     /** Not saved: no duty starts before this clock value, so there is nothing to look for until a lead before it. */
@@ -113,6 +119,8 @@ public final class OperationData extends SavedData {
     private int timesRevision;
     /** Not saved: the diagram's axis of each line, worked out from the track when it is first needed; null until then. */
     private @Nullable Map<String, LineAxis> axes;
+    /** Not saved: the ways between the timetable's stations by their ends, worked out with the axes ({@link TrackFacts}). */
+    private @Nullable Map<List<String>, Leg> legs;
 
     public static OperationData get(MinecraftServer server) {
         return server.overworld().getDataStorage().computeIfAbsent(FACTORY, NAME);
@@ -134,18 +142,29 @@ public final class OperationData extends SavedData {
         return calls.get(id);
     }
 
+    /** The calls of each of the timetable's duties, by its id. */
+    public Map<String, List<Call>> allCalls() {
+        return Collections.unmodifiableMap(calls);
+    }
+
     /**
-     * Runs {@code timetable} from now on, which {@code json} is the text of. A duty's starts that have
-     * gone by at {@code now} are not looked at: loading a timetable at noon does not make the morning's
-     * duties count as missed. A running duty goes on if the new timetable has it with the same calls,
-     * and is given up if not; so is the record of a duty that has stopped running, which is dropped.
+     * Runs {@code timetable} from now on, which {@code json} is the text of. Of a duty's starts that
+     * have gone by at {@code now}, only the last is looked at, as a duty that may start late (see
+     * {@link OperationService}); loading a timetable at noon makes none of the morning's duties count as
+     * missed. A running duty goes on if the new timetable has it with the same calls, and is given up
+     * if not; so is the record of a duty that has stopped running, which is dropped.
      */
     public void loadTimetable(String json, Timetable timetable, long now) {
         this.json = json;
+        Map<String, List<Call>> before = new HashMap<>(calls);
         use(timetable);
+        for (Map.Entry<String, List<Call>> duty : calls.entrySet())
+            if (!duty.getValue().equals(before.get(duty.getKey())))
+                loadedAt.put(duty.getKey(), now);
+        loadedAt.keySet().retainAll(calls.keySet());
         for (Duty duty : timetable.duties()) {
             long started = DutyCalendar.lastDayStartedBy(now, DutyPlan.firstDeparture(calls.get(duty.id())));
-            lastDays.merge(duty.id(), started, Math::max);
+            lastDays.merge(duty.id(), started - 1, Math::max);
         }
         lastDays.keySet().retainAll(calls.keySet());
         runs.entrySet().removeIf(entry -> {
@@ -177,6 +196,7 @@ public final class OperationData extends SavedData {
         timetable = null;
         calls.clear();
         lastDays.clear();
+        loadedAt.clear();
         runs.clear();
         history.clear();
         timesChanged();
@@ -204,6 +224,15 @@ public final class OperationData extends SavedData {
     public void dealtWith(String id, long day) {
         if (!Long.valueOf(day).equals(lastDays.put(id, day)))
             setDirty();
+    }
+
+    /**
+     * When duty {@code id} was loaded as it is now, by a timetable that brought it new or changed; far in
+     * the past if that is not known. A duty that was to start before then and did not is no duty that
+     * did not run.
+     */
+    public long loadedAt(String id) {
+        return loadedAt.getOrDefault(id, Long.MIN_VALUE);
     }
 
     /** No duty starts before this clock value; {@link Long#MIN_VALUE} if that is not known. */
@@ -259,8 +288,15 @@ public final class OperationData extends SavedData {
         return axes;
     }
 
-    public void axes(Map<String, LineAxis> axes) {
+    /** The ways between the timetable's stations, by their two ends; null if they have not been worked out, as {@link #axes()}. */
+    public @Nullable Map<List<String>, Leg> legs() {
+        return legs;
+    }
+
+    /** Keeps what the track says of the timetable's stations ({@link TrackFacts}). */
+    public void track(Map<String, LineAxis> axes, Map<List<String>, Leg> legs) {
         this.axes = Map.copyOf(axes);
+        this.legs = Map.copyOf(legs);
     }
 
     /** How many times the duties' times have changed since the server started. */
@@ -273,9 +309,10 @@ public final class OperationData extends SavedData {
         timesRevision++;
     }
 
-    /** Drops the axes, so that they are worked out again, as after the track has changed. */
+    /** Drops the axes and the ways between stations, so that they are worked out again, as after the track has changed. */
     public void forgetAxes() {
         axes = null;
+        legs = null;
         revision++;
     }
 
@@ -311,6 +348,9 @@ public final class OperationData extends SavedData {
     @Override
     public CompoundTag save(CompoundTag tag, HolderLookup.Provider registries) {
         tag.putString(TAG_TIMETABLE, json);
+        CompoundTag loaded = new CompoundTag();
+        loadedAt.forEach(loaded::putLong);
+        tag.put(TAG_LOADED_AT, loaded);
         CompoundTag days = new CompoundTag();
         lastDays.forEach(days::putLong);
         tag.put(TAG_LAST_DAYS, days);
@@ -364,6 +404,8 @@ public final class OperationData extends SavedData {
         entry.putLong(TAG_DEPARTURE, state.departure());
         entry.put(TAG_ARRIVALS, new LongArrayTag(state.arrivals()));
         entry.put(TAG_DEPARTURES, new LongArrayTag(state.departures()));
+        if (!state.skipped().isEmpty())
+            entry.putIntArray(TAG_SKIPPED, state.skipped());
         return entry;
     }
 
@@ -374,9 +416,10 @@ public final class OperationData extends SavedData {
         if (dutyCalls == null)
             return null;
         try {
+            // A run saved before calls could be left out has no list of them, which reads as none.
             DutyRun.State state = DutyRun.State.of(duty, entry.getLong(TAG_DAY), entry.getInt(TAG_CALL),
                 DutyRun.Phase.valueOf(entry.getString(TAG_PHASE)), entry.getLong(TAG_DEPARTURE),
-                entry.getLongArray(TAG_ARRIVALS), entry.getLongArray(TAG_DEPARTURES));
+                entry.getLongArray(TAG_ARRIVALS), entry.getLongArray(TAG_DEPARTURES), entry.getIntArray(TAG_SKIPPED));
             return DutyRun.restore(state, dutyCalls);
         } catch (IllegalArgumentException e) {
             LOGGER.error("The saved run of duty {} does not fit the timetable, and is dropped", duty, e);
@@ -394,6 +437,9 @@ public final class OperationData extends SavedData {
             else
                 LOGGER.error("The saved timetable no longer reads, and is not run: {}", result.problems());
         }
+        CompoundTag loaded = tag.getCompound(TAG_LOADED_AT);
+        for (String duty : loaded.getAllKeys())
+            data.loadedAt.put(duty, loaded.getLong(duty));
         CompoundTag days = tag.getCompound(TAG_LAST_DAYS);
         for (String duty : days.getAllKeys())
             data.lastDays.put(duty, days.getLong(duty));

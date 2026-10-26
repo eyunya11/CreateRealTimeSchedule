@@ -30,6 +30,10 @@ public final class ModSettings {
     public static final int DEFAULT_DUTY_LEAD_SECONDS = 60;
     /** The longest such lead the config allows. */
     public static final int MAX_DUTY_LEAD_SECONDS = 3600;
+    /** How late a set may be before trains are cancelled to get it back on time, until the config says otherwise. */
+    public static final int DEFAULT_RECOVERY_THRESHOLD_SECONDS = 600;
+    /** The highest such threshold the config allows. */
+    public static final int MAX_RECOVERY_THRESHOLD_SECONDS = 7200;
 
     private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
 
@@ -61,6 +65,15 @@ public final class ModSettings {
             "it is given a free train waiting there. The train leaves at the timetable's time, not when it is given the duty.")
         .defineInRange("duty_lead_seconds", DEFAULT_DUTY_LEAD_SECONDS, 0, MAX_DUTY_LEAD_SECONDS);
 
+    private static final ModConfigSpec.IntValue RECOVERY_THRESHOLD = BUILDER
+        .comment("How many seconds late a train running a duty of the timetable loaded with /rttimetable may be before",
+            "trains are cancelled to get it back on time: held at a station its duty comes back to, it leaves from there",
+            "on the later call, and the trains in between do not run (except those the timetable marks keep).",
+            "It is done only when the time the train makes up on the way would not bring it within this by then.",
+            "A duty with no free train by its time to leave still starts late while it can get back on time so.",
+            "0 turns both off: a late train runs on late, and a duty with no free train by its time does not run that day.")
+        .defineInRange("recovery_threshold_seconds", DEFAULT_RECOVERY_THRESHOLD_SECONDS, 0, MAX_RECOVERY_THRESHOLD_SECONDS);
+
     public static final ModConfigSpec SPEC = BUILDER.build();
 
     private ModSettings() {}
@@ -87,6 +100,11 @@ public final class ModSettings {
     /** How many seconds before a duty first leaves it is given a set. */
     public static int dutyLeadSeconds() {
         return read(SPEC.isLoaded(), DUTY_LEAD, DEFAULT_DUTY_LEAD_SECONDS);
+    }
+
+    /** How many seconds late a set may be before trains are cancelled to get it back on time; 0 if never. */
+    public static int recoveryThresholdSeconds() {
+        return read(SPEC.isLoaded(), RECOVERY_THRESHOLD, DEFAULT_RECOVERY_THRESHOLD_SECONDS);
     }
 
     /**

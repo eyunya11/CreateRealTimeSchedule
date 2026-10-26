@@ -45,12 +45,13 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
     public static final String FORMAT = "createrealtimeschedule.timetable";
 
     /**
-     * The newest version of the JSON this mod reads. Version 2 added deadhead trains, and version 3
-     * the stations' times and the stops' minimum stops. A timetable is written in the oldest version
-     * that holds it ({@link #version()}), so that a mod that reads only version 2 still takes one that
-     * has none of what version 3 added.
+     * The newest version of the JSON this mod reads. Version 2 added deadhead trains, version 3 the
+     * stations' times and the stops' minimum stops, and version 4 the trains that are never cancelled
+     * to get a late set back on time. A timetable is written in the oldest version that holds it
+     * ({@link #version()}), so that a mod that reads only version 2 still takes one that has none of
+     * what the later versions added.
      */
-    public static final int VERSION = 3;
+    public static final int VERSION = 4;
 
     /** The longest line id, train number or duty id. */
     public static final int MAX_ID_LENGTH = 32;
@@ -92,13 +93,20 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
      * @param type   the kind of service, such as {@code local} or {@code rapid}, for display; may be empty
      * @param stops    the stops in the order the train makes them, at least two
      * @param deadhead whether it runs empty, such as from the depot to where the duty starts
+     * @param keep     whether it must run even when its set is late: it is never cancelled to get the
+     *                 set back on time, such as the last train of the day
      */
-    public record Train(String number, String line, String type, List<Stop> stops, boolean deadhead) {
+    public record Train(String number, String line, String type, List<Stop> stops, boolean deadhead, boolean keep) {
         public Train {
             Objects.requireNonNull(number, "number");
             Objects.requireNonNull(line, "line");
             Objects.requireNonNull(type, "type");
             stops = List.copyOf(stops);
+        }
+
+        /** A train that may be cancelled to get a late set back on time. */
+        public Train(String number, String line, String type, List<Stop> stops, boolean deadhead) {
+            this(number, line, type, stops, deadhead, false);
         }
 
         /** A train that carries passengers. */
@@ -212,8 +220,13 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
         return station(stop.station()).map(Station::minimumStop).orElse(Stop.NONE);
     }
 
-    /** The oldest version of the JSON that holds this timetable: 3 if it has anything version 3 added, else 2. */
+    /**
+     * The oldest version of the JSON that holds this timetable: 4 if it has a train that is never
+     * cancelled, else 3 if it has anything version 3 added, else 2.
+     */
     public int version() {
+        if (trains.stream().anyMatch(Train::keep))
+            return 4;
         boolean three = !stations.isEmpty()
             || trains.stream().anyMatch(train -> train.stops().stream().anyMatch(Stop::hasMinimumStop));
         return three ? 3 : 2;

@@ -27,6 +27,33 @@ class DutyPlanTest {
             DutyPlan.calls(timetable, timetable.duties().getFirst()));
     }
 
+    /** Held at A from call 1 to call 4, the set does not run A to M to B (train 1) nor B to A (train 2). */
+    @Test
+    void theTrainsASetHeldAtAStationDoesNotRunAreCancelled() {
+        Timetable timetable = OperationTimetables.shuttle();
+        List<Call> calls = DutyPlan.calls(timetable, timetable.duties().getFirst());
+        boolean[] ways = DutyPlan.cancelledWays(calls, List.of(2, 3));
+        assertEquals(List.of(false, true, true, true, false), List.of(ways[0], ways[1], ways[2], ways[3], ways[4]));
+        assertEquals(List.of("1", "2"), DutyPlan.cancelledTrains(calls, List.of(2, 3)));
+        assertEquals(List.of(), DutyPlan.partlyCancelledTrains(calls, List.of(2, 3)));
+        assertEquals(List.of(), DutyPlan.cancelledTrains(calls, List.of()));
+    }
+
+    /** A train cut short: held at A until it comes back there, the set runs D1 but not the rest of a loop train past M. */
+    @Test
+    void aTrainOnlyPartOfWhoseWayIsNotRunIsPartlyCancelled() {
+        List<Call> calls = List.of(new Call("Depot", Stop.NONE, t("07:50"), "", "D1"),
+            new Call("A", t("07:55"), t("08:00"), "D1", "L"),
+            new Call("M", t("08:05"), t("08:06"), "L", "L"),
+            new Call("A", t("08:15"), t("08:16"), "L", "L"),
+            new Call("M", t("08:20"), t("08:21"), "L", "L"),
+            new Call("A", t("08:30"), t("08:35"), "L", "D2"),
+            new Call("Depot", t("08:40"), Stop.NONE, "D2", ""));
+        assertEquals(List.of(), DutyPlan.cancelledTrains(calls, List.of(2)));
+        assertEquals(List.of("L"), DutyPlan.partlyCancelledTrains(calls, List.of(2)));
+        assertEquals(List.of("L"), DutyPlan.cancelledTrains(calls, List.of(2, 3, 4)));
+    }
+
     @Test
     void theFirstDepartureIsTheDepots() {
         Timetable timetable = OperationTimetables.shuttle();

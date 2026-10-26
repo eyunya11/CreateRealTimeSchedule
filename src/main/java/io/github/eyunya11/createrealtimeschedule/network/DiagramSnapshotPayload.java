@@ -110,11 +110,12 @@ public record DiagramSnapshotPayload(int revision, @Nullable Content content, in
         buf.writeEnum(duty.status());
         buf.writeCollection(duty.arrivals(), FriendlyByteBuf::writeLong);
         buf.writeCollection(duty.departures(), FriendlyByteBuf::writeLong);
+        buf.writeCollection(duty.skipped(), FriendlyByteBuf::writeVarInt);
     }
 
     private static DutyTimes readDuty(FriendlyByteBuf buf) {
         return new DutyTimes(buf.readUtf(), buf.readVarLong(), buf.readUtf(), buf.readEnum(DutyTimes.Status.class),
-            buf.readList(FriendlyByteBuf::readLong), buf.readList(FriendlyByteBuf::readLong));
+            buf.readList(FriendlyByteBuf::readLong), buf.readList(FriendlyByteBuf::readLong), buf.readList(FriendlyByteBuf::readVarInt));
     }
 
     @Override

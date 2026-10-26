@@ -26,6 +26,7 @@ import io.github.eyunya11.createrealtimeschedule.operation.DutyCalendar.Start;
 import io.github.eyunya11.createrealtimeschedule.operation.TrainDriver.Outcome;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Duty;
+import io.github.eyunya11.createrealtimeschedule.travel.TrainSpecs;
 import net.minecraft.server.MinecraftServer;
 
 /**
@@ -36,13 +37,17 @@ import net.minecraft.server.MinecraftServer;
  * of Create's and no duty are counted as free, from the moment they are first seen so.</li>
  * <li>A duty is given a set {@code duty_lead_seconds} before it first leaves: of the free sets at its
  * depot, the one that has waited longest. Of duties due together, the one that leaves first chooses
- * first. A duty that has had no set by the time it was to leave does not run that day.</li>
+ * first. A duty that has had no set by the time it was to leave is given one late, after the duties
+ * on time, while that still gets it back on time ({@link Recovery#canStartLate}); once it does not,
+ * the duty does not run that day.</li>
  * <li>Each running duty is taken one step on by {@link TrainDriver}: a set whose time has come is sent
  * to the next station, one that has gone from the platform is running, and one that has arrived is
- * told when to leave. A duty whose train is gone, derailed or given a schedule of Create's is given
- * up. A set back at the end of its duty is free. Either way, the duty's times are kept for the
- * diagram ({@link OperationData#keep}). This comes after the duties are given their sets, so
- * that one given its set at its very time is sent on the same tick.</li>
+ * told when to leave. A set that has arrived later than {@code recovery_threshold_seconds} may be held
+ * at the station until a later call there, and the trains in between cancelled ({@link Recovery}). A
+ * duty whose train is gone, derailed or given a schedule of Create's is given up. A set back at the
+ * end of its duty is free. Either way, the duty's times are kept for the diagram
+ * ({@link OperationData#keep}). This comes after the duties are given their sets, so that one given
+ * its set at its very time is sent on the same tick.</li>
  * </ol>
  *
  * <p>Trains that do not stand at a depot, and trains with a schedule of Create's, are never touched,
@@ -67,11 +72,14 @@ public final class OperationService {
             findFreeSets(data, timetable, now);
             data.forgetOld(now);
         }
-        startDuties(data, timetable, now, ModSettings.dutyLeadSeconds() * (long) RealClock.TICKS_PER_SECOND);
-        stepRuns(data, now, ModSettings.defaultMinimumStopSeconds() * (long) RealClock.TICKS_PER_SECOND);
+        long lead = ModSettings.dutyLeadSeconds() * (long) RealClock.TICKS_PER_SECOND;
+        long defaultMinimumStop = ModSettings.defaultMinimumStopSeconds() * (long) RealClock.TICKS_PER_SECOND;
+        long threshold = ModSettings.recoveryThresholdSeconds() * (long) RealClock.TICKS_PER_SECOND;
+        startDuties(data, timetable, now, lead, defaultMinimumStop, threshold, server.getTickCount() % FREE_CHECK_TICKS == 0);
+        stepRuns(data, timetable, now, defaultMinimumStop, threshold, lead);
     }
 
-    private static void stepRuns(OperationData data, long now, long defaultMinimumStop) {
+    private static void stepRuns(OperationData data, Timetable timetable, long now, long defaultMinimumStop, long threshold, long lead) {
         Iterator<Map.Entry<UUID, DutyRun>> runs = data.runs().entrySet().iterator();
         while (runs.hasNext()) {
             Map.Entry<UUID, DutyRun> entry = runs.next();
@@ -89,6 +97,8 @@ public final class OperationService {
             int call = run.call();
             DutyRun.Phase phase = run.phase();
             Outcome outcome = TrainDriver.step(run, train, now, defaultMinimumStop);
+            if (phase == DutyRun.Phase.RUNNING && run.phase() == DutyRun.Phase.STANDING)
+                recover(data, timetable, run, train, now, defaultMinimumStop, threshold, lead);
             if (run.call() != call || run.phase() != phase) {
                 data.timesChanged();
                 data.setDirty();
@@ -110,6 +120,34 @@ public final class OperationService {
                         run.calls().getLast().station());
                 }
             }
+        }
+    }
+
+    /**
+     * Holds a set that has just come in later than the threshold at a station its duty comes back to,
+     * until a later call there, if it can be ({@link Recovery}); the trains in between are cancelled.
+     */
+    private static void recover(OperationData data, Timetable timetable, DutyRun run, Train train, long now, long defaultMinimumStop,
+                                long threshold, long lead) {
+        if (!Recovery.tooLate(run, threshold))
+            return; // as most sets are: the track need not be looked at
+        Optional<CreateReach> reach = CreateReach.of(train, TrackFacts.legs(data, timetable));
+        if (reach.isEmpty())
+            return;
+        Recovery.Rules rules = new Recovery.Rules(timetable, data.allCalls(), TrackFacts.axes(data, timetable), threshold, defaultMinimumStop,
+            lead);
+        Recovery.onArrival(rules, run, now, reach.get()).ifPresent(hold -> {
+            data.note(now, run.duty(), run.day(), Recovery.note(run, hold));
+            run.hold(hold.to(), hold.departure());
+        });
+    }
+
+    /** How long the track takes for a train without fuel, as the network's export has it; the timetable's times if Create's config leaves it no speed. */
+    private static RunTimes unpoweredTimes(OperationData data, Timetable timetable) {
+        try {
+            return TrackFacts.runTimes(TrackFacts.legs(data, timetable), TrainSpecs.unpowered(), 1);
+        } catch (IllegalArgumentException e) {
+            return RunTimes.NONE;
         }
     }
 
@@ -136,10 +174,15 @@ public final class OperationService {
     }
 
     /**
-     * Gives the duties that are due their sets. Until a lead before the next start of any duty, which
-     * is worked out again only once that comes or the duties change, there is nothing to do.
+     * Gives the duties that are due their sets: those on time first, by when they leave, then those
+     * whose time to leave has gone by (else these, due first, would take the sets first). A late duty
+     * is given a set while that still gets it back on time, and does not run that day once it does
+     * not. That is looked at only on the ticks {@code lateChecks} says, once a second, as it reads the
+     * track and the trains. Until a lead before the next start of any duty, which is worked out again
+     * only once that comes or the duties change, there is nothing to do.
      */
-    private static void startDuties(OperationData data, Timetable timetable, long now, long lead) {
+    private static void startDuties(OperationData data, Timetable timetable, long now, long lead, long defaultMinimumStop, long threshold,
+                                    boolean lateChecks) {
         if (now + lead < data.nextStart())
             return;
         Map<String, Duty> byId = new HashMap<>();
@@ -149,13 +192,29 @@ public final class OperationService {
             List<Call> calls = data.calls(duty.id());
             due.addAll(DutyCalendar.due(duty.id(), DutyPlan.firstDeparture(calls), data.lastDay(duty.id()), now, lead));
         }
-        due.sort(Comparator.comparingLong(Start::at).thenComparing(Start::duty));
+        due.sort(Comparator.comparing((Start start) -> start.missedBy(now)).thenComparingLong(Start::at).thenComparing(Start::duty));
         boolean waiting = false;
+        Recovery.Rules rules = null; // worked out for the first late duty, as it reads the track
+        RunTimes unpowered = RunTimes.NONE;
         for (Start start : due) {
             Duty duty = byId.get(start.duty());
-            if (start.missedBy(now)) {
+            List<Call> calls = data.calls(duty.id());
+            boolean late = start.missedBy(now);
+            if (late && threshold > 0 && !lateChecks) {
+                waiting = true;
+                continue;
+            }
+            if (late && threshold > 0 && rules == null) {
+                rules = new Recovery.Rules(timetable, data.allCalls(), TrackFacts.axes(data, timetable), threshold, defaultMinimumStop, lead);
+                unpowered = unpoweredTimes(data, timetable);
+            }
+            if (late && (rules == null || !DutyCalendar.mayStartLate(start.day(), DutyPlan.firstDeparture(calls), now, lead)
+                || !Recovery.canStartLate(rules, duty.id(), calls, start.day(), now, unpowered, null))) {
                 data.dealtWith(duty.id(), start.day());
-                data.note(now, duty.id(), start.day(), "did not run: no free set at " + duty.depot() + " by its time");
+                // One that was to start before the timetable was loaded is no duty that did not run.
+                if (start.at() >= data.loadedAt(duty.id()))
+                    data.note(now, duty.id(), start.day(), "did not run: no free set at " + duty.depot() + " by its time"
+                        + (threshold > 0 ? ", nor in time to start late" : ""));
                 continue;
             }
             Map<UUID, Long> candidates = new HashMap<>();
@@ -166,17 +225,29 @@ public final class OperationService {
             });
             Optional<UUID> chosen = DutyCalendar.longestWaiting(candidates);
             if (chosen.isEmpty()) {
-                waiting = true; // a set may come free before the duty is to leave
+                waiting = true; // a set may come free before the duty is to leave, or while it can still start late
                 continue;
             }
             UUID id = chosen.get();
-            data.runs().put(id, DutyRun.start(duty.id(), start.day(), data.calls(duty.id()), now));
+            Train set = Create.RAILWAYS.trains.get(id);
+            if (late) {
+                Optional<CreateReach> reach = CreateReach.of(set, TrackFacts.legs(data, timetable));
+                if (reach.isEmpty() || !Recovery.canStartLate(rules, duty.id(), calls, start.day(), now, reach.get(), reach.get())) {
+                    waiting = true; // where this set would have to be held it would be in the way; perhaps later
+                    continue;
+                }
+            }
+            data.runs().put(id, DutyRun.start(duty.id(), start.day(), calls, now));
             data.timesChanged();
             data.freeSince().remove(id);
             data.dealtWith(duty.id(), start.day());
             data.setDirty();
-            LOGGER.info("Duty {} of service day {} is given {}, to leave {} at {}", duty.id(), start.day(),
-                Create.RAILWAYS.trains.get(id).name.getString(), duty.depot(), RealClock.format(start.at()));
+            if (late)
+                data.note(now, duty.id(), start.day(), "started late: " + (start.at() >= data.loadedAt(duty.id())
+                    ? "no free set at " + duty.depot() + " by " + RealClock.format(start.at())
+                    : "the timetable was loaded after " + RealClock.format(start.at())));
+            LOGGER.info("Duty {} of service day {} is given {}, to leave {} at {}", duty.id(), start.day(), set.name.getString(),
+                duty.depot(), RealClock.format(start.at()));
         }
         // A duty still waiting for a set is looked at again on the next tick; otherwise not until the next start.
         long next = Long.MAX_VALUE;

@@ -14,8 +14,10 @@ import io.github.eyunya11.createrealtimeschedule.operation.DutyRun;
  * @param status     how it stands
  * @param arrivals   when it arrived at each of its calls, as clock values, or {@link DutyRun#NOT_YET}
  * @param departures when it left each of them, or {@link DutyRun#NOT_YET}
+ * @param skipped    the calls it does not make, its set having been held past them ({@link DutyRun#hold})
  */
-public record DutyTimes(String duty, long day, String train, Status status, List<Long> arrivals, List<Long> departures) {
+public record DutyTimes(String duty, long day, String train, Status status, List<Long> arrivals, List<Long> departures,
+                        List<Integer> skipped) {
 
     public enum Status {
         RUNNING,
@@ -29,12 +31,21 @@ public record DutyTimes(String duty, long day, String train, Status status, List
         Objects.requireNonNull(status, "status");
         arrivals = List.copyOf(arrivals);
         departures = List.copyOf(departures);
+        skipped = List.copyOf(skipped);
         if (arrivals.size() != departures.size())
             throw new IllegalArgumentException(arrivals.size() + " arrivals and " + departures.size() + " departures");
+        for (int index : skipped)
+            if (index <= 0 || index >= arrivals.size() - 1)
+                throw new IllegalArgumentException("call " + index + " of " + arrivals.size() + " is not one a run can leave out");
+    }
+
+    /** The times of a duty that has made every call so far. */
+    public DutyTimes(String duty, long day, String train, Status status, List<Long> arrivals, List<Long> departures) {
+        this(duty, day, train, status, arrivals, departures, List.of());
     }
 
     /** The times of {@code run} so far. */
     public static DutyTimes of(DutyRun run, String train, Status status) {
-        return new DutyTimes(run.duty(), run.day(), train, status, run.arrivals(), run.departures());
+        return new DutyTimes(run.duty(), run.day(), train, status, run.arrivals(), run.departures(), run.skipped());
     }
 }

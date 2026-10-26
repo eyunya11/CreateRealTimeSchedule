@@ -1,0 +1,54 @@
+{
+  "about": "A train's keep mark (version 4), which says it is never cancelled to get a late set back on time, must be true or false.",
+  "timetable": {
+    "format": "createrealtimeschedule.timetable",
+    "version": 4,
+    "name": "",
+    "lines": [
+      {
+        "id": "l",
+        "name": "L",
+        "stations": [
+          "A",
+          "B"
+        ]
+      }
+    ],
+    "trains": [
+      {
+        "number": "1",
+        "line": "l",
+        "keep": "yes",
+        "stops": [
+          {
+            "station": "A",
+            "depart": "08:00"
+          },
+          {
+            "station": "B",
+            "arrive": "08:10"
+          }
+        ]
+      },
+      {
+        "number": "2",
+        "line": "l",
+        "keep": true,
+        "stops": [
+          {
+            "station": "A",
+            "depart": "09:00"
+          },
+          {
+            "station": "B",
+            "arrive": "09:10"
+          }
+        ]
+      }
+    ],
+    "duties": []
+  },
+  "problems": [
+    "trains[0].keep: must be true or false"
+  ]
+}

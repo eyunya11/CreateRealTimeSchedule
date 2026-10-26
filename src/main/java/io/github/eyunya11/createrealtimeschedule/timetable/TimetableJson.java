@@ -216,11 +216,12 @@ public final class TimetableJson {
         String line = orEmpty(f.string("line", true));
         String type = orEmpty(f.string("type", false));
         boolean deadhead = f.bool("deadhead", false);
+        boolean keep = f.bool("keep", false);
         List<Timetable.Stop> stops = new ArrayList<>();
         for (Fields stop : f.objects("stops", true))
             stops.add(readStop(stop));
         f.finish();
-        return new Timetable.Train(number, line, type, stops, deadhead);
+        return new Timetable.Train(number, line, type, stops, deadhead, keep);
     }
 
     private static Timetable.Stop readStop(Fields f) {
@@ -410,8 +411,8 @@ public final class TimetableJson {
     /**
      * The timetable as JSON, laid out the same way every time: two spaces of indent, the members in a
      * fixed order, and a stop or a list of names on one line, in the oldest version that holds it
-     * ({@link Timetable#version()}). Members that have their default value ({@code loop} and
-     * {@code deadhead} false, {@code type} empty, a time or a minimum stop a stop does not have, no
+     * ({@link Timetable#version()}). Members that have their default value ({@code loop},
+     * {@code deadhead} and {@code keep} false, {@code type} empty, a time or a minimum stop a stop does not have, no
      * stations with times of their own) are left out. A timetable that
      * {@link Timetable#problems()} finds fault with is written as it is, and is refused when read back;
      * a time outside the service day is written as {@link ServiceTime#show} has it, which is no time.
@@ -457,6 +458,8 @@ public final class TimetableJson {
                 node.put("type", text(train.type()));
             if (train.deadhead())
                 node.put("deadhead", raw("true"));
+            if (train.keep())
+                node.put("keep", raw("true"));
             ListNode stops = new ListNode();
             for (Timetable.Stop stop : train.stops()) {
                 MapNode stopNode = new MapNode();

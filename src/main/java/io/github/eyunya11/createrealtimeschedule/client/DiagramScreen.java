@@ -168,7 +168,7 @@ public final class DiagramScreen extends Screen {
         double length = axis.length();
         for (PlannedTrain train : diagram.planned())
             for (Segment segment : train.segments())
-                drawSegment(graphics, segment, length, 1, train.deadhead() ? DEADHEAD : typeColour(train.type()), train.deadhead());
+                drawSegment(graphics, segment, length, 1, plannedColour(train), train.deadhead());
         for (RanDuty duty : diagram.ran())
             for (Segment segment : duty.segments())
                 drawSegment(graphics, segment, length, 2, duty.times().status() == DutyTimes.Status.GIVEN_UP ? GIVEN_UP : RAN, false);
@@ -179,7 +179,7 @@ public final class DiagramScreen extends Screen {
             double x = view.x(train.labelSecond());
             if (x >= left && x < right)
                 graphics.drawString(font, train.number(), (int) x + 2, (int) view.y(train.labelPosition(), length) - font.lineHeight,
-                    train.deadhead() ? DEADHEAD : typeColour(train.type()));
+                    plannedColour(train));
         }
         // Draw what is batched while the scissor still cuts it to the plot.
         graphics.flush();
@@ -223,6 +223,23 @@ public final class DiagramScreen extends Screen {
         long minutes = Math.round(second / 60);
         long hour = Math.floorDiv(minutes, 60);
         return String.format(Locale.ROOT, "%02d:%02d", hour, Math.floorMod(minutes, 60));
+    }
+
+    /** A planned train's colour: its type's, grey for a deadhead, and either faded into the plot when it is cancelled. */
+    private static int plannedColour(PlannedTrain train) {
+        int colour = train.deadhead() ? DEADHEAD : typeColour(train.type());
+        return train.cancelled() ? faded(colour) : colour;
+    }
+
+    /** {@code colour} a third of the way from the plot's background to itself. */
+    private static int faded(int colour) {
+        int faded = 0xFF000000;
+        for (int shift = 0; shift <= 16; shift += 8) {
+            int from = PLOT_BACKGROUND >> shift & 0xFF;
+            int to = colour >> shift & 0xFF;
+            faded |= (from + (to - from) / 3) << shift;
+        }
+        return faded;
     }
 
     private static int typeColour(String type) {

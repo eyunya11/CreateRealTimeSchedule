@@ -4,8 +4,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import io.github.eyunya11.createrealtimeschedule.clock.RealClock;
 import io.github.eyunya11.createrealtimeschedule.operation.Call;
@@ -39,9 +41,10 @@ public record DiagramModel(LineAxis axis, long day, List<PlannedTrain> planned, 
      *
      * @param labelSecond   where its number goes: at its first departure
      * @param labelPosition and the position of its first station
+     * @param cancelled     whether it does not run on the day, cancelled to get a late set back on time
      */
     public record PlannedTrain(String number, String type, boolean deadhead, List<Segment> segments, double labelSecond,
-                               double labelPosition) {
+                               double labelPosition, boolean cancelled) {
         public PlannedTrain {
             segments = List.copyOf(segments);
         }
@@ -84,6 +87,12 @@ public record DiagramModel(LineAxis axis, long day, List<PlannedTrain> planned, 
     /** {@link #of(Timetable, LineAxis, long, List, long)}, with the duties' {@code calls} worked out already, as by {@link #calls}. */
     public static DiagramModel of(Timetable timetable, Map<String, List<Call>> calls, LineAxis axis, long day, List<DutyTimes> times,
                                   long now) {
+        Set<String> cancelled = new HashSet<>();
+        for (DutyTimes duty : times) {
+            List<Call> dutyCalls = calls.get(duty.duty());
+            if (duty.day() == day && dutyCalls != null && dutyCalls.size() == duty.arrivals().size())
+                cancelled.addAll(DutyPlan.cancelledTrains(dutyCalls, duty.skipped()));
+        }
         List<PlannedTrain> planned = new ArrayList<>();
         for (Train train : timetable.trains()) {
             if (!train.line().equals(axis.line()))
@@ -97,7 +106,7 @@ public record DiagramModel(LineAxis axis, long day, List<PlannedTrain> planned, 
             }
             Path path = path(axis, visits);
             planned.add(new PlannedTrain(train.number(), train.type(), train.deadhead(), path.segments,
-                train.stops().getFirst().depart(), path.firstPosition));
+                train.stops().getFirst().depart(), path.firstPosition, cancelled.contains(train.number())));
         }
 
         List<RanDuty> ran = new ArrayList<>();
@@ -108,17 +117,27 @@ public record DiagramModel(LineAxis axis, long day, List<PlannedTrain> planned, 
             if (dutyCalls == null || dutyCalls.size() != duty.arrivals().size())
                 continue;
             List<Visit> visits = new ArrayList<>();
+            Set<Integer> skipped = new HashSet<>(duty.skipped());
+            int made = -1; // the last call made before this one
             for (int i = 0; i < dutyCalls.size(); i++) {
+                if (skipped.contains(i))
+                    continue;
                 Call call = dutyCalls.get(i);
                 double arrive = clockSeconds(duty.arrivals().get(i), day);
                 double depart = clockSeconds(duty.departures().get(i), day);
+                String arrivingTrain = call.arrivingTrain();
+                if (made >= 0 && made < i - 1) {
+                    // Held at the station of the last call made until this one: one stand, from coming in there to leaving here.
+                    arrive = visits.removeLast().arrive();
+                    arrivingTrain = dutyCalls.get(made).arrivingTrain();
+                }
                 if (!Double.isNaN(arrive) && Double.isNaN(depart) && duty.status() == DutyTimes.Status.RUNNING && i < dutyCalls.size() - 1)
                     depart = Math.max(arrive, clockSeconds(now, day)); // standing there now
                 boolean leavesOnLine = onLine(timetable, call.leavingTrain(), axis);
                 boolean down = timetable.train(call.leavingTrain())
                     .map(train -> axis.down(train.stops().stream().map(Stop::station).toList())).orElse(true);
-                visits.add(new Visit(call.station(), arrive, depart, leavesOnLine || onLine(timetable, call.arrivingTrain(), axis), leavesOnLine,
-                    down));
+                visits.add(new Visit(call.station(), arrive, depart, leavesOnLine || onLine(timetable, arrivingTrain, axis), leavesOnLine, down));
+                made = i;
             }
             List<Segment> segments = path(axis, visits).segments;
             if (!segments.isEmpty())

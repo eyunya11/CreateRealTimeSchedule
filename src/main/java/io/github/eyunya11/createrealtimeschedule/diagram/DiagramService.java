@@ -1,11 +1,8 @@
 package io.github.eyunya11.createrealtimeschedule.diagram;
 
 import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 
 import org.slf4j.Logger;
@@ -19,10 +16,8 @@ import io.github.eyunya11.createrealtimeschedule.network.DiagramRequestPayload;
 import io.github.eyunya11.createrealtimeschedule.network.DiagramSnapshotPayload;
 import io.github.eyunya11.createrealtimeschedule.operation.DutyRun;
 import io.github.eyunya11.createrealtimeschedule.operation.OperationData;
-import io.github.eyunya11.createrealtimeschedule.railway.CreateNetwork;
-import io.github.eyunya11.createrealtimeschedule.railway.Leg;
+import io.github.eyunya11.createrealtimeschedule.operation.TrackFacts;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable;
-import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Line;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.network.PacketDistributor;
@@ -81,23 +76,11 @@ public final class DiagramService {
     }
 
     /**
-     * The axis of each line of the timetable, worked out from the track the first time it is asked for.
-     * Only the lines' stations are searched from, not every station of the network.
+     * The axis of each line of the timetable, worked out from the track the first time it is asked for
+     * ({@link TrackFacts}).
      */
     public static Map<String, LineAxis> axes(OperationData data, Timetable timetable) {
-        Map<String, LineAxis> axes = data.axes();
-        if (axes == null) {
-            Set<String> stations = new HashSet<>();
-            for (Line line : timetable.lines())
-                stations.addAll(line.stations());
-            List<Leg> legs = CreateNetwork.read(Create.RAILWAYS.trackNetworks.values()).legs(stations);
-            Map<String, LineAxis> made = new LinkedHashMap<>();
-            for (Line line : timetable.lines())
-                made.put(line.id(), LineAxis.of(line, legs));
-            data.axes(made);
-            axes = made;
-        }
-        return axes;
+        return TrackFacts.axes(data, timetable);
     }
 
     /** The times of the duties running, and of those that stopped running that the server keeps. */
