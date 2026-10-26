@@ -67,11 +67,14 @@ public final class OperationService {
             findFreeSets(data, timetable, now);
             data.forgetOld(now);
         }
-        startDuties(data, timetable, now, ModSettings.dutyLeadSeconds() * (long) RealClock.TICKS_PER_SECOND);
-        stepRuns(data, now, ModSettings.defaultMinimumStopSeconds() * (long) RealClock.TICKS_PER_SECOND);
+        long lead = ModSettings.dutyLeadSeconds() * (long) RealClock.TICKS_PER_SECOND;
+        long defaultMinimumStop = ModSettings.defaultMinimumStopSeconds() * (long) RealClock.TICKS_PER_SECOND;
+        long threshold = ModSettings.recoveryThresholdSeconds() * (long) RealClock.TICKS_PER_SECOND;
+        startDuties(data, timetable, now, lead);
+        stepRuns(data, timetable, now, defaultMinimumStop, threshold, lead);
     }
 
-    private static void stepRuns(OperationData data, long now, long defaultMinimumStop) {
+    private static void stepRuns(OperationData data, Timetable timetable, long now, long defaultMinimumStop, long threshold, long lead) {
         Iterator<Map.Entry<UUID, DutyRun>> runs = data.runs().entrySet().iterator();
         while (runs.hasNext()) {
             Map.Entry<UUID, DutyRun> entry = runs.next();
@@ -89,6 +92,8 @@ public final class OperationService {
             int call = run.call();
             DutyRun.Phase phase = run.phase();
             Outcome outcome = TrainDriver.step(run, train, now, defaultMinimumStop);
+            if (threshold > 0 && phase == DutyRun.Phase.RUNNING && run.phase() == DutyRun.Phase.STANDING)
+                recover(data, timetable, run, train, now, defaultMinimumStop, threshold, lead);
             if (run.call() != call || run.phase() != phase) {
                 data.timesChanged();
                 data.setDirty();
@@ -111,6 +116,25 @@ public final class OperationService {
                 }
             }
         }
+    }
+
+    /**
+     * Holds a set that has just come in later than the threshold at a station its duty comes back to,
+     * until a later call there, if it can be ({@link Recovery}); the trains in between are cancelled.
+     */
+    private static void recover(OperationData data, Timetable timetable, DutyRun run, Train train, long now, long defaultMinimumStop,
+                                long threshold, long lead) {
+        if (run.departure() - run.plannedDeparture(run.call()) <= threshold)
+            return; // as most sets are: the track need not be looked at
+        Optional<CreateReach> reach = CreateReach.of(train, TrackFacts.legs(data, timetable));
+        if (reach.isEmpty())
+            return;
+        Recovery.Rules rules = new Recovery.Rules(timetable, data.allCalls(), TrackFacts.axes(data, timetable), threshold, defaultMinimumStop,
+            lead);
+        Recovery.onArrival(rules, run, now, reach.get()).ifPresent(hold -> {
+            data.note(now, run.duty(), run.day(), Recovery.note(run, hold));
+            run.hold(hold.to(), hold.departure());
+        });
     }
 
     /** Whether the train can be given a duty from {@code depot}: it stands there, with no duty, no schedule of Create's and nowhere to go. */

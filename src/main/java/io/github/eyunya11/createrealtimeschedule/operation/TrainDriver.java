@@ -93,17 +93,26 @@ public final class TrainDriver {
 
     /** Sends the train to the station of that name it has the best path to; false if it has none. */
     static boolean sendTo(Train train, String station) {
+        DiscoveredPath path = pathTo(train, station);
+        return path != null && train.navigation.startNavigation(path) >= 0;
+    }
+
+    /**
+     * The path the train would be sent on to the station of that name it has the best path to; null if
+     * it has none, or stands there. Finding it leaves the train as it was.
+     */
+    static @Nullable DiscoveredPath pathTo(Train train, String station) {
         if (train.graph == null)
-            return false;
+            return null;
         ArrayList<GlobalStation> stations = new ArrayList<>();
         for (GlobalStation candidate : train.graph.getPoints(EdgePointType.STATION))
             if (station.equals(candidate.name))
                 stations.add(candidate);
         if (stations.isEmpty())
-            return false;
+            return null;
         DiscoveredPath path = train.navigation.findPathTo(stations, Double.MAX_VALUE);
         if (path == null || path.destination == train.getCurrentStation())
-            return false;
-        return train.navigation.startNavigation(path) >= 0;
+            return null;
+        return path;
     }
 }

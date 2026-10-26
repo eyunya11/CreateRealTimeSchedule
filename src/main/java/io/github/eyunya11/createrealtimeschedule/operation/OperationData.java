@@ -2,6 +2,7 @@ package io.github.eyunya11.createrealtimeschedule.operation;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -19,6 +20,7 @@ import io.github.eyunya11.createrealtimeschedule.Createrealtimeschedule;
 import io.github.eyunya11.createrealtimeschedule.clock.RealClock;
 import io.github.eyunya11.createrealtimeschedule.diagram.DutyTimes;
 import io.github.eyunya11.createrealtimeschedule.diagram.LineAxis;
+import io.github.eyunya11.createrealtimeschedule.railway.Leg;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Duty;
 import io.github.eyunya11.createrealtimeschedule.timetable.TimetableJson;
@@ -114,6 +116,8 @@ public final class OperationData extends SavedData {
     private int timesRevision;
     /** Not saved: the diagram's axis of each line, worked out from the track when it is first needed; null until then. */
     private @Nullable Map<String, LineAxis> axes;
+    /** Not saved: the ways between the timetable's stations by their ends, worked out with the axes ({@link TrackFacts}). */
+    private @Nullable Map<List<String>, Leg> legs;
 
     public static OperationData get(MinecraftServer server) {
         return server.overworld().getDataStorage().computeIfAbsent(FACTORY, NAME);
@@ -133,6 +137,11 @@ public final class OperationData extends SavedData {
     /** The calls of the timetable's duty {@code id}, or null if it has none of that id. */
     public @Nullable List<Call> calls(String id) {
         return calls.get(id);
+    }
+
+    /** The calls of each of the timetable's duties, by its id. */
+    public Map<String, List<Call>> allCalls() {
+        return Collections.unmodifiableMap(calls);
     }
 
     /**
@@ -260,8 +269,15 @@ public final class OperationData extends SavedData {
         return axes;
     }
 
-    public void axes(Map<String, LineAxis> axes) {
+    /** The ways between the timetable's stations, by their two ends; null if they have not been worked out, as {@link #axes()}. */
+    public @Nullable Map<List<String>, Leg> legs() {
+        return legs;
+    }
+
+    /** Keeps what the track says of the timetable's stations ({@link TrackFacts}). */
+    public void track(Map<String, LineAxis> axes, Map<List<String>, Leg> legs) {
         this.axes = Map.copyOf(axes);
+        this.legs = Map.copyOf(legs);
     }
 
     /** How many times the duties' times have changed since the server started. */
@@ -274,9 +290,10 @@ public final class OperationData extends SavedData {
         timesRevision++;
     }
 
-    /** Drops the axes, so that they are worked out again, as after the track has changed. */
+    /** Drops the axes and the ways between stations, so that they are worked out again, as after the track has changed. */
     public void forgetAxes() {
         axes = null;
+        legs = null;
         revision++;
     }
 
