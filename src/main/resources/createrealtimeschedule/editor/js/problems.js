@@ -293,10 +293,9 @@
   }
 
   /**
-   * Whether a train that makes stops at the stations named in stops, in order, runs through station
-   * of line, without stopping, on its way from stop from to the next: Line.runsThrough of the mod. On
-   * a loop line it goes round the way that passes fewer stations over all its stops, and down the list
-   * if both pass as many.
+   * Whether a train that makes stops at the stations named in stops, in order, may run through
+   * station of line, without stopping, on its way from stop from to the next: Line.runsThrough of the
+   * mod. On a loop line, which way round it goes is the track's, so every other station may be on its way.
    */
   function runsThrough(line, stops, from, station) {
     const a = line.stations.indexOf(stops[from]);
@@ -304,21 +303,7 @@
     const q = line.stations.indexOf(station);
     if (a < 0 || b < 0 || q < 0 || q === a || q === b)
       return false;
-    if (!line.loop)
-      return Math.min(a, b) < q && q < Math.max(a, b);
-    const n = line.stations.length;
-    const mod = value => ((value % n) + n) % n;
-    let downSteps = 0;
-    let upSteps = 0;
-    for (let k = 0; k + 1 < stops.length; k++) {
-      const i = line.stations.indexOf(stops[k]);
-      const j = line.stations.indexOf(stops[k + 1]);
-      if (i < 0 || j < 0)
-        continue;
-      downSteps += mod(j - i);
-      upSteps += mod(i - j);
-    }
-    return downSteps <= upSteps ? mod(q - a) < mod(b - a) : mod(a - q) < mod(a - b);
+    return line.loop || (Math.min(a, b) < q && q < Math.max(a, b));
   }
 
   /** When train leaves station of its line, or leaves the stop before it to run through it, in seconds, in the order of its stops. */

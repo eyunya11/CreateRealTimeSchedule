@@ -90,11 +90,11 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
         }
 
         /**
-         * Whether a train that makes {@code stops} in order runs through {@code station} of the line,
+         * Whether a train that makes {@code stops} in order may run through {@code station} of the line,
          * without stopping, on its way from stop {@code from} to the next. On a line that is not a loop,
-         * that is a station between the two. On a loop line, it goes round the way that passes fewer
-         * stations over all its stops, and down the list if both pass as many, as the diagram draws a
-         * train the track says nothing of.
+         * that is a station between the two. On a loop line, which way round it goes is the track's,
+         * which the timetable does not know, so every other station of the line may be on its way;
+         * the operation goes by the track (see {@code Waits}).
          */
         public boolean runsThrough(List<String> stops, int from, String station) {
             int a = stations.indexOf(stops.get(from));
@@ -102,22 +102,7 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
             int q = stations.indexOf(station);
             if (a < 0 || b < 0 || q < 0 || q == a || q == b)
                 return false;
-            if (!loop)
-                return Math.min(a, b) < q && q < Math.max(a, b);
-            int n = stations.size();
-            int downSteps = 0;
-            int upSteps = 0;
-            for (int k = 0; k + 1 < stops.size(); k++) {
-                int i = stations.indexOf(stops.get(k));
-                int j = stations.indexOf(stops.get(k + 1));
-                if (i < 0 || j < 0)
-                    continue;
-                downSteps += Math.floorMod(j - i, n);
-                upSteps += Math.floorMod(i - j, n);
-            }
-            return downSteps <= upSteps
-                ? Math.floorMod(q - a, n) < Math.floorMod(b - a, n)
-                : Math.floorMod(a - q, n) < Math.floorMod(a - b, n);
+            return loop || Math.min(a, b) < q && q < Math.max(a, b);
         }
     }
 

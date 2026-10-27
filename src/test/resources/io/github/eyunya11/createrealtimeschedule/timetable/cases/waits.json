@@ -1,5 +1,5 @@
 {
-  "about": "Trains waited for (version 5): one waited for at the last stop, twice, itself, one not in the timetable, at a station not of its line, at a station it neither leaves nor runs through (its last), not before the train leaves, and a longest wait out of range. On the loop, a train runs through the stations the shorter way round.",
+  "about": "Trains waited for (version 5): one waited for at the last stop, twice, itself, one not in the timetable, at a station not of its line, at a station it neither leaves nor runs through (its last), not before the train leaves, and a longest wait out of range. On the loop, a train may run through any station but the two it goes between, either way round, as the track decides.",
   "timetable": {
     "format": "createrealtimeschedule.timetable",
     "version": 5,
@@ -165,6 +165,10 @@
               {
                 "train": "5",
                 "at": "T"
+              },
+              {
+                "train": "5",
+                "at": "R"
               }
             ]
           },
@@ -186,6 +190,6 @@
     "train \"1\", stop 2 \"S2\": waits for train \"4\" at \"S1\", which does not leave it or run through it before this train leaves at 08:06",
     "train \"1\", stop 2 \"S2\": waits for train \"2\" at \"S2\": the longest wait must be 0 to 3600 seconds",
     "train \"1\", stop 3 \"B\": is the last stop, which the train does not leave, so it waits for no train",
-    "train \"6\", stop 2 \"P\": waits for train \"5\" at \"T\", which neither leaves it nor runs through it"
+    "train \"6\", stop 2 \"P\": waits for train \"5\" at \"R\", which neither leaves it nor runs through it"
   ]
 }
