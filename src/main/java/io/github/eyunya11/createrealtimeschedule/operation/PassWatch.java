@@ -41,6 +41,13 @@ public final class PassWatch {
         return train.speed >= 0 ? carriage.getTrailingPoint() : carriage.getLeadingPoint();
     }
 
+    /** Where {@code now}, the end of {@code train}, was on the tick before: back by as far as the train moved. */
+    private static Tail behind(TravellingPoint now, Train train) {
+        TravellingPoint back = new TravellingPoint(now.node1, now.node2, now.edge, now.position, false);
+        back.travel(train.graph, -train.speed, (graph, choices) -> choices.getSecond().getFirst());
+        return new Tail(back.node1, back.node2, back.edge, back.position);
+    }
+
     /**
      * The stations of {@code names} the end of {@code train} has gone past since it was at
      * {@code before}, the tick before.
@@ -48,8 +55,10 @@ public final class PassWatch {
     public static Set<String> passed(@Nullable Tail before, Train train, Set<String> names) {
         Set<String> passed = new HashSet<>();
         TravellingPoint now = tailPoint(train);
-        if (before == null || now == null || now.edge == null || train.graph == null || names.isEmpty())
+        if (now == null || now.edge == null || train.graph == null || names.isEmpty())
             return passed;
+        if (before == null)
+            before = behind(now, train); // first watched, as after a restart: where it was, by how far it moved
         IEdgePointListener seen = (distance, point) -> {
             if (point.getFirst() instanceof GlobalStation station && names.contains(station.name))
                 passed.add(station.name);

@@ -20,6 +20,7 @@ import io.github.eyunya11.createrealtimeschedule.diagram.DutyTimes;
 import io.github.eyunya11.createrealtimeschedule.network.ClipboardRequestPayload.What;
 import io.github.eyunya11.createrealtimeschedule.operation.DutyRun;
 import io.github.eyunya11.createrealtimeschedule.operation.OperationData;
+import io.github.eyunya11.createrealtimeschedule.operation.Waits;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable;
 import io.github.eyunya11.createrealtimeschedule.timetable.TimetableJson;
 import net.minecraft.commands.CommandSourceStack;
@@ -213,9 +214,17 @@ public class TimetableCommandTests {
         helper.assertTrue(data.history().stream().map(record -> record.run().day()).toList().equals(List.of(today - 1, today)),
             "the records kept are not those of today and the day before: " + data.history());
 
+        Waits.Key yesterday = new Waits.Key("1A", today - 1, 1, 0);
+        Waits.Key ofToday = new Waits.Key("1A", today, 1, 0);
+        data.giveUpWait(yesterday);
+        data.giveUpWait(ofToday);
+        data.firstUnseen(yesterday);
         data.forgetOld(now + RealClock.TICKS_PER_DAY);
         helper.assertTrue(data.history().size() == 1 && data.history().getFirst().run().day() == today,
             "a day on, the record of the day before yesterday is kept: " + data.history());
+        helper.assertTrue(!data.waitGivenUp(yesterday) && data.waitGivenUp(ofToday),
+            "a day on, the waits given up are not those of the day before and today");
+        helper.assertTrue(data.firstUnseen(yesterday), "a day on, an unseen wait of the day before yesterday is kept");
 
         data.loadTimetable(TIMETABLE, TimetableJson.parse(TIMETABLE).timetable(), now);
         helper.assertTrue(data.history().size() == 1, "the record of a duty that has not changed is dropped on a reload");

@@ -77,7 +77,7 @@ public final class OperationService {
         long defaultMinimumStop = ModSettings.defaultMinimumStopSeconds() * (long) RealClock.TICKS_PER_SECOND;
         long threshold = ModSettings.recoveryThresholdSeconds() * (long) RealClock.TICKS_PER_SECOND;
         startDuties(data, timetable, now, lead, defaultMinimumStop, threshold, server.getTickCount() % FREE_CHECK_TICKS == 0);
-        watchPasses(data, now);
+        watchPasses(data, timetable, now);
         stepRuns(data, timetable, now, defaultMinimumStop, threshold, lead, ModSettings.maxWaitSeconds() * (long) RealClock.TICKS_PER_SECOND);
     }
 
@@ -85,26 +85,33 @@ public final class OperationService {
      * Records the stations sets run through that a train waits for them to (see {@link Waits}). This
      * comes before the sets are stepped, so that a set waiting for one sees it go past on the same tick.
      */
-    private static void watchPasses(OperationData data, long now) {
-        Waits waits = data.waits();
-        if (waits == null)
-            return;
+    private static void watchPasses(OperationData data, Timetable timetable, long now) {
+        Waits waits = data.waits(TrackFacts.axes(data, timetable));
         Set<UUID> watched = new HashSet<>();
         for (Map.Entry<UUID, DutyRun> entry : data.runs().entrySet()) {
             DutyRun run = entry.getValue();
             Train train = Create.RAILWAYS.trains.get(entry.getKey());
-            if (train == null || (run.phase() != DutyRun.Phase.RUNNING && run.phase() != DutyRun.Phase.DEPARTING))
+            if (train == null || run.finished())
                 continue;
+            // The way it is on, and the one before: the end of a long train can still be short of a
+            // station on that one when its front has come in at the next stop.
             int way = run.phase() == DutyRun.Phase.RUNNING ? run.call() - 1 : run.call();
-            Set<String> stations = waits.watched(run.duty(), way);
-            if (stations.isEmpty())
+            Map<Integer, Set<String>> ways = new HashMap<>();
+            for (int each : new int[] {way, way - 1})
+                if (each >= 0 && !waits.watched(run.duty(), each).isEmpty())
+                    ways.put(each, waits.watched(run.duty(), each));
+            if (ways.isEmpty())
                 continue;
             watched.add(entry.getKey());
+            Set<String> stations = new HashSet<>();
+            ways.values().forEach(stations::addAll);
             for (String station : PassWatch.passed(data.tails().get(entry.getKey()), train, stations))
-                if (!run.passedBy(way, station)) {
-                    run.passed(way, station, now);
-                    data.setDirty();
-                }
+                ways.forEach((each, names) -> {
+                    if (names.contains(station) && !run.passedBy(each, station)) {
+                        run.passed(each, station, now);
+                        data.setDirty();
+                    }
+                });
             PassWatch.Tail tail = PassWatch.tail(train);
             if (tail != null)
                 data.tails().put(entry.getKey(), tail);
@@ -122,15 +129,15 @@ public final class OperationService {
      */
     private static boolean waitsForATrain(OperationData data, Timetable timetable, DutyRun run, long now, long defaultMinimumStop,
                                           long maxWait) {
-        Waits waits = data.waits();
         Call call = run.calls().get(run.call());
-        if (waits == null || call.waits().isEmpty())
+        if (call.waits().isEmpty())
             return false;
+        Waits waits = data.waits(TrackFacts.axes(data, timetable));
         RunTimes times = null;
         for (int index = 0; index < call.waits().size(); index++) {
             Timetable.Wait wait = call.waits().get(index);
-            String about = run.duty() + "/" + run.day() + "/" + run.call() + "/" + index;
-            Waits.Target target = waits.target(call, wait).orElse(null);
+            Waits.Key about = new Waits.Key(run.duty(), run.day(), run.call(), index);
+            Waits.Target target = waits.target(run.duty(), run.call(), index).orElse(null);
             if (target == null)
                 continue; // a train in no duty does not run
             DutyRun theirs = runOf(data, target.duty(), run.day());
@@ -158,16 +165,16 @@ public final class OperationService {
 
     /** The train the set of {@code run} waits for now, due to leave its call; null if it waits for none. */
     public static @Nullable Timetable.Wait waitingFor(OperationData data, DutyRun run, long now) {
-        Waits waits = data.waits();
-        if (waits == null || !run.dueToLeave(now))
-            return null;
+        Timetable timetable = data.timetable();
         Call call = run.calls().get(run.call());
+        if (timetable == null || !run.dueToLeave(now) || call.waits().isEmpty())
+            return null;
+        Waits waits = data.waits(TrackFacts.axes(data, timetable));
         for (int index = 0; index < call.waits().size(); index++) {
-            Timetable.Wait wait = call.waits().get(index);
-            Waits.Target target = waits.target(call, wait).orElse(null);
-            if (target != null && !data.waitGivenUp(run.duty() + "/" + run.day() + "/" + run.call() + "/" + index)
+            Waits.Target target = waits.target(run.duty(), run.call(), index).orElse(null);
+            if (target != null && !data.waitGivenUp(new Waits.Key(run.duty(), run.day(), run.call(), index))
                 && Waits.state(target, runOf(data, target.duty(), run.day())) == Waits.State.WAITING)
-                return wait;
+                return call.waits().get(index);
         }
         return null;
     }
