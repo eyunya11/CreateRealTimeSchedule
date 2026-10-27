@@ -230,6 +230,19 @@ test('a wait is drawn from where the train waited for runs through the station t
   assert.deepEqual(marks, [{ fromSecond: t('08:03'), fromPosition: 30, toSecond: t('08:06'), toPosition: 60 }]);
 });
 
+test('a wait is drawn from the last way the train waited for runs through the station, across the first station of a loop too', () => {
+  // X runs through Depot at 09:42 and again at 10:02, on its way from C round to A: the local waits for the second.
+  const l = line('loop', ['Depot', 'A', 'B', 'C'], true);
+  const a = axis.of(l, [leg('Depot', 'A', 30), leg('A', 'B', 30), leg('B', 'C', 30), leg('C', 'Depot', 30)]);
+  const express = { number: 'X', line: 'loop', type: '', deadhead: false,
+    stops: [stop('C', null, '09:40'), stop('A', '09:44', '09:50'), stop('C', '09:56', '10:00'), stop('A', '10:04')] };
+  const local = { number: '1', line: 'loop', type: '', deadhead: false,
+    stops: [stop('A', null, '10:06'), Object.assign(stop('B', '10:07', '10:10'), { waits: [{ train: 'X', at: 'Depot', maxWait: NONE }] }),
+      stop('C', '10:14')] };
+  const marks = layout.waitMarks({ name: '', lines: [l], trains: [express, local], duties: [] }, a);
+  assert.deepEqual(marks, [{ fromSecond: t('10:02'), fromPosition: 120, toSecond: t('10:10'), toPosition: 60 }]);
+});
+
 test('a wait for a train that calls at the station is drawn from where it leaves, and one for a train on another line not at all', () => {
   const l = line('l', ['A', 'S2', 'B']);
   const a = axis.of(l, [leg('A', 'S2', 50), leg('S2', 'B', 50)]);
