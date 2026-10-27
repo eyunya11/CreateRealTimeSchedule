@@ -70,6 +70,16 @@ class DutyRunTest {
         assertEquals(MINIMUM, run.delay(at("08:00")));
     }
 
+    /** A set held at a call past its time to leave, as by a train it waits for, is as late as it is held. */
+    @Test
+    void aSetStandingPastItsTimeIsAsLateAsNow() {
+        DutyRun run = started();
+        run.left(at("07:50"));
+        run.arrived(at("07:58"), MINIMUM);
+        assertEquals(0, run.delay(at("07:59")));
+        assertEquals(3 * RealClock.TICKS_PER_MINUTE, run.delay(at("08:03")));
+    }
+
     @Test
     void aLateSetStopsForTheMinimumTheTimetableGivesTheCall() {
         List<Call> calls = List.of(new Call("Depot", -1, OperationTimetables.t("07:50"), "", "D1"),

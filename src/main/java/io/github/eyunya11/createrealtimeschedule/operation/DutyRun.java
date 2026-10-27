@@ -385,8 +385,8 @@ public final class DutyRun {
      */
     public long delay(long now) {
         return switch (phase) {
-            case STANDING -> departure - plannedDeparture(call);
-            case DEPARTING -> Math.max(departure, now) - plannedDeparture(call);
+            // Held past its time to leave, by a signal or by a train it waits for, it is as late as now.
+            case STANDING, DEPARTING -> Math.max(departure, now) - plannedDeparture(call);
             case RUNNING -> departures[previousMade(call)] - plannedDeparture(previousMade(call));
             case FINISHED -> calls.get(call).hasArrive() ? arrivals[call] - plannedArrival(call) : 0;
         };
