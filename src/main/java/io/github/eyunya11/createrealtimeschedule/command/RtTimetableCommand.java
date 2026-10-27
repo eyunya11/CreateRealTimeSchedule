@@ -20,6 +20,7 @@ import io.github.eyunya11.createrealtimeschedule.operation.DutyCalendar;
 import io.github.eyunya11.createrealtimeschedule.operation.DutyPlan;
 import io.github.eyunya11.createrealtimeschedule.operation.DutyRun;
 import io.github.eyunya11.createrealtimeschedule.operation.OperationData;
+import io.github.eyunya11.createrealtimeschedule.operation.OperationService;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Duty;
 import io.github.eyunya11.createrealtimeschedule.timetable.TimetableJson;
@@ -158,6 +159,10 @@ public final class RtTimetableCommand {
                 continue;
             Train train = Create.RAILWAYS.trains.get(entry.getKey());
             String set = train == null ? entry.getKey().toString() : train.name.getString();
+            Timetable.Wait waitingFor = OperationService.waitingFor(data, run, now);
+            if (waitingFor != null)
+                return Component.translatableWithFallback(KEY + "waiting_for", "%1$s: %2$s at %3$s waits for train %4$s to leave %5$s or run through it (%6$s)",
+                    duty.id(), set, run.calls().get(run.call()).station(), waitingFor.train(), waitingFor.at(), TimeText.delay(run.delay(now)));
             if (run.phase() == DutyRun.Phase.STANDING || run.phase() == DutyRun.Phase.DEPARTING)
                 return Component.translatableWithFallback(KEY + "standing", "%1$s: %2$s at %3$s, leaves at %4$s (%5$s)",
                     duty.id(), set, run.calls().get(run.call()).station(), TimeText.clock(run.departure()), TimeText.delay(run.delay(now)));

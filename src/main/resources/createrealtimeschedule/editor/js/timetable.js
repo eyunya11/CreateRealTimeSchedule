@@ -1,5 +1,5 @@
 /*
- * Reads and writes a timetable as JSON (up to version 4 of the format), as TimetableJson does in the mod.
+ * Reads and writes a timetable as JSON (up to version 5 of the format), as TimetableJson does in the mod.
  *
  * Writing gives the same text as the mod, member for member and line for line. Reading checks the
  * same things in the same order and says them in the same words, with one difference: the browser's
@@ -24,11 +24,12 @@
 
   /**
    * The newest version of the JSON the editor reads. Version 3 added the stations' times and the
-   * stops' minimum stops, and version 4 the trains that are never cancelled to get a late set back on
-   * time (keep); a timetable is written in the oldest version that holds it (version()), so that a mod
-   * that reads only version 2 still takes one that has none of them.
+   * stops' minimum stops, version 4 the trains that are never cancelled to get a late set back on time
+   * (keep), and version 5 the trains a stop waits for (waits); a timetable is written in the oldest
+   * version that holds it (version()), so that a mod that reads only version 2 still takes one that
+   * has none of them.
    */
-  const VERSION = 4;
+  const VERSION = 5;
 
   /** The most problems reported at once; the rest are counted. */
   const MAX_PROBLEMS = 50;
@@ -115,7 +116,7 @@
      * A whole number of seconds, or NONE if it is not there. One that is too long is for
      * problems.js; one below 0 is refused here, as it would read as none.
      */
-    seconds(key) {
+    seconds(key, max) {
       const value = this.get(key);
       if (value === null)
         return NONE;
@@ -124,7 +125,7 @@
         return NONE;
       }
       if (value < 0)
-        this.problems.add(this.at(key), 'must be 0 to ' + check.MAX_STOP_SECONDS + ' seconds');
+        this.problems.add(this.at(key), 'must be 0 to ' + max + ' seconds');
       return Math.max(value, NONE);
     }
 
@@ -230,23 +231,35 @@
 
   function readStation(f) {
     const name = orEmpty(f.string('name', true));
-    const dwell = f.seconds('dwell');
-    const minimumStop = f.seconds('minimum_stop');
+    const dwell = f.seconds('dwell', check.MAX_STOP_SECONDS);
+    const minimumStop = f.seconds('minimum_stop', check.MAX_STOP_SECONDS);
     f.finish();
     return { name, dwell, minimumStop };
   }
 
-  /** A stop; it has a minimumStop only when it has one of its own. */
+  /** A stop; it has a minimumStop only when it has one of its own, and waits only when it waits for a train. */
   function readStop(f) {
     const station = orEmpty(f.string('station', true));
     const arrive = readTime(f, 'arrive');
     const depart = readTime(f, 'depart');
-    const minimumStop = f.seconds('minimum_stop');
+    const minimumStop = f.seconds('minimum_stop', check.MAX_STOP_SECONDS);
+    const waits = f.objects('wait_for', false).map(readWait);
     f.finish();
     const stop = { station, arrive, depart };
     if (minimumStop !== NONE)
       stop.minimumStop = minimumStop;
+    if (waits.length > 0)
+      stop.waits = waits;
     return stop;
+  }
+
+  /** A train a stop waits for: at is '' for the stop's own station, maxWait NONE for the server's. */
+  function readWait(f) {
+    const train = orEmpty(f.string('train', true));
+    const at = orEmpty(f.string('at', false));
+    const maxWait = f.seconds('max_wait', check.MAX_WAIT_SECONDS);
+    f.finish();
+    return { train, at, maxWait };
   }
 
   function readTrain(f) {
@@ -324,10 +337,12 @@
   }
 
   /**
-   * The oldest version of the JSON that holds the timetable: 4 if it has a train that is never
-   * cancelled, else 3 if it has anything version 3 added, else 2.
+   * The oldest version of the JSON that holds the timetable: 5 if a stop waits for a train, else 4 if
+   * it has a train that is never cancelled, else 3 if it has anything version 3 added, else 2.
    */
   function version(timetable) {
+    if (timetable.trains.some(train => train.stops.some(stop => stop.waits !== undefined && stop.waits.length > 0)))
+      return 5;
     if (timetable.trains.some(train => train.keep === true))
       return 4;
     const three = stationsOf(timetable).length > 0 || timetable.trains.some(train => train.stops.some(hasMinimumStop));
@@ -370,6 +385,15 @@
           stopEntries.push(['depart', out.text(time.show(stop.depart))]);
         if (hasMinimumStop(stop))
           stopEntries.push(['minimum_stop', out.raw(String(stop.minimumStop))]);
+        if (stop.waits !== undefined && stop.waits.length > 0)
+          stopEntries.push(['wait_for', out.list(stop.waits.map(wait => {
+            const waitEntries = [['train', out.text(wait.train)]];
+            if (wait.at !== undefined && wait.at !== '')
+              waitEntries.push(['at', out.text(wait.at)]);
+            if (wait.maxWait !== undefined && wait.maxWait !== NONE)
+              waitEntries.push(['max_wait', out.raw(String(wait.maxWait))]);
+            return out.map(waitEntries);
+          }))]);
         return out.map(stopEntries);
       });
       entries.push(['stops', out.list(stops)]);

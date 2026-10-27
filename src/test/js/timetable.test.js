@@ -67,10 +67,22 @@ test('a timetable not of the right shape is not read', () => {
 });
 
 test('a newer version is not read, and says the editor needs updating', () => {
-  const result = timetable.read('{"format": "createrealtimeschedule.timetable", "version": 5, "whatever": 1}');
+  const result = timetable.read('{"format": "createrealtimeschedule.timetable", "version": 6, "whatever": 1}');
   assert.equal(result.timetable, null);
   assert.deepEqual(result.problems,
-    ['version: is 5, but this editor reads timetables up to version 4; the editor needs updating to read this one']);
+    ['version: is 6, but this editor reads timetables up to version 5; the editor needs updating to read this one']);
+});
+
+test('the trains a stop waits for are read and written back as the mod writes them, as version 5', () => {
+  const text = readText(path.join(RESOURCES, 'timetable', 'example-waits.json'));
+  const result = timetable.read(text);
+  assert.deepEqual(result.problems, []);
+  assert.deepEqual(result.timetable.trains[0].stops[1].waits, [{ train: '3001', at: 'S1', maxWait: -1 }, { train: '2', at: '', maxWait: 120 }]);
+  assert.equal('waits' in result.timetable.trains[0].stops[0], false, 'a stop that waits for nothing has no waits');
+  assert.equal(timetable.version(result.timetable), 5);
+  assert.equal(timetable.write(result.timetable), text);
+  assert.deepEqual(timetable.read(text.replace('"max_wait": 120', '"max_wait": -1')).problems,
+    ['trains[0].stops[1].wait_for[1].max_wait: must be 0 to 3600 seconds']);
 });
 
 test('a train that is never cancelled is read and written back as the mod writes it, as version 4', () => {

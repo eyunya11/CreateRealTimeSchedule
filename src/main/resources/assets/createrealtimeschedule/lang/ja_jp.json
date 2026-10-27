@@ -14,6 +14,7 @@
   "commands.createrealtimeschedule.rttimetable.none": "運行中のダイヤはありません",
   "commands.createrealtimeschedule.rttimetable.header": "ダイヤ %1$s: 運用 %2$s、走行中 %3$s",
   "commands.createrealtimeschedule.rttimetable.standing": "%1$s: %2$s が %3$s に停車中、%4$s 発(%5$s)",
+  "commands.createrealtimeschedule.rttimetable.waiting_for": "%1$s: %2$s が %3$s で、列車 %4$s が %5$s を出る(通る)のを待っている(%6$s)",
   "commands.createrealtimeschedule.rttimetable.running": "%1$s: %2$s が %3$s へ走行中(%4$s)",
   "commands.createrealtimeschedule.rttimetable.waiting": "%1$s: 次は %2$s を %3$s に出る",
   "commands.createrealtimeschedule.rttimetable.late": "%1$s: %2$s を %3$s に出るはずでした。空いた列車を待って、遅れて出ます",

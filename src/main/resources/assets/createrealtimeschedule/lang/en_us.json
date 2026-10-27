@@ -14,6 +14,7 @@
   "commands.createrealtimeschedule.rttimetable.none": "No timetable is being run",
   "commands.createrealtimeschedule.rttimetable.header": "Timetable %1$s: %2$s duties, %3$s running",
   "commands.createrealtimeschedule.rttimetable.standing": "%1$s: %2$s at %3$s, leaves at %4$s (%5$s)",
+  "commands.createrealtimeschedule.rttimetable.waiting_for": "%1$s: %2$s at %3$s waits for train %4$s to leave %5$s or run through it (%6$s)",
   "commands.createrealtimeschedule.rttimetable.running": "%1$s: %2$s on the way to %3$s (%4$s)",
   "commands.createrealtimeschedule.rttimetable.waiting": "%1$s: next leaves %2$s at %3$s",
   "commands.createrealtimeschedule.rttimetable.late": "%1$s: was to leave %2$s at %3$s; waits for a free set to start late",

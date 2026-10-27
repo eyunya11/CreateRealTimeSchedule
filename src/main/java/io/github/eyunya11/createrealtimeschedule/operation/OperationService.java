@@ -11,6 +11,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
+import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 
 import com.mojang.logging.LogUtils;
@@ -76,10 +77,118 @@ public final class OperationService {
         long defaultMinimumStop = ModSettings.defaultMinimumStopSeconds() * (long) RealClock.TICKS_PER_SECOND;
         long threshold = ModSettings.recoveryThresholdSeconds() * (long) RealClock.TICKS_PER_SECOND;
         startDuties(data, timetable, now, lead, defaultMinimumStop, threshold, server.getTickCount() % FREE_CHECK_TICKS == 0);
-        stepRuns(data, timetable, now, defaultMinimumStop, threshold, lead);
+        watchPasses(data, timetable, now);
+        stepRuns(data, timetable, now, defaultMinimumStop, threshold, lead, ModSettings.maxWaitSeconds() * (long) RealClock.TICKS_PER_SECOND);
     }
 
-    private static void stepRuns(OperationData data, Timetable timetable, long now, long defaultMinimumStop, long threshold, long lead) {
+    /**
+     * Records the stations sets run through that a train waits for them to (see {@link Waits}). This
+     * comes before the sets are stepped, so that a set waiting for one sees it go past on the same tick.
+     */
+    private static void watchPasses(OperationData data, Timetable timetable, long now) {
+        Waits waits = data.waits(TrackFacts.axes(data, timetable));
+        Set<UUID> watched = new HashSet<>();
+        for (Map.Entry<UUID, DutyRun> entry : data.runs().entrySet()) {
+            DutyRun run = entry.getValue();
+            Train train = Create.RAILWAYS.trains.get(entry.getKey());
+            if (train == null || run.finished())
+                continue;
+            // The way it is on, and the one before: the end of a long train can still be short of a
+            // station on that one when its front has come in at the next stop.
+            int way = run.phase() == DutyRun.Phase.RUNNING ? run.call() - 1 : run.call();
+            Map<Integer, Set<String>> ways = new HashMap<>();
+            for (int each : new int[] {way, way - 1})
+                if (each >= 0 && !waits.watched(run.duty(), each).isEmpty())
+                    ways.put(each, waits.watched(run.duty(), each));
+            if (ways.isEmpty())
+                continue;
+            watched.add(entry.getKey());
+            Set<String> stations = new HashSet<>();
+            ways.values().forEach(stations::addAll);
+            for (String station : PassWatch.passed(data.tails().get(entry.getKey()), train, stations))
+                ways.forEach((each, names) -> {
+                    if (names.contains(station) && !run.passedBy(each, station)) {
+                        run.passed(each, station, now);
+                        data.setDirty();
+                    }
+                });
+            PassWatch.Tail tail = PassWatch.tail(train);
+            if (tail != null)
+                data.tails().put(entry.getKey(), tail);
+        }
+        data.tails().keySet().retainAll(watched);
+    }
+
+    /**
+     * Whether the set of {@code run}, due to leave its call, is still to wait for a train there (see
+     * {@link Waits}): one it waits for that has not left the station or run through it yet, unless
+     * that is past the longest wait, or is forecast to be. A wait given up so is noted, once, and so is
+     * one that ended without the train being seen to run through the station.
+     *
+     * @param maxWait the longest wait, in ticks, of a wait that does not say
+     */
+    private static boolean waitsForATrain(OperationData data, Timetable timetable, DutyRun run, long now, long defaultMinimumStop,
+                                          long maxWait) {
+        Call call = run.calls().get(run.call());
+        if (call.waits().isEmpty())
+            return false;
+        Waits waits = data.waits(TrackFacts.axes(data, timetable));
+        RunTimes times = null;
+        for (int index = 0; index < call.waits().size(); index++) {
+            Timetable.Wait wait = call.waits().get(index);
+            Waits.Key about = new Waits.Key(run.duty(), run.day(), run.call(), index);
+            Waits.Target target = waits.target(run.duty(), run.call(), index).orElse(null);
+            if (target == null)
+                continue; // a train in no duty does not run
+            DutyRun theirs = runOf(data, target.duty(), run.day());
+            Waits.State state = Waits.state(target, theirs);
+            if (state == Waits.State.OVER_UNSEEN && data.firstUnseen(about))
+                data.note(now, run.duty(), run.day(), "train " + wait.train() + " came in after " + wait.at()
+                    + " without being seen to run through it: the track has no station " + wait.at() + " on its way");
+            if (state != Waits.State.WAITING || data.waitGivenUp(about))
+                continue;
+            long longest = run.departure() + (wait.hasMaxWait() ? wait.maxWait() * (long) RealClock.TICKS_PER_SECOND : maxWait);
+            if (times == null)
+                times = unpoweredTimes(data, timetable);
+            long forecast = Waits.forecast(target, theirs, now, times, defaultMinimumStop);
+            if (now > longest || forecast > longest) {
+                data.giveUpWait(about);
+                data.note(now, run.duty(), run.day(), "did not wait " + (now > longest ? "longer " : "") + "for train " + wait.train()
+                    + " to leave " + wait.at() + " or run through it: it was " + (now > longest ? "not there by " : "forecast to be there at ")
+                    + RealClock.format(now > longest ? longest : forecast));
+                continue;
+            }
+            return true;
+        }
+        return false;
+    }
+
+    /** The train the set of {@code run} waits for now, due to leave its call; null if it waits for none. */
+    public static @Nullable Timetable.Wait waitingFor(OperationData data, DutyRun run, long now) {
+        Timetable timetable = data.timetable();
+        Call call = run.calls().get(run.call());
+        if (timetable == null || !run.dueToLeave(now) || call.waits().isEmpty())
+            return null;
+        Waits waits = data.waits(TrackFacts.axes(data, timetable));
+        for (int index = 0; index < call.waits().size(); index++) {
+            Waits.Target target = waits.target(run.duty(), run.call(), index).orElse(null);
+            if (target != null && !data.waitGivenUp(new Waits.Key(run.duty(), run.day(), run.call(), index))
+                && Waits.state(target, runOf(data, target.duty(), run.day())) == Waits.State.WAITING)
+                return call.waits().get(index);
+        }
+        return null;
+    }
+
+    /** The run of {@code duty} on service {@code day} that is going on; null if none is. */
+    private static @Nullable DutyRun runOf(OperationData data, String duty, long day) {
+        for (DutyRun run : data.runs().values())
+            if (run.duty().equals(duty) && run.day() == day)
+                return run;
+        return null;
+    }
+
+    private static void stepRuns(OperationData data, Timetable timetable, long now, long defaultMinimumStop, long threshold, long lead,
+                                 long maxWait) {
         Iterator<Map.Entry<UUID, DutyRun>> runs = data.runs().entrySet().iterator();
         while (runs.hasNext()) {
             Map.Entry<UUID, DutyRun> entry = runs.next();
@@ -96,7 +205,8 @@ public final class OperationService {
             }
             int call = run.call();
             DutyRun.Phase phase = run.phase();
-            Outcome outcome = TrainDriver.step(run, train, now, defaultMinimumStop);
+            boolean waiting = run.dueToLeave(now) && waitsForATrain(data, timetable, run, now, defaultMinimumStop, maxWait);
+            Outcome outcome = waiting ? Outcome.GOING : TrainDriver.step(run, train, now, defaultMinimumStop);
             if (phase == DutyRun.Phase.RUNNING && run.phase() == DutyRun.Phase.STANDING)
                 recover(data, timetable, run, train, now, defaultMinimumStop, threshold, lead);
             if (run.call() != call || run.phase() != phase) {

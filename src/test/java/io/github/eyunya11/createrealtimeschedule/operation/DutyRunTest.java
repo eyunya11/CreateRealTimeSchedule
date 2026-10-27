@@ -70,6 +70,16 @@ class DutyRunTest {
         assertEquals(MINIMUM, run.delay(at("08:00")));
     }
 
+    /** A set held at a call past its time to leave, as by a train it waits for, is as late as it is held. */
+    @Test
+    void aSetStandingPastItsTimeIsAsLateAsNow() {
+        DutyRun run = started();
+        run.left(at("07:50"));
+        run.arrived(at("07:58"), MINIMUM);
+        assertEquals(0, run.delay(at("07:59")));
+        assertEquals(3 * RealClock.TICKS_PER_MINUTE, run.delay(at("08:03")));
+    }
+
     @Test
     void aLateSetStopsForTheMinimumTheTimetableGivesTheCall() {
         List<Call> calls = List.of(new Call("Depot", -1, OperationTimetables.t("07:50"), "", "D1"),
@@ -214,6 +224,26 @@ class DutyRunTest {
     private static DutyRun.State withSkipped(DutyRun.State state, List<Integer> skipped) {
         return new DutyRun.State(state.duty(), state.day(), state.call(), state.phase(), state.departure(), state.arrivals(), state.departures(),
             skipped);
+    }
+
+    @Test
+    void theStationsASetRunsThroughAreKeptOnceAndSaved() {
+        DutyRun run = started();
+        run.left(at("07:50"));
+        run.arrived(at("07:55"), MINIMUM);
+        run.left(at("08:00"));
+        run.passed(1, "X", at("08:02"));
+        run.passed(1, "X", at("08:03"));
+        assertTrue(run.passedBy(1, "X"));
+        assertFalse(run.passedBy(2, "X"));
+        assertEquals(List.of(new DutyRun.Pass(1, "X", at("08:02"))), run.passes(), "the first time it is seen");
+        DutyRun again = DutyRun.restore(run.state(), CALLS);
+        assertEquals(run.state(), again.state());
+        assertTrue(again.passedBy(1, "X"));
+        DutyRun.State state = run.state();
+        assertThrows(IllegalArgumentException.class, () -> DutyRun.restore(new DutyRun.State(state.duty(), state.day(), state.call(), state.phase(),
+            state.departure(), state.arrivals(), state.departures(), state.skipped(), List.of(new DutyRun.Pass(5, "X", 0))), CALLS),
+            "the last call has no way on");
     }
 
     @Test

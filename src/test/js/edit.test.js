@@ -335,3 +335,36 @@ test('a drag lands the time it takes hold of on the step, whichever part of the 
   assert.ok(edit.sameStops(off, edit.setStopTime(off, '1', 0, 'depart', t('07:00')), '3'), 'another train changing is no change of this one');
   assert.ok(!edit.sameStops(off, tt, '3'));
 });
+
+/** Train 1 on line a waits at X for train 3, which runs X to Y a minute before it. */
+function withWait() {
+  const base = timetable();
+  base.trains.push({ number: '3', line: 'a', type: '', deadhead: false,
+    stops: [{ station: 'X', arrive: NONE, depart: t('07:59') }, { station: 'Y', arrive: t('08:04'), depart: NONE }] });
+  return edit.setStopWaits(base, '1', 0, [{ train: '3', at: '', maxWait: NONE }]);
+}
+
+test('a stop waits for the trains set, and for none once they are taken away', () => {
+  const waiting = withWait();
+  assert.deepEqual(waiting.trains[0].stops[0].waits, [{ train: '3', at: '', maxWait: NONE }]);
+  // The base timetable's duty does not come back to its depot; the wait adds no problem of its own.
+  assert.deepEqual(problems.problems(waiting), problems.problems(timetable()));
+  assert.deepEqual(edit.copy(waiting).trains[0].stops[0].waits, waiting.trains[0].stops[0].waits, 'a copy keeps the waits');
+  assert.deepEqual(edit.shiftTrain(waiting, '1', 60).trains[0].stops[0].waits, waiting.trains[0].stops[0].waits);
+  assert.equal('waits' in edit.setStopWaits(waiting, '1', 0, []).trains[0].stops[0], false);
+});
+
+test('the waits for a train follow it when it is renumbered, and go when it is taken out', () => {
+  const renumbered = edit.setTrain(withWait(), '3', { number: '3001' });
+  assert.equal(renumbered.trains[0].stops[0].waits[0].train, '3001');
+  assert.deepEqual(problems.problems(renumbered), problems.problems(timetable()));
+  assert.equal('waits' in edit.removeTrain(withWait(), '3').trains[0].stops[0], false);
+});
+
+test('a stop that becomes the last when the one after it is taken out waits for no train', () => {
+  const base = withWait();
+  const three = edit.addTrain(base, { number: '4', line: 'a', type: '', deadhead: false, stops: [
+    { station: 'X', arrive: NONE, depart: t('09:00') }, { station: 'Y', arrive: t('09:05'), depart: t('09:06') }, { station: 'X', arrive: t('09:10'), depart: NONE }] });
+  const waiting = edit.setStopWaits(three, '4', 1, [{ train: '3', at: 'X', maxWait: 60 }]);
+  assert.equal('waits' in edit.removeStop(waiting, '4', 2).trains.find(train => train.number === '4').stops[1], false);
+});

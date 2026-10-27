@@ -1,0 +1,52 @@
+{
+  "format": "createrealtimeschedule.timetable",
+  "version": 5,
+  "name": "Overtaking",
+  "lines": [
+    {
+      "id": "l",
+      "name": "Line",
+      "stations": ["A", "S1", "S2", "B"]
+    }
+  ],
+  "trains": [
+    {
+      "number": "1",
+      "line": "l",
+      "type": "local",
+      "stops": [
+        {"station": "A", "depart": "07:58"},
+        {
+          "station": "S2",
+          "arrive": "08:03",
+          "depart": "08:06",
+          "wait_for": [
+            {"train": "3001", "at": "S1"},
+            {"train": "2", "max_wait": 120}
+          ]
+        },
+        {"station": "B", "arrive": "08:15"}
+      ]
+    },
+    {
+      "number": "2",
+      "line": "l",
+      "type": "local",
+      "stops": [
+        {"station": "A", "depart": "07:55"},
+        {"station": "S2", "arrive": "08:00", "depart": "08:04"},
+        {"station": "B", "arrive": "08:12"}
+      ]
+    },
+    {
+      "number": "3001",
+      "line": "l",
+      "type": "rapid",
+      "stops": [
+        {"station": "A", "depart": "08:00"},
+        {"station": "B", "arrive": "08:10"}
+      ]
+    }
+  ],
+  "duties": []
+}

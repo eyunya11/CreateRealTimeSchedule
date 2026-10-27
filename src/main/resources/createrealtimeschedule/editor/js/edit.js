@@ -12,11 +12,13 @@
 
   const NONE = check.NONE;
 
-  /** A stop as it is, with a minimumStop only if it has one of its own. */
+  /** A stop as it is, with a minimumStop only if it has one of its own, and waits only if it waits for a train. */
   function copyStop(stop) {
     const made = { station: stop.station, arrive: stop.arrive, depart: stop.depart };
     if (stop.minimumStop !== undefined && stop.minimumStop !== NONE)
       made.minimumStop = stop.minimumStop;
+    if (stop.waits !== undefined && stop.waits.length > 0)
+      made.waits = stop.waits.map(wait => ({ train: wait.train, at: wait.at, maxWait: wait.maxWait }));
     return made;
   }
 
@@ -155,16 +157,23 @@
     return next;
   }
 
-  /** Takes a train out, and out of the duties it was in. */
+  /** Takes a train out, and out of the duties it was in and the waits for it. */
   function removeTrain(timetable, number) {
     const next = copy(timetable);
     next.trains = next.trains.filter(train => train.number !== number);
     for (const duty of next.duties)
       duty.trains = duty.trains.filter(each => each !== number);
+    for (const train of next.trains)
+      for (const stop of train.stops)
+        if (stop.waits !== undefined) {
+          stop.waits = stop.waits.filter(wait => wait.train !== number);
+          if (stop.waits.length === 0)
+            delete stop.waits;
+        }
     return next;
   }
 
-  /** Changes a train's number, type, deadhead mark and keep mark; its duties follow a new number. */
+  /** Changes a train's number, type, deadhead mark and keep mark; its duties, and the waits for it, follow a new number. */
   function setTrain(timetable, number, fields) {
     const next = copy(timetable);
     const train = trainAt(next, number);
@@ -180,6 +189,11 @@
       train.number = fields.number;
       for (const duty of next.duties)
         duty.trains = duty.trains.map(each => each === number ? fields.number : each);
+      for (const other of next.trains)
+        for (const stop of other.stops)
+          for (const wait of stop.waits || [])
+            if (wait.train === number)
+              wait.train = fields.number;
     }
     return next;
   }
@@ -443,6 +457,20 @@
     return next;
   }
 
+  /**
+   * Sets the trains a train waits for at a stop: {train, at, maxWait} each, at '' for the stop's own
+   * station and maxWait NONE for the server's; none takes the waits away.
+   */
+  function setStopWaits(timetable, number, index, waits) {
+    const next = copy(timetable);
+    const stop = trainAt(next, number).stops[index];
+    if (waits.length === 0)
+      delete stop.waits;
+    else
+      stop.waits = waits.map(wait => ({ train: wait.train, at: wait.at, maxWait: wait.maxWait }));
+    return next;
+  }
+
   function setStopStation(timetable, number, index, station) {
     const next = copy(timetable);
     trainAt(next, number).stops[index].station = station;
@@ -458,6 +486,7 @@
       stops[0].arrive = NONE;
       stops[stops.length - 1].depart = NONE;
       delete stops[stops.length - 1].minimumStop;
+      delete stops[stops.length - 1].waits;
     }
     return next;
   }
@@ -547,7 +576,7 @@
 
   return {
     NONE, copy, setName, putLine, removeLine, stationTimes, dwellAt, setStations,
-    nextNumber, addTrain, removeTrain, setTrain, stopLimits, moveStop, moveRun, moveArrival, stretchStop, draggedTime, drag, sameStops, shiftTrain, setStopTime, setDwell, setStopMinimum, setStopStation,
+    nextNumber, addTrain, removeTrain, setTrain, stopLimits, moveStop, moveRun, moveArrival, stretchStop, draggedTime, drag, sameStops, shiftTrain, setStopTime, setDwell, setStopMinimum, setStopWaits, setStopStation,
     removeStop, tooFast,
     snap, snapUp, snapDown, drawStop, drawClick, setDrawnDwell, finishDrawing,
   };

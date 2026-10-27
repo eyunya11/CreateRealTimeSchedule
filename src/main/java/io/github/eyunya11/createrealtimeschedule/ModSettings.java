@@ -3,6 +3,7 @@ package io.github.eyunya11.createrealtimeschedule;
 import java.util.function.Supplier;
 
 import io.github.eyunya11.createrealtimeschedule.clock.RealClock;
+import io.github.eyunya11.createrealtimeschedule.timetable.Timetable;
 import net.neoforged.neoforge.common.ModConfigSpec;
 
 /**
@@ -34,6 +35,8 @@ public final class ModSettings {
     public static final int DEFAULT_RECOVERY_THRESHOLD_SECONDS = 600;
     /** The highest such threshold the config allows. */
     public static final int MAX_RECOVERY_THRESHOLD_SECONDS = 7200;
+    /** The longest a train waits for another past its own time to leave, until the config or the timetable says otherwise. */
+    public static final int DEFAULT_MAX_WAIT_SECONDS = 300;
 
     private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
 
@@ -74,6 +77,13 @@ public final class ModSettings {
             "0 turns both off: a late train runs on late, and a duty with no free train by its time does not run that day.")
         .defineInRange("recovery_threshold_seconds", DEFAULT_RECOVERY_THRESHOLD_SECONDS, 0, MAX_RECOVERY_THRESHOLD_SECONDS);
 
+    private static final ModConfigSpec.IntValue MAX_WAIT = BUILDER
+        .comment("How many seconds past its own time to leave a train running a duty of the timetable loaded with /rttimetable",
+            "waits at the most for a train the timetable has it wait for (one it stands aside for, or one that leaves first).",
+            "It leaves without waiting when that train is forecast to be later than this. A wait of the timetable may say its own.",
+            "0 waits only while that costs no time.")
+        .defineInRange("max_wait_seconds", DEFAULT_MAX_WAIT_SECONDS, 0, Timetable.MAX_WAIT_SECONDS);
+
     public static final ModConfigSpec SPEC = BUILDER.build();
 
     private ModSettings() {}
@@ -100,6 +110,11 @@ public final class ModSettings {
     /** How many seconds before a duty first leaves it is given a set. */
     public static int dutyLeadSeconds() {
         return read(SPEC.isLoaded(), DUTY_LEAD, DEFAULT_DUTY_LEAD_SECONDS);
+    }
+
+    /** How many seconds past its own time a set waits at the most for a train a wait of the timetable gives no longest wait for. */
+    public static int maxWaitSeconds() {
+        return read(SPEC.isLoaded(), MAX_WAIT, DEFAULT_MAX_WAIT_SECONDS);
     }
 
     /** How many seconds late a set may be before trains are cancelled to get it back on time; 0 if never. */

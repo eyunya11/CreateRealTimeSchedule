@@ -226,5 +226,81 @@
     }
   }
 
-  return { plannedTrain, plannedTrains, View, MIN_SPAN, MAX_SPAN };
+  /**
+   * The arrows the diagram draws for the waits of the trains on the axis's line: from where the train
+   * waited for leaves its station, or runs through it, to where the waiting train leaves; both on the
+   * line. Of a train that does either more than once, the last before the waiting train leaves, as the
+   * mod waits for.
+   */
+  function waitMarks(timetable, axis) {
+    const planned = new Map(plannedTrains(timetable, axis).map(train => [train.number, train]));
+    const marks = [];
+    for (const train of timetable.trains) {
+      if (train.line !== axis.line)
+        continue;
+      train.stops.forEach((stop, k) => {
+        if (stop.waits === undefined || k === train.stops.length - 1 || stop.depart === NONE)
+          return;
+        const point = planned.get(train.number).points[k];
+        for (const wait of stop.waits) {
+          const other = timetable.trains.find(each => each.number === wait.train);
+          if (other === undefined || other.line !== axis.line || other.number === train.number)
+            continue;
+          const from = leavesAt(other, planned.get(other.number), axis, check.waitStation(wait, stop.station), stop.depart);
+          if (from !== null && !Number.isNaN(point.departSecond))
+            marks.push({ fromSecond: from.second, fromPosition: from.position, toSecond: point.departSecond, toPosition: point.departPosition });
+        }
+      });
+    }
+    return marks;
+  }
+
+  /**
+   * Where on the diagram train leaves station, or runs through it, for the last time before
+   * before seconds; null if it does neither. It runs through the station where its line on the
+   * diagram crosses the station's row, which goes the way round a loop line the axis has it, as the
+   * mod waits for.
+   */
+  function leavesAt(train, planned, axis, station, before) {
+    let found = null;
+    for (let s = 0; s + 1 < train.stops.length; s++) {
+      const stop = train.stops[s];
+      if (stop.depart === NONE || stop.depart >= before)
+        continue;
+      const crossing = stop.station === station
+        ? { second: planned.points[s].departSecond, position: planned.points[s].departPosition }
+        : through(planned, stop.depart, train.stops[s + 1], axis, station);
+      if (crossing !== null)
+        found = crossing;
+    }
+    return found;
+  }
+
+  /**
+   * Where the way that leaves at from and comes in at the stop next crosses the row of station: within
+   * a segment, or where a way across the first station of a loop line is cut at the bottom row.
+   */
+  function through(planned, from, next, axis, station) {
+    const until = next.arrive !== NONE ? next.arrive : next.depart;
+    for (let row = 0; row < axis.stations.length; row++) {
+      if (axis.stations[row] !== station)
+        continue;
+      const position = axis.position(row);
+      for (const segment of planned.segments) {
+        if (segment.fromSecond < from || segment.toSecond > until)
+          continue;
+        if (segment.toPosition === position && segment.toSecond < until)
+          return { second: segment.toSecond, position };
+        const low = Math.min(segment.fromPosition, segment.toPosition);
+        const high = Math.max(segment.fromPosition, segment.toPosition);
+        if (position <= low || position >= high)
+          continue;
+        const share = (position - segment.fromPosition) / (segment.toPosition - segment.fromPosition);
+        return { second: segment.fromSecond + share * (segment.toSecond - segment.fromSecond), position };
+      }
+    }
+    return null;
+  }
+
+  return { plannedTrain, plannedTrains, waitMarks, View, MIN_SPAN, MAX_SPAN };
 });

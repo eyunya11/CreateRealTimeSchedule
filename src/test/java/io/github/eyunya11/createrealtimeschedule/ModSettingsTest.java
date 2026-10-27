@@ -23,6 +23,7 @@ class ModSettingsTest {
         assertEquals(20, ModSettings.defaultMinimumStopSeconds());
         assertEquals(60, ModSettings.dutyLeadSeconds());
         assertEquals(600, ModSettings.recoveryThresholdSeconds());
+        assertEquals(300, ModSettings.maxWaitSeconds());
     }
 
     @Test
@@ -35,6 +36,7 @@ class ModSettingsTest {
         assertEquals(3600, ModSettings.MAX_DUTY_LEAD_SECONDS);
         assertEquals(600, ModSettings.DEFAULT_RECOVERY_THRESHOLD_SECONDS);
         assertEquals(7200, ModSettings.MAX_RECOVERY_THRESHOLD_SECONDS);
+        assertEquals(300, ModSettings.DEFAULT_MAX_WAIT_SECONDS);
     }
 
     @Test

@@ -46,18 +46,21 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
 
     /**
      * The newest version of the JSON this mod reads. Version 2 added deadhead trains, version 3 the
-     * stations' times and the stops' minimum stops, and version 4 the trains that are never cancelled
-     * to get a late set back on time. A timetable is written in the oldest version that holds it
-     * ({@link #version()}), so that a mod that reads only version 2 still takes one that has none of
-     * what the later versions added.
+     * stations' times and the stops' minimum stops, version 4 the trains that are never cancelled to
+     * get a late set back on time, and version 5 the trains a stop waits for. A timetable is written in
+     * the oldest version that holds it ({@link #version()}), so that a mod that reads only version 2
+     * still takes one that has none of what the later versions added.
      */
-    public static final int VERSION = 4;
+    public static final int VERSION = 5;
 
     /** The longest line id, train number or duty id. */
     public static final int MAX_ID_LENGTH = 32;
 
     /** The longest dwell or minimum stop, in seconds: the longest minimum stop the server's config takes. */
     public static final int MAX_STOP_SECONDS = 600;
+
+    /** The longest a train waits for another past its own time, in seconds: the longest the server's config takes. */
+    public static final int MAX_WAIT_SECONDS = 3600;
 
     public Timetable {
         Objects.requireNonNull(name, "name");
@@ -84,6 +87,22 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
             Objects.requireNonNull(id, "id");
             Objects.requireNonNull(name, "name");
             stations = List.copyOf(stations);
+        }
+
+        /**
+         * Whether a train that makes {@code stops} in order may run through {@code station} of the line,
+         * without stopping, on its way from stop {@code from} to the next. On a line that is not a loop,
+         * that is a station between the two. On a loop line, which way round it goes is the track's,
+         * which the timetable does not know, so every other station of the line may be on its way;
+         * the operation goes by the track (see {@code Waits}).
+         */
+        public boolean runsThrough(List<String> stops, int from, String station) {
+            int a = stations.indexOf(stops.get(from));
+            int b = stations.indexOf(stops.get(from + 1));
+            int q = stations.indexOf(station);
+            if (a < 0 || b < 0 || q < 0 || q == a || q == b)
+                return false;
+            return loop || Math.min(a, b) < q && q < Math.max(a, b);
         }
     }
 
@@ -140,14 +159,21 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
      * @param depart      when the train leaves, or {@link #NONE}
      * @param minimumStop how many seconds the train stands here at the least when it comes in late, or
      *                    {@link #NONE} for the station's (see {@link Timetable#minimumStop})
+     * @param waits       the trains it waits for here before it leaves, in order
      */
-    public record Stop(String station, int arrive, int depart, int minimumStop) {
+    public record Stop(String station, int arrive, int depart, int minimumStop, List<Wait> waits) {
 
         /** The time of a stop that has no such time. */
         public static final int NONE = -1;
 
         public Stop {
             Objects.requireNonNull(station, "station");
+            waits = List.copyOf(waits);
+        }
+
+        /** A stop that waits for no train. */
+        public Stop(String station, int arrive, int depart, int minimumStop) {
+            this(station, arrive, depart, minimumStop, List.of());
         }
 
         /** A stop with the station's minimum stop. */
@@ -180,6 +206,38 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
 
         public boolean hasDepart() {
             return depart != NONE;
+        }
+    }
+
+    /**
+     * A train that a train waits for at a stop before it leaves: until that train has left station
+     * {@code at}, or run through it without stopping. A local train waits so for an express to pass it
+     * where it stands aside, or to leave first where the two meet.
+     *
+     * @param train   the number of the train waited for
+     * @param at      the station that train leaves or runs through, as Create names it; empty for the
+     *                stop's own (see {@link #station})
+     * @param maxWait how many seconds past its own time the train waits at the most, or {@link Stop#NONE}
+     *                for the server's config
+     */
+    public record Wait(String train, String at, int maxWait) {
+        public Wait {
+            Objects.requireNonNull(train, "train");
+            Objects.requireNonNull(at, "at");
+        }
+
+        /** A wait at the stop's own station, for as long as the server's config says. */
+        public Wait(String train) {
+            this(train, "", Stop.NONE);
+        }
+
+        /** The station the train waited for leaves or runs through, for a stop at {@code stopStation}. */
+        public String station(String stopStation) {
+            return at.isEmpty() ? stopStation : at;
+        }
+
+        public boolean hasMaxWait() {
+            return maxWait != Stop.NONE;
         }
     }
 
@@ -221,10 +279,12 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
     }
 
     /**
-     * The oldest version of the JSON that holds this timetable: 4 if it has a train that is never
-     * cancelled, else 3 if it has anything version 3 added, else 2.
+     * The oldest version of the JSON that holds this timetable: 5 if a stop waits for a train, else 4 if
+     * it has a train that is never cancelled, else 3 if it has anything version 3 added, else 2.
      */
     public int version() {
+        if (trains.stream().anyMatch(train -> train.stops().stream().anyMatch(stop -> !stop.waits().isEmpty())))
+            return 5;
         if (trains.stream().anyMatch(Train::keep))
             return 4;
         boolean three = !stations.isEmpty()
@@ -242,7 +302,9 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
      * minimum stops out of range, a station given times twice or that no line has, and a minimum stop
      * at a train's last stop, which it does not leave; and duties that name a train that is not there,
      * use a train twice, string trains together that do not meet (the next starts somewhere else, or
-     * before the one before has arrived), or do not start and end at their depot.
+     * before the one before has arrived), or do not start and end at their depot. A train waited for at
+     * a stop has to be another train of the timetable, which leaves the station (or runs through it)
+     * before the stop's train leaves: so a train never waits, by and by, for itself.
      */
     public List<String> problems() {
         List<String> problems = new ArrayList<>();
@@ -251,6 +313,7 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
         Map<String, Line> lineById = checkLines(problems);
         checkStations(problems);
         Map<String, Train> trainByNumber = checkTrains(lineById, problems);
+        checkWaits(lineById, trainByNumber, problems);
         checkDuties(trainByNumber, problems);
         return problems;
     }
@@ -394,6 +457,77 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
                 previousPosition = position;
             }
         }
+    }
+
+    // ------------------------------------------------------------------ waits
+
+    /**
+     * The trains waited for. Each has to leave the station, or run through it, strictly before the train
+     * that waits for it leaves; so waits never go round in a ring, each going back in time.
+     */
+    private void checkWaits(Map<String, Line> lineById, Map<String, Train> trainByNumber, List<String> problems) {
+        for (int i = 0; i < trains.size(); i++) {
+            Train train = trains.get(i);
+            String label = label("train", "trains", i, train.number());
+            List<Stop> stops = train.stops();
+            for (int k = 0; k < stops.size(); k++) {
+                Stop stop = stops.get(k);
+                if (stop.waits().isEmpty())
+                    continue;
+                String where = label + ", stop " + (k + 1) + " \"" + stop.station() + "\"";
+                if (k == stops.size() - 1) {
+                    problems.add(where + ": is the last stop, which the train does not leave, so it waits for no train");
+                    continue;
+                }
+                Set<String> seen = new HashSet<>();
+                for (Wait wait : stop.waits()) {
+                    String at = wait.station(stop.station());
+                    String what = where + ": waits for train \"" + wait.train() + "\" at \"" + at + "\"";
+                    if (!seen.add(wait.train() + "\n" + at)) {
+                        problems.add(what + " twice");
+                        continue;
+                    }
+                    if (wait.hasMaxWait() && (wait.maxWait() < 0 || wait.maxWait() > MAX_WAIT_SECONDS))
+                        problems.add(what + ": the longest wait must be 0 to " + MAX_WAIT_SECONDS + " seconds");
+                    if (wait.train().equals(train.number())) {
+                        problems.add(what + ", which is itself");
+                        continue;
+                    }
+                    Train other = trainByNumber.get(wait.train());
+                    if (other == null) {
+                        problems.add(what + ", which is not in the timetable");
+                        continue;
+                    }
+                    Line line = lineById.get(other.line());
+                    if (line == null || other.stops().size() < 2)
+                        continue; // said of that train
+                    if (!line.stations().contains(at)) {
+                        problems.add(what + ", which is not a station of its line \"" + line.id() + "\"");
+                        continue;
+                    }
+                    List<Integer> leaves = leavesOrRunsThrough(other, line, at);
+                    if (leaves.isEmpty())
+                        problems.add(what + ", which neither leaves it nor runs through it");
+                    else if (stop.hasDepart() && leaves.stream().noneMatch(time -> time < stop.depart()))
+                        problems.add(what + ", which does not leave it or run through it before this train leaves at " + time(stop.depart()));
+                }
+            }
+        }
+    }
+
+    /**
+     * When {@code train} leaves {@code station} of its {@code line}, or leaves the stop before it to run
+     * through it, as {@code ServiceTime} seconds, in the order of its stops.
+     */
+    public static List<Integer> leavesOrRunsThrough(Train train, Line line, String station) {
+        List<String> names = train.stops().stream().map(Stop::station).toList();
+        List<Integer> leaves = new ArrayList<>();
+        for (int s = 0; s + 1 < names.size(); s++) {
+            Stop stop = train.stops().get(s);
+            if (stop.hasDepart() && (stop.station().equals(station) || line.runsThrough(names, s, station)))
+                leaves.add(stop.depart());
+        }
+        return leaves;
     }
 
     // ------------------------------------------------------------------ duties

@@ -205,8 +205,8 @@ public final class TimetableJson {
 
     private static Timetable.Station readStation(Fields f) {
         String name = orEmpty(f.string("name", true));
-        int dwell = f.seconds("dwell");
-        int minimumStop = f.seconds("minimum_stop");
+        int dwell = f.seconds("dwell", Timetable.MAX_STOP_SECONDS);
+        int minimumStop = f.seconds("minimum_stop", Timetable.MAX_STOP_SECONDS);
         f.finish();
         return new Timetable.Station(name, dwell, minimumStop);
     }
@@ -228,9 +228,20 @@ public final class TimetableJson {
         String station = orEmpty(f.string("station", true));
         int arrive = readTime(f, "arrive");
         int depart = readTime(f, "depart");
-        int minimumStop = f.seconds("minimum_stop");
+        int minimumStop = f.seconds("minimum_stop", Timetable.MAX_STOP_SECONDS);
+        List<Timetable.Wait> waits = new ArrayList<>();
+        for (Fields wait : f.objects("wait_for", false))
+            waits.add(readWait(wait));
         f.finish();
-        return new Timetable.Stop(station, arrive, depart, minimumStop);
+        return new Timetable.Stop(station, arrive, depart, minimumStop, waits);
+    }
+
+    private static Timetable.Wait readWait(Fields f) {
+        String train = orEmpty(f.string("train", true));
+        String at = orEmpty(f.string("at", false));
+        int maxWait = f.seconds("max_wait", Timetable.MAX_WAIT_SECONDS);
+        f.finish();
+        return new Timetable.Wait(train, at, maxWait);
     }
 
     private static int readTime(Fields f, String key) {
@@ -314,7 +325,7 @@ public final class TimetableJson {
          * A whole number of seconds, or {@link Timetable.Stop#NONE} if it is not there. One that is too
          * long is for {@link Timetable#problems()}; one below 0 is refused here, as it would read as none.
          */
-        int seconds(String key) {
+        int seconds(String key, int max) {
             Object value = get(key);
             if (value == null)
                 return Timetable.Stop.NONE;
@@ -324,7 +335,7 @@ public final class TimetableJson {
             }
             int seconds = Integer.parseInt(number.text());
             if (seconds < 0)
-                problems.add(at(key), "must be 0 to " + Timetable.MAX_STOP_SECONDS + " seconds");
+                problems.add(at(key), "must be 0 to " + max + " seconds");
             return Math.max(seconds, Timetable.Stop.NONE);
         }
 
@@ -470,6 +481,19 @@ public final class TimetableJson {
                     stopNode.put("depart", text(ServiceTime.show(stop.depart())));
                 if (stop.hasMinimumStop())
                     stopNode.put("minimum_stop", raw(Integer.toString(stop.minimumStop())));
+                if (!stop.waits().isEmpty()) {
+                    ListNode waits = new ListNode();
+                    for (Timetable.Wait wait : stop.waits()) {
+                        MapNode waitNode = new MapNode();
+                        waitNode.put("train", text(wait.train()));
+                        if (!wait.at().isEmpty())
+                            waitNode.put("at", text(wait.at()));
+                        if (wait.hasMaxWait())
+                            waitNode.put("max_wait", raw(Integer.toString(wait.maxWait())));
+                        waits.add(waitNode);
+                    }
+                    stopNode.put("wait_for", waits);
+                }
                 stops.add(stopNode);
             }
             node.put("stops", stops);
