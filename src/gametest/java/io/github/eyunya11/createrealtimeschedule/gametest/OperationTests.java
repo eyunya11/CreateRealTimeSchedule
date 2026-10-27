@@ -331,6 +331,11 @@ public class OperationTests {
 
     // ------------------------------------------------------------------ waiting for a train
 
+    /*
+     * Each of these runs on, once it has seen what it is for, until the sets are back at the depot, so
+     * that the trains can be watched going on after the wait on a client too (/test run).
+     */
+
     /**
      * M9's goal, on the two tracks of the double line: the local of 1A (outer) stands at A from
      * 12:02:10 and is to leave at 12:02:30, but waits there until the express E of 2A (inner), out of
@@ -338,7 +343,7 @@ public class OperationTests {
      * on the next tick. Each track has its own A, side by side, so the local stands aside on one track
      * while the express runs past on the other.
      */
-    @GameTest(template = TURN, batch = "realtimeoperation_waits_for_a_pass", timeoutTicks = 6000)
+    @GameTest(template = TURN, batch = "realtimeoperation_waits_for_a_pass", timeoutTicks = 8000)
     public static void aLocalWaitsForAnExpressToRunThroughAndLeavesAfterIt(GameTestHelper helper) {
         Timetable timetable = overtaking("12:02:28", false, Timetable.Stop.NONE);
         TrackLine outer = new TrackLine(helper, OUTER, STATION_X, NAMES);
@@ -371,7 +376,7 @@ public class OperationTests {
                 helper.assertTrue(newNotes(data).isEmpty(), "something went wrong: " + newNotes(data));
                 return true;
             }
-        }.begin();
+        }.toTheEnd().begin();
     }
 
     /**
@@ -379,7 +384,7 @@ public class OperationTests {
      * 20 seconds at the least, so it leaves later than the local's 12:02:30; the local waits until it
      * has left.
      */
-    @GameTest(template = TURN, batch = "realtimeoperation_waits_for_a_leaving", timeoutTicks = 6000)
+    @GameTest(template = TURN, batch = "realtimeoperation_waits_for_a_leaving", timeoutTicks = 8000)
     public static void aLocalWaitsForATrainThatCallsAtTheStationToLeaveFirst(GameTestHelper helper) {
         Timetable timetable = overtaking("12:02:15", true, Timetable.Stop.NONE);
         TrackLine outer = new TrackLine(helper, OUTER, STATION_X, NAMES);
@@ -408,11 +413,11 @@ public class OperationTests {
                 helper.assertTrue(newNotes(data).isEmpty(), "something went wrong: " + newNotes(data));
                 return true;
             }
-        }.begin();
+        }.toTheEnd().begin();
     }
 
     /** With one set, 2A does not run, and the local does not wait for its express: it leaves A on its time. */
-    @GameTest(template = TURN, batch = "realtimeoperation_waits_for_none", timeoutTicks = 6000)
+    @GameTest(template = TURN, batch = "realtimeoperation_waits_for_none", timeoutTicks = 8000)
     public static void aLocalDoesNotWaitForATrainThatDoesNotRun(GameTestHelper helper) {
         Timetable timetable = overtaking("12:02:28", false, Timetable.Stop.NONE);
         TrackLine outer = new TrackLine(helper, OUTER, STATION_X, NAMES);
@@ -432,14 +437,14 @@ public class OperationTests {
                     "the local left A at " + TestTimes.show(local.departures().get(1)) + ", not on its time");
                 return true;
             }
-        }.begin();
+        }.toTheEnd().begin();
     }
 
     /**
      * The local's wait says it waits no time past its own (max_wait 0): when the express is not
      * through A by then, it gives the wait up, notes so, and leaves before the express runs through.
      */
-    @GameTest(template = TURN, batch = "realtimeoperation_waits_no_longer", timeoutTicks = 6000)
+    @GameTest(template = TURN, batch = "realtimeoperation_waits_no_longer", timeoutTicks = 8000)
     public static void aLocalGivesUpAWaitPastItsLimit(GameTestHelper helper) {
         Timetable timetable = overtaking("12:02:28", false, 0);
         TrackLine outer = new TrackLine(helper, OUTER, STATION_X, NAMES);
@@ -465,7 +470,7 @@ public class OperationTests {
                     && notes.getFirst().what().startsWith("did not wait longer for train E to leave A"), "the wait is not noted as given up: " + notes);
                 return true;
             }
-        }.begin();
+        }.toTheEnd().begin();
     }
 
     /** A player gives the set a schedule of Create's while it runs a duty: the operation lets go of it, and does not take it again. */
@@ -698,6 +703,10 @@ public class OperationTests {
         private final MinecraftServer server;
         private int ready;
         private boolean loaded;
+        /** Whether the test has seen what it is for. */
+        private boolean seen;
+        /** Whether it then runs on until every line's set is back and free at the depot. */
+        private boolean toTheEnd;
         /**
          * The notes there were when the timetable was loaded, the very objects: the server keeps those
          * of the tests before, and of the runs before, since the test world is saved. Not how many there
@@ -713,8 +722,14 @@ public class OperationTests {
             this.server = helper.getLevel().getServer();
         }
 
-        /** True once the test has seen what it is for; it fails by throwing. */
+        /** True once the test has seen what it is for; it fails by throwing. It is not asked again after that. */
         abstract boolean watch(OperationData data, long now);
+
+        /** Has the test run on, once it has seen what it is for, until every line's set is back and free at the depot. */
+        Operation toTheEnd() {
+            toTheEnd = true;
+            return this;
+        }
 
         /** The notes made since the timetable was loaded. */
         List<OperationData.Note> newNotes(OperationData data) {
@@ -774,7 +789,9 @@ public class OperationTests {
                     helper.assertTrue(now < departure(0) - ModSettings.dutyLeadSeconds() * (long) RealClock.TICKS_PER_SECOND,
                         "the sets were not all free before the first duty was to be given one, at " + TestTimes.show(now));
             }
-            if (watch(data, now))
+            if (!seen)
+                seen = watch(data, now);
+            if (seen && (!toTheEnd || lines.stream().allMatch(line -> data.freeSince().containsKey(line.train().id))))
                 helper.succeed();
         }
     }
