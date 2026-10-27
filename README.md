@@ -129,7 +129,7 @@ Not checked yet:
 - that a client takes the server's `default_minimum_stop_seconds` when it joins. NeoForge's code sends the server's config files to a joining client, but this has not been tried with a real client;
 - running a timetable across a restart of the server (only saving its state and reading it back is tested), on track with signals where several trains share a line, and with a train that derails on the way;
 - holding a late train at a station on track with signals, where other trains run too, and how cancelled trains look in the diagram on a real client;
-- a local standing aside on a siding while an express passes on the main line of the same track (the tests run the two on separate loops), and a mark for waits in the in-game diagram, which is not made yet;
+- a local standing aside on a siding while an express passes on the main line of the same track (the tests run the two on separate loops, one inside the other), and a mark for waits in the in-game diagram, which is not made yet;
 - each of the diagram's keys and mouse controls on a real client (the diagram itself has been looked at there: the timetable's lines and the real ones lie over each other, and its clock agrees with the server's);
 - the clipboard commands and `/rteditor` on a real client, and the editor opened from a `file://` address (it has been used in a Chromium browser from `http://localhost`), and the GitHub Pages site, which is published once Pages is switched on and the work is on main.
 
