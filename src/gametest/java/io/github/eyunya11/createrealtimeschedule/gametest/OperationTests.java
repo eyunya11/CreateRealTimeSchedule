@@ -44,9 +44,9 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 /**
  * The operation of a loaded timetable as the server runs it ({@link OperationService}), on real track,
  * with {@code ./gradlew runGameTestServer}. The sets wait at the depot of a loop line with no schedule
- * of Create's; the operation gives each duty a set and takes it round. Two loops, one south of the
- * other, are two track graphs, each with its own depot, A and B, so two sets can run at once without
- * meeting.
+ * of Create's; the operation gives each duty a set and takes it round. Two loops, one inside the
+ * other as the two tracks of a double line, are two track graphs, each with its own depot, A and B
+ * side by side, so two sets can run at once without meeting.
  *
  * <p>The config is the default one: a duty is given its set 60 seconds before it leaves, and a set
  * stops for 20 seconds at the least. Each test has a batch of its own (see {@link TrackLine}), and
@@ -59,8 +59,9 @@ public class OperationTests {
     private static final Logger LOGGER = LogUtils.getLogger();
 
     private static final String TURN = "track_turn";
-    private static final Loop NORTH = new Loop(100, 8, TrackLine.TRACK_Z, 24);
-    private static final Loop SOUTH = new Loop(100, 8, 32, 54);
+    private static final Loop OUTER = new Loop(100, 8, TrackLine.TRACK_Z, 24);
+    /** The other track of the double line, 4 blocks inside the outer all the way round. */
+    private static final Loop INNER = OUTER.inside(4);
     private static final String[] NAMES = {"Depot", "A", "B"};
     private static final int[] STATION_X = {20, 50, 80};
     /** The clock when the test starts. */
@@ -70,15 +71,15 @@ public class OperationTests {
 
     /**
      * M5's goal: two sets at the depot take the duties in the order the duties leave, and come back to
-     * the depot after them. The set on the north loop is free first, so it takes 1A, which leaves at
+     * the depot after them. The set on the outer loop is free first, so it takes 1A, which leaves at
      * 12:02; the other takes 2A, which leaves half a minute later. Each leaves every call on time.
      */
     @GameTest(template = TURN, batch = "realtimeoperation_two_sets", timeoutTicks = 6000)
     public static void twoSetsAtTheDepotTakeTheDutiesInTheOrderTheyLeaveAndComeBack(GameTestHelper helper) {
         Timetable timetable = timetable(duty("1A", "1", 0), duty("2A", "2", 30));
-        TrackLine north = new TrackLine(helper, NORTH, STATION_X, NAMES);
-        TrackLine south = new TrackLine(helper, SOUTH, STATION_X, NAMES);
-        new Operation(helper, timetable, north, south) {
+        TrackLine outer = new TrackLine(helper, OUTER, STATION_X, NAMES);
+        TrackLine inner = new TrackLine(helper, INNER, STATION_X, NAMES);
+        new Operation(helper, timetable, outer, inner) {
             @Nullable DutyRun first;
             @Nullable DutyRun second;
             @Nullable UUID firstSet;
@@ -98,17 +99,17 @@ public class OperationTests {
                     return false;
                 log(first);
                 log(second);
-                helper.assertTrue(firstSet.equals(north.train().id),
-                    "1A, which leaves first, was not given the set that was free first, on the north loop");
-                helper.assertTrue(secondSet.equals(south.train().id), "2A was not given the other set");
+                helper.assertTrue(firstSet.equals(outer.train().id),
+                    "1A, which leaves first, was not given the set that was free first, on the outer loop");
+                helper.assertTrue(secondSet.equals(inner.train().id), "2A was not given the other set");
                 assertOnTime(first);
                 assertOnTime(second);
-                for (TrackLine line : List.of(north, south)) {
+                for (TrackLine line : List.of(outer, inner)) {
                     helper.assertTrue(TrainDriver.standsAt(line.train(), "Depot"), "a set is not back at the depot (" + line.describe() + ")");
                     helper.assertTrue(data.freeSince().containsKey(line.train().id), "a set back at the depot is not free again");
                 }
                 for (DutyRun run : List.of(first, second)) {
-                    TrackLine line = run == first ? north : south;
+                    TrackLine line = run == first ? outer : inner;
                     helper.assertTrue(data.history().stream().anyMatch(record -> record.run() == run
                             && record.status() == DutyTimes.Status.FINISHED && record.train().equals(line.train().name.getString())),
                         "the times of duty " + run.duty() + " are not kept as finished by its train: " + data.history());
@@ -129,8 +130,8 @@ public class OperationTests {
     public static void aDutyWithNoFreeSetByItsTimeStartsLateWhenTheSetComesFree(GameTestHelper helper) {
         helper.assertTrue(ModSettings.recoveryThresholdSeconds() == 600, "the test is for the default threshold of 10 minutes");
         Timetable timetable = timetable(duty("1A", "1", 0), duty("2A", "2", 0));
-        TrackLine north = new TrackLine(helper, NORTH, STATION_X, NAMES);
-        new Operation(helper, timetable, north) {
+        TrackLine outer = new TrackLine(helper, OUTER, STATION_X, NAMES);
+        new Operation(helper, timetable, outer) {
             @Nullable DutyRun first;
             @Nullable DutyRun second;
 
@@ -139,8 +140,8 @@ public class OperationTests {
                 if (first == null) {
                     if (data.trainOf("1A").isEmpty())
                         return false;
-                    helper.assertTrue(data.trainOf("1A").equals(Optional.of(north.train().id)), "1A did not get the one set");
-                    first = data.runs().get(north.train().id);
+                    helper.assertTrue(data.trainOf("1A").equals(Optional.of(outer.train().id)), "1A did not get the one set");
+                    first = data.runs().get(outer.train().id);
                     return false;
                 }
                 if (second == null) {
@@ -149,8 +150,8 @@ public class OperationTests {
                         return false;
                     }
                     helper.assertTrue(first.finished(), "2A got a set while 1A still ran with the only one");
-                    helper.assertTrue(data.trainOf("2A").equals(Optional.of(north.train().id)), "2A did not get the set 1A brought back");
-                    second = data.runs().get(north.train().id);
+                    helper.assertTrue(data.trainOf("2A").equals(Optional.of(outer.train().id)), "2A did not get the set 1A brought back");
+                    second = data.runs().get(outer.train().id);
                     List<OperationData.Note> notes = newNotes(data);
                     helper.assertTrue(notes.size() == 1 && notes.getFirst().duty().equals("2A") && notes.getFirst().day() == DAY
                             && notes.getFirst().what().equals("started late: no free set at Depot by 12:02:00"),
@@ -178,27 +179,27 @@ public class OperationTests {
     public static void aDutyThatCanNoLongerGetBackOnTimeDoesNotRun(GameTestHelper helper) {
         helper.assertTrue(ModSettings.recoveryThresholdSeconds() == 600, "the test is for the default threshold of 10 minutes");
         Timetable timetable = timetable(duty("1A", "1", 0), duty("2A", "2", 0));
-        TrackLine north = new TrackLine(helper, NORTH, STATION_X, NAMES);
-        new Operation(helper, timetable, north) {
+        TrackLine outer = new TrackLine(helper, OUTER, STATION_X, NAMES);
+        new Operation(helper, timetable, outer) {
             @Nullable DutyRun first;
             boolean jumped;
 
             @Override
             boolean watch(OperationData data, long now) {
                 if (first == null) {
-                    first = data.runs().get(north.train().id);
+                    first = data.runs().get(outer.train().id);
                     return false;
                 }
                 if (!jumped) {
                     if (first.phase() != DutyRun.Phase.RUNNING)
                         return false;
                     helper.assertTrue(newNotes(data).isEmpty(), "2A is noted while it can still start late: " + newNotes(data));
-                    north.clockOnNextTick(now + 12 * RealClock.TICKS_PER_MINUTE);
+                    outer.clockOnNextTick(now + 12 * RealClock.TICKS_PER_MINUTE);
                     jumped = true;
                     return false;
                 }
-                if (!first.finished() || data.freeSince().get(north.train().id) == null
-                    || now < data.freeSince().get(north.train().id) + 2 * RealClock.TICKS_PER_SECOND)
+                if (!first.finished() || data.freeSince().get(outer.train().id) == null
+                    || now < data.freeSince().get(outer.train().id) + 2 * RealClock.TICKS_PER_SECOND)
                     return false;
                 helper.assertTrue(data.trainOf("2A").isEmpty(), "2A took the set when it was back");
                 List<OperationData.Note> notes = newNotes(data);
@@ -222,8 +223,8 @@ public class OperationTests {
     public static void aLateSetIsHeldAtAStationUntilItCanLeaveWithinTheThreshold(GameTestHelper helper) {
         helper.assertTrue(ModSettings.recoveryThresholdSeconds() == 600, "the test is for the default threshold of 10 minutes");
         Timetable timetable = laps("12:02:00", 4);
-        TrackLine north = new TrackLine(helper, NORTH, STATION_X, NAMES);
-        new Operation(helper, timetable, north) {
+        TrackLine outer = new TrackLine(helper, OUTER, STATION_X, NAMES);
+        new Operation(helper, timetable, outer) {
             @Nullable DutyRun run;
             boolean jumped;
             int heldTo = -1;
@@ -232,13 +233,13 @@ public class OperationTests {
             @Override
             boolean watch(OperationData data, long now) {
                 if (run == null) {
-                    run = data.runs().get(north.train().id);
+                    run = data.runs().get(outer.train().id);
                     return false;
                 }
                 if (!jumped) {
                     if (run.phase() != DutyRun.Phase.RUNNING)
                         return false;
-                    north.clockOnNextTick(now + 15 * RealClock.TICKS_PER_MINUTE);
+                    outer.clockOnNextTick(now + 15 * RealClock.TICKS_PER_MINUTE);
                     jumped = true;
                     return false;
                 }
@@ -268,7 +269,7 @@ public class OperationTests {
                     return false;
                 }
                 if (run.departures().get(heldTo) == DutyRun.NOT_YET) {
-                    helper.assertTrue(TrainDriver.standsAt(north.train(), "A") || now >= leaves,
+                    helper.assertTrue(TrainDriver.standsAt(outer.train(), "A") || now >= leaves,
                         "the set has gone from A before " + TestTimes.show(leaves));
                     return false;
                 }
@@ -291,15 +292,15 @@ public class OperationTests {
     public static void aDutyThatWasToStartBeforeTheTimetableWasLoadedStartsLate(GameTestHelper helper) {
         helper.assertTrue(ModSettings.recoveryThresholdSeconds() == 600, "the test is for the default threshold of 10 minutes");
         Timetable timetable = laps("11:47:00", 4);
-        TrackLine north = new TrackLine(helper, NORTH, STATION_X, NAMES);
-        new Operation(helper, timetable, north) {
+        TrackLine outer = new TrackLine(helper, OUTER, STATION_X, NAMES);
+        new Operation(helper, timetable, outer) {
             @Nullable DutyRun run;
             long leaves;
 
             @Override
             boolean watch(OperationData data, long now) {
                 if (run == null) {
-                    run = data.runs().get(north.train().id);
+                    run = data.runs().get(outer.train().id);
                     if (run == null)
                         return false;
                     List<OperationData.Note> notes = newNotes(data);
@@ -330,18 +331,24 @@ public class OperationTests {
 
     // ------------------------------------------------------------------ waiting for a train
 
-    /**
-     * M9's goal, on two loops: the local of 1A (north) stands at A from 12:02:10 and is to leave at
-     * 12:02:30, but waits there until the express E of 2A (south), out of the depot at 12:02:28, has
-     * run through a station named A, its last carriage gone past; it leaves on the next tick. Each loop
-     * has its own A, so the local stands aside on one track while the express runs on the other.
+    /*
+     * Each of these runs on, once it has seen what it is for, until the sets are back at the depot, so
+     * that the trains can be watched going on after the wait on a client too (/test run).
      */
-    @GameTest(template = TURN, batch = "realtimeoperation_waits_for_a_pass", timeoutTicks = 6000)
+
+    /**
+     * M9's goal, on the two tracks of the double line: the local of 1A (outer) stands at A from
+     * 12:02:10 and is to leave at 12:02:30, but waits there until the express E of 2A (inner), out of
+     * the depot at 12:02:28, has run through a station named A, its last carriage gone past; it leaves
+     * on the next tick. Each track has its own A, side by side, so the local stands aside on one track
+     * while the express runs past on the other.
+     */
+    @GameTest(template = TURN, batch = "realtimeoperation_waits_for_a_pass", timeoutTicks = 8000)
     public static void aLocalWaitsForAnExpressToRunThroughAndLeavesAfterIt(GameTestHelper helper) {
         Timetable timetable = overtaking("12:02:28", false, Timetable.Stop.NONE);
-        TrackLine north = new TrackLine(helper, NORTH, STATION_X, NAMES);
-        TrackLine south = new TrackLine(helper, SOUTH, STATION_X, NAMES);
-        new Operation(helper, timetable, north, south) {
+        TrackLine outer = new TrackLine(helper, OUTER, STATION_X, NAMES);
+        TrackLine inner = new TrackLine(helper, INNER, STATION_X, NAMES);
+        new Operation(helper, timetable, outer, inner) {
             @Nullable DutyRun local;
             @Nullable DutyRun express;
 
@@ -369,7 +376,7 @@ public class OperationTests {
                 helper.assertTrue(newNotes(data).isEmpty(), "something went wrong: " + newNotes(data));
                 return true;
             }
-        }.begin();
+        }.toTheEnd().begin();
     }
 
     /**
@@ -377,12 +384,12 @@ public class OperationTests {
      * 20 seconds at the least, so it leaves later than the local's 12:02:30; the local waits until it
      * has left.
      */
-    @GameTest(template = TURN, batch = "realtimeoperation_waits_for_a_leaving", timeoutTicks = 6000)
+    @GameTest(template = TURN, batch = "realtimeoperation_waits_for_a_leaving", timeoutTicks = 8000)
     public static void aLocalWaitsForATrainThatCallsAtTheStationToLeaveFirst(GameTestHelper helper) {
         Timetable timetable = overtaking("12:02:15", true, Timetable.Stop.NONE);
-        TrackLine north = new TrackLine(helper, NORTH, STATION_X, NAMES);
-        TrackLine south = new TrackLine(helper, SOUTH, STATION_X, NAMES);
-        new Operation(helper, timetable, north, south) {
+        TrackLine outer = new TrackLine(helper, OUTER, STATION_X, NAMES);
+        TrackLine inner = new TrackLine(helper, INNER, STATION_X, NAMES);
+        new Operation(helper, timetable, outer, inner) {
             @Nullable DutyRun local;
             @Nullable DutyRun express;
 
@@ -406,15 +413,15 @@ public class OperationTests {
                 helper.assertTrue(newNotes(data).isEmpty(), "something went wrong: " + newNotes(data));
                 return true;
             }
-        }.begin();
+        }.toTheEnd().begin();
     }
 
     /** With one set, 2A does not run, and the local does not wait for its express: it leaves A on its time. */
-    @GameTest(template = TURN, batch = "realtimeoperation_waits_for_none", timeoutTicks = 6000)
+    @GameTest(template = TURN, batch = "realtimeoperation_waits_for_none", timeoutTicks = 8000)
     public static void aLocalDoesNotWaitForATrainThatDoesNotRun(GameTestHelper helper) {
         Timetable timetable = overtaking("12:02:28", false, Timetable.Stop.NONE);
-        TrackLine north = new TrackLine(helper, NORTH, STATION_X, NAMES);
-        new Operation(helper, timetable, north) {
+        TrackLine outer = new TrackLine(helper, OUTER, STATION_X, NAMES);
+        new Operation(helper, timetable, outer) {
             @Nullable DutyRun local;
 
             @Override
@@ -430,19 +437,19 @@ public class OperationTests {
                     "the local left A at " + TestTimes.show(local.departures().get(1)) + ", not on its time");
                 return true;
             }
-        }.begin();
+        }.toTheEnd().begin();
     }
 
     /**
      * The local's wait says it waits no time past its own (max_wait 0): when the express is not
      * through A by then, it gives the wait up, notes so, and leaves before the express runs through.
      */
-    @GameTest(template = TURN, batch = "realtimeoperation_waits_no_longer", timeoutTicks = 6000)
+    @GameTest(template = TURN, batch = "realtimeoperation_waits_no_longer", timeoutTicks = 8000)
     public static void aLocalGivesUpAWaitPastItsLimit(GameTestHelper helper) {
         Timetable timetable = overtaking("12:02:28", false, 0);
-        TrackLine north = new TrackLine(helper, NORTH, STATION_X, NAMES);
-        TrackLine south = new TrackLine(helper, SOUTH, STATION_X, NAMES);
-        new Operation(helper, timetable, north, south) {
+        TrackLine outer = new TrackLine(helper, OUTER, STATION_X, NAMES);
+        TrackLine inner = new TrackLine(helper, INNER, STATION_X, NAMES);
+        new Operation(helper, timetable, outer, inner) {
             @Nullable DutyRun local;
             @Nullable DutyRun express;
 
@@ -463,20 +470,20 @@ public class OperationTests {
                     && notes.getFirst().what().startsWith("did not wait longer for train E to leave A"), "the wait is not noted as given up: " + notes);
                 return true;
             }
-        }.begin();
+        }.toTheEnd().begin();
     }
 
     /** A player gives the set a schedule of Create's while it runs a duty: the operation lets go of it, and does not take it again. */
     @GameTest(template = TURN, batch = "realtimeoperation_let_go", timeoutTicks = 4000)
     public static void aSetGivenAScheduleIsLetGo(GameTestHelper helper) {
         Timetable timetable = timetable(duty("1A", "1", 0));
-        TrackLine north = new TrackLine(helper, NORTH, STATION_X, NAMES);
-        new Operation(helper, timetable, north) {
+        TrackLine outer = new TrackLine(helper, OUTER, STATION_X, NAMES);
+        new Operation(helper, timetable, outer) {
             long letGoAt = -1;
 
             @Override
             boolean watch(OperationData data, long now) {
-                Train train = north.train();
+                Train train = outer.train();
                 if (letGoAt < 0) {
                     DutyRun run = data.runs().get(train.id);
                     if (run == null || run.phase() != DutyRun.Phase.RUNNING)
@@ -510,9 +517,9 @@ public class OperationTests {
     @GameTest(template = TURN, batch = "realtimeoperation_editor_made", timeoutTicks = 6000)
     public static void aTimetableMadeInTheEditorRunsAsItSays(GameTestHelper helper) {
         Timetable timetable = editorMade();
-        TrackLine north = new TrackLine(helper, NORTH, STATION_X, NAMES);
-        TrackLine south = new TrackLine(helper, SOUTH, STATION_X, NAMES);
-        new Operation(helper, timetable, north, south) {
+        TrackLine outer = new TrackLine(helper, OUTER, STATION_X, NAMES);
+        TrackLine inner = new TrackLine(helper, INNER, STATION_X, NAMES);
+        new Operation(helper, timetable, outer, inner) {
             final List<DutyRun> seen = new ArrayList<>();
 
             @Override
@@ -528,7 +535,7 @@ public class OperationTests {
                 }
                 helper.assertTrue(seen.stream().map(DutyRun::duty).sorted().toList().equals(List.of("1A", "2A")),
                     "the duties run are not the editor's two: " + seen.stream().map(DutyRun::duty).toList());
-                for (TrackLine line : List.of(north, south))
+                for (TrackLine line : List.of(outer, inner))
                     helper.assertTrue(TrainDriver.standsAt(line.train(), "Depot") && data.freeSince().containsKey(line.train().id),
                         "a set is not back and free at the depot (" + line.describe() + ")");
                 helper.assertTrue(newNotes(data).isEmpty(), "something went wrong: " + newNotes(data));
@@ -696,6 +703,10 @@ public class OperationTests {
         private final MinecraftServer server;
         private int ready;
         private boolean loaded;
+        /** Whether the test has seen what it is for. */
+        private boolean seen;
+        /** Whether it then runs on until every line's set is back and free at the depot. */
+        private boolean toTheEnd;
         /**
          * The notes there were when the timetable was loaded, the very objects: the server keeps those
          * of the tests before, and of the runs before, since the test world is saved. Not how many there
@@ -711,8 +722,14 @@ public class OperationTests {
             this.server = helper.getLevel().getServer();
         }
 
-        /** True once the test has seen what it is for; it fails by throwing. */
+        /** True once the test has seen what it is for; it fails by throwing. It is not asked again after that. */
         abstract boolean watch(OperationData data, long now);
+
+        /** Has the test run on, once it has seen what it is for, until every line's set is back and free at the depot. */
+        Operation toTheEnd() {
+            toTheEnd = true;
+            return this;
+        }
 
         /** The notes made since the timetable was loaded. */
         List<OperationData.Note> newNotes(OperationData data) {
@@ -772,7 +789,9 @@ public class OperationTests {
                     helper.assertTrue(now < departure(0) - ModSettings.dutyLeadSeconds() * (long) RealClock.TICKS_PER_SECOND,
                         "the sets were not all free before the first duty was to be given one, at " + TestTimes.show(now));
             }
-            if (watch(data, now))
+            if (!seen)
+                seen = watch(data, now);
+            if (seen && (!toTheEnd || lines.stream().allMatch(line -> data.freeSince().containsKey(line.train().id))))
                 helper.succeed();
         }
     }

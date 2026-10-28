@@ -25,8 +25,9 @@ import net.neoforged.neoforge.network.PacketDistributor;
  * <ul>
  * <li>{@code /rtdiagram} shows the first line, and {@code /rtdiagram line <id>} the line of that id.
  * Anyone may look.</li>
- * <li>{@code /rtdiagram refresh} works the distances between the stations out from the track again,
- * after it has changed (permission level 2).</li>
+ * <li>{@code /rtdiagram refresh} works the distances between the stations out from the track again
+ * at once (permission level 2). The server does so by itself too once the track has changed and stayed
+ * as it is for a few seconds ({@code TrackFacts.watch}).</li>
  * </ul>
  */
 public final class RtDiagramCommand {

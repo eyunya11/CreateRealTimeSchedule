@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -21,9 +22,12 @@ import io.github.eyunya11.createrealtimeschedule.operation.DutyPlan;
 import io.github.eyunya11.createrealtimeschedule.operation.DutyRun;
 import io.github.eyunya11.createrealtimeschedule.operation.OperationData;
 import io.github.eyunya11.createrealtimeschedule.operation.OperationService;
+import io.github.eyunya11.createrealtimeschedule.operation.TrackFacts;
+import io.github.eyunya11.createrealtimeschedule.operation.Waits;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Duty;
 import io.github.eyunya11.createrealtimeschedule.timetable.TimetableJson;
+import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
@@ -113,11 +117,29 @@ public final class RtTimetableCommand {
         }
 
         Timetable timetable = result.timetable();
-        OperationData.get(server).loadTimetable(json, timetable, ClockService.now(server));
+        OperationData data = OperationData.get(server);
+        data.loadTimetable(json, timetable, ClockService.now(server));
         source.sendSuccess(() -> Component.translatableWithFallback(KEY + "loaded",
             "Running the timetable %1$s: %2$s duties of %3$s trains", name(timetable), timetable.duties().size(),
             timetable.trains().size()), true);
+        for (Component line : unmetWaits(data))
+            source.sendSuccess(() -> line, false);
         return timetable.duties().size();
+    }
+
+    /**
+     * A line for each wait of the timetable that waits for nothing, which the timetable's maker may not
+     * know of: the checks of the timetable cannot tell which way round a loop line the track takes a train.
+     */
+    private static List<Component> unmetWaits(OperationData data) {
+        Timetable timetable = data.timetable();
+        if (timetable == null || !data.hasWaits())
+            return List.of();
+        List<Component> lines = new ArrayList<>();
+        for (Waits.Unmet unmet : data.waits(TrackFacts.axes(data, timetable)).unmet())
+            lines.add(Component.translatableWithFallback(KEY + (unmet.inNoDuty() ? "wait_in_no_duty" : "wait_no_way"), unmet.pattern(),
+                unmet.arguments()).withStyle(ChatFormatting.YELLOW));
+        return lines;
     }
 
     private static int unload(CommandContext<CommandSourceStack> context) {
@@ -145,6 +167,8 @@ public final class RtTimetableCommand {
             "Timetable %1$s: %2$s duties, %3$s running", name(timetable), timetable.duties().size(), data.runs().size()), false);
         for (Duty duty : timetable.duties())
             source.sendSuccess(() -> dutyLine(data, duty, now), false);
+        for (Component line : unmetWaits(data))
+            source.sendSuccess(() -> line, false);
         List<OperationData.Note> notes = data.notes();
         for (OperationData.Note note : notes.subList(Math.max(0, notes.size() - NOTES_SHOWN), notes.size()))
             source.sendSuccess(() -> Component.translatableWithFallback(KEY + "note", "%1$s: duty %2$s of day %3$s %4$s",

@@ -10,6 +10,7 @@ import com.simibubi.create.content.trains.entity.Train;
 import com.simibubi.create.content.trains.entity.TravellingPoint;
 import com.simibubi.create.content.trains.entity.TravellingPoint.IEdgePointListener;
 import com.simibubi.create.content.trains.graph.TrackEdge;
+import com.simibubi.create.content.trains.graph.TrackGraph;
 import com.simibubi.create.content.trains.graph.TrackNode;
 import com.simibubi.create.content.trains.signal.TrackEdgePoint;
 import com.simibubi.create.content.trains.station.GlobalStation;
@@ -27,6 +28,11 @@ public final class PassWatch {
     public record Tail(TrackNode node1, TrackNode node2, TrackEdge edge, double position) {}
 
     private PassWatch() {}
+
+    /** Whether {@code tail} is still on an edge of {@code graph}: the track it was copied on may have been taken up or laid again since. */
+    public static boolean stillOn(Tail tail, @Nullable TrackGraph graph) {
+        return graph != null && graph.getConnectionsFrom(tail.node1()).get(tail.node2()) == tail.edge();
+    }
 
     /** The end of {@code train} that goes last: the back of its last carriage, or the front of its first while it runs backwards; null off the track. */
     public static @Nullable Tail tail(Train train) {

@@ -13,8 +13,13 @@ import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 @EventBusSubscriber(modid = Createrealtimeschedule.MODID)
 public final class ModNetwork {
 
-    /** 2 since the diagram's payloads came in, 3 since the clipboard's. */
-    private static final String PROTOCOL_VERSION = "4";
+    /**
+     * 2 since the diagram's payloads came in, 3 since the clipboard's, 4 since the calls a held duty
+     * leaves out, and 5 since the timetable in the diagram's payload may be of version 5 (the trains a
+     * stop waits for), which a client of before cannot read: it would show the diagram as of no
+     * timetable, where this keeps it off the server with a message saying why.
+     */
+    private static final String PROTOCOL_VERSION = "5";
 
     private ModNetwork() {}
 

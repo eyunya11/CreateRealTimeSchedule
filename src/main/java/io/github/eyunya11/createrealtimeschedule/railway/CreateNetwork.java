@@ -7,6 +7,7 @@ import java.util.Comparator;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
@@ -87,6 +88,52 @@ public final class CreateNetwork {
         // The graphs are held in a hash map; sorted by name, the export comes out the same every time.
         stations.sort(Comparator.comparing(Station::name).thenComparingInt(Station::edge).thenComparingDouble(Station::offset));
         return new RailNetwork(edges, stations);
+    }
+
+    /**
+     * A number that changes when the track changes in a way {@link #read} sees: a node, an edge or a
+     * point on one (a station and its name, a signal, a sign and its limit) put in, taken out or moved.
+     * The same track gives the same number whatever order the game holds it in, and working it out
+     * reads much less than {@link #read} does, so that it can be taken often to see whether the track
+     * has changed. It is for comparing while the server runs, not for keeping: it is made of hash codes.
+     */
+    public static long fingerprint(Collection<TrackGraph> graphs) {
+        EdgePointType<?> signType = EdgePointType.TYPES.get(SPEED_LIMIT);
+        Unreadable unreadable = new Unreadable();
+        long print = 0;
+        for (TrackGraph graph : graphs) {
+            for (TrackNodeLocation location : graph.getNodes()) {
+                TrackNode node = graph.locateNode(location);
+                if (node == null)
+                    continue;
+                for (Map.Entry<TrackNode, TrackEdge> connection : graph.getConnectionsFrom(node).entrySet()) {
+                    TrackEdge edge = connection.getValue();
+                    long hash = 31L * location.hashCode() + connection.getKey().getLocation().hashCode();
+                    hash = 31 * hash + Double.hashCode(edge.getLength());
+                    hash = 31 * hash + Boolean.hashCode(edge.isTurn());
+                    EdgeData data = edge.getEdgeData();
+                    if (data.hasPoints())
+                        for (TrackEdgePoint point : data.getPoints()) {
+                            hash = 31 * hash + point.getId().hashCode();
+                            hash = 31 * hash + Double.hashCode(point.getLocationOn(edge));
+                            if (point instanceof GlobalStation station)
+                                hash = 31 * hash + Objects.hashCode(station.name);
+                            else if (signType != null && point.getType() == signType)
+                                hash = 31 * hash + Objects.hashCode(sign(point, 0, unreadable));
+                        }
+                    // Summed, so that the order of the nodes and the edges does not count; spread first, so that no two cancel out.
+                    print += spread(hash);
+                }
+            }
+        }
+        return print;
+    }
+
+    /** The bits of {@code hash} spread over the whole number, as SplitMix64 finishes one. */
+    private static long spread(long hash) {
+        hash = (hash ^ (hash >>> 30)) * 0xbf58476d1ce4e5b9L;
+        hash = (hash ^ (hash >>> 27)) * 0x94d049bb133111ebL;
+        return hash ^ (hash >>> 31);
     }
 
     private static final Comparator<TrackNode> NODE_ORDER = Comparator

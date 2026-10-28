@@ -17,9 +17,12 @@ import com.simibubi.create.content.contraptions.glue.SuperGlueEntity;
 import com.simibubi.create.content.processing.burner.BlazeBurnerBlock;
 import com.simibubi.create.content.trains.entity.RemoveTrainPacket;
 import com.simibubi.create.content.trains.entity.Train;
+import com.simibubi.create.content.trains.graph.TrackEdge;
 import com.simibubi.create.content.trains.graph.TrackGraph;
 import com.simibubi.create.content.trains.graph.TrackGraphHelper;
 import com.simibubi.create.content.trains.graph.TrackGraphLocation;
+import com.simibubi.create.content.trains.graph.TrackNode;
+import com.simibubi.create.content.trains.signal.TrackEdgePoint;
 import com.simibubi.create.content.trains.station.GlobalStation;
 import com.simibubi.create.content.trains.station.StationBlockEntity;
 import com.simibubi.create.content.trains.track.BezierConnection;
@@ -114,21 +117,41 @@ final class TrackLine {
 
     /**
      * A loop that a train goes round and comes back to where it started: the first row, along
-     * z = {@code northZ}, from {@code radius} to {@code eastX}, a quarter turn south at each end of it,
-     * lines south on x = 0 and x = {@code eastX + radius}, and a row back along z = {@code southZ},
-     * joined to them by two more quarter turns. All four turns have the radius {@code radius}. Two
-     * loops side by side, one south of the other, are two track graphs.
+     * z = {@code northZ}, from {@code westX + radius} to {@code eastX}, a quarter turn south at each end
+     * of it, lines south on x = {@code westX} and x = {@code eastX + radius}, and a row back along
+     * z = {@code southZ}, joined to them by two more quarter turns. All four turns have the radius
+     * {@code radius}. Two loops that do not touch, side by side or one {@link #inside} the other, are
+     * two track graphs.
      */
-    record Loop(int eastX, int radius, int northZ, int southZ) {
+    record Loop(int westX, int eastX, int radius, int northZ, int southZ) {
         Loop {
-            if (!(radius > 0 && eastX > radius && northZ >= TRACK_Z && southZ > northZ + 2 * radius))
-                throw new IllegalArgumentException("not a loop: east to " + eastX + ", turns of " + radius + ", along z = " + northZ
-                    + " and back along z = " + southZ);
+            if (!(radius > 0 && westX >= FIRST_X && eastX > westX + radius && northZ >= TRACK_Z && southZ > northZ + 2 * radius))
+                throw new IllegalArgumentException("not a loop: from x = " + westX + " east to " + eastX + ", turns of " + radius
+                    + ", along z = " + northZ + " and back along z = " + southZ);
+        }
+
+        /** A loop whose line south on the west is on the line's first block. */
+        Loop(int eastX, int radius, int northZ, int southZ) {
+            this(FIRST_X, eastX, radius, northZ, southZ);
         }
 
         /** A loop whose first row is the line's usual one. */
         Loop(int eastX, int radius, int southZ) {
             this(eastX, radius, TRACK_Z, southZ);
+        }
+
+        /**
+         * The loop {@code gap} blocks inside this one all the way round, as the other track of a double
+         * line: its turns have the same centres, and so a radius {@code gap} smaller. Its first row runs
+         * to the same x, so stations at the same x along the two first rows are side by side.
+         */
+        Loop inside(int gap) {
+            return new Loop(westX + gap, eastX, radius - gap, northZ + gap, southZ - gap);
+        }
+
+        /** Where the first row starts, at the end of the loop's last turn. */
+        int firstRowX() {
+            return westX + radius;
         }
     }
 
@@ -253,7 +276,7 @@ final class TrackLine {
     /** The track blocks of stations on the first row of a loop, between its turns. */
     private static BlockPos[] onTheLoop(int[] stationX, Loop loop) {
         for (int x : stationX)
-            if (!(x > loop.radius() && x < loop.eastX()))
+            if (!(x > loop.firstRowX() && x < loop.eastX()))
                 throw new IllegalArgumentException("a station at x = " + x + " is not on the first row of " + loop);
         BlockPos[] tracks = new BlockPos[stationX.length];
         for (int i = 0; i < stationX.length; i++)
@@ -362,7 +385,7 @@ final class TrackLine {
 
     /** Whether there is a straight track block at {@code x} of the first row: everywhere but under the bend, and west of a loop's first turn. */
     private boolean straightAt(int x) {
-        return (bend == null || x <= bend.fromX() || x >= bend.toX()) && (loop == null || x >= loop.radius());
+        return (bend == null || x <= bend.fromX() || x >= bend.toX()) && (loop == null || x >= loop.firstRowX());
     }
 
     /** Sets the clock to read {@code clock} on the next tick. The game test runs at the end of a tick, after the level and its trains, so the next thing to read the clock is the next tick's. */
@@ -425,7 +448,7 @@ final class TrackLine {
             if (!straightAt(x))
                 continue;
             boolean endsACurve = bend != null && (x == bend.fromX() || x == bend.toX()) || turn != null && x == turn.fromX()
-                || loop != null && (x == loop.radius() || x == loop.eastX());
+                || loop != null && (x == loop.firstRowX() || x == loop.eastX());
             helper.setBlock(track(x), endsACurve ? curveEnd : track);
         }
         if (bend != null)
@@ -444,22 +467,23 @@ final class TrackLine {
     /** The loop's two lines south, its row back and its four turns; the first row is laid already. */
     private void buildTheRestOfTheLoop(Loop loop, BlockState alongX, BlockState alongXCurveEnd) {
         int r = loop.radius();
+        int westLine = loop.westX();
         int eastLine = loop.eastX() + r;
         int northZ = loop.northZ() + r;
         int southLineZ = loop.southZ() - r;
         BlockState alongZ = AllBlocks.TRACK.getDefaultState().setValue(TrackBlock.SHAPE, TrackShape.ZO);
         for (int z = northZ; z <= southLineZ; z++) {
             BlockState state = z == northZ || z == southLineZ ? alongZ.setValue(TrackBlock.HAS_BE, true) : alongZ;
-            helper.setBlock(new BlockPos(0, TRACK_Y, z), state);
+            helper.setBlock(new BlockPos(westLine, TRACK_Y, z), state);
             helper.setBlock(new BlockPos(eastLine, TRACK_Y, z), state);
         }
-        for (int x = r; x <= loop.eastX(); x++)
-            helper.setBlock(new BlockPos(x, TRACK_Y, loop.southZ()), x == r || x == loop.eastX() ? alongXCurveEnd : alongX);
+        for (int x = loop.firstRowX(); x <= loop.eastX(); x++)
+            helper.setBlock(new BlockPos(x, TRACK_Y, loop.southZ()), x == loop.firstRowX() || x == loop.eastX() ? alongXCurveEnd : alongX);
         Vec3 east = new Vec3(1, 0, 0), west = new Vec3(-1, 0, 0), south = new Vec3(0, 0, 1), north = new Vec3(0, 0, -1);
         layCurve(track(loop.eastX()), east, new BlockPos(eastLine, TRACK_Y, northZ), north);
         layCurve(new BlockPos(eastLine, TRACK_Y, southLineZ), south, new BlockPos(loop.eastX(), TRACK_Y, loop.southZ()), east);
-        layCurve(new BlockPos(r, TRACK_Y, loop.southZ()), west, new BlockPos(0, TRACK_Y, southLineZ), south);
-        layCurve(new BlockPos(0, TRACK_Y, northZ), north, track(r), west);
+        layCurve(new BlockPos(loop.firstRowX(), TRACK_Y, loop.southZ()), west, new BlockPos(westLine, TRACK_Y, southLineZ), south);
+        layCurve(new BlockPos(westLine, TRACK_Y, northZ), north, track(loop.firstRowX()), west);
     }
 
     /**
@@ -546,7 +570,8 @@ final class TrackLine {
     private void waitForStations() {
         for (int i = 0; i < stationTracks.length; i++)
             if (stationEntity(i).getStation() == null) {
-                stuckAfter(40, "the station at " + stationTracks[i].toShortString() + " has no place in the graph");
+                if (phaseTicks > 40)
+                    stuckAfter(40, "the station at " + stationTracks[i].toShortString() + " has no place in the graph: " + whyNoPlace(i));
                 return;
             }
         for (Signal signal : signals) {
@@ -567,6 +592,41 @@ final class TrackLine {
         for (int index : parkedAt)
             parked.add(assembleAt(index));
         enter(Phase.WAIT_FOR_CONDUCTOR);
+    }
+
+    /**
+     * What Create finds where station {@code index} is to go, for a failure message: why it may have
+     * no place in the graph. Create gives a station none, and tries again each tick, when it finds no
+     * place on the graph at its track, when that place is on no edge, or when the edge has a point there
+     * already that it cannot share it with (another station, a signal).
+     */
+    private String whyNoPlace(int index) {
+        StationBlockEntity entity = stationEntity(index);
+        BlockPos block = helper.absolutePos(stationBlock(index));
+        String state = "its block entity is " + (entity.isRemoved() ? "removed" : "there") + (level.getBlockEntity(block) == entity ? "" : " but not the level's")
+            + ", its block " + (level.shouldTickBlocksAt(block) ? "ticks" : "does not tick") + "; ";
+        TrackTargetingBehaviour<?> target = BlockEntityBehaviour.get(entity, TrackTargetingBehaviour.TYPE);
+        if (target == null)
+            return state + "the station has no track target";
+        String track = target.getGlobalPosition().toShortString() + " facing " + target.getTargetDirection();
+        if (!target.hasValidTrack())
+            return state + "its target " + track + " is not a track";
+        TrackGraphLocation at = target.determineGraphLocation();
+        if (at == null)
+            return state + "Create finds no place on the graph at " + track;
+        TrackNode first = at.graph.locateNode(at.edge.getFirst());
+        TrackNode second = at.graph.locateNode(at.edge.getSecond());
+        TrackEdge edge = first == null || second == null ? null : at.graph.getConnectionsFrom(first).get(second);
+        long graphs = Create.RAILWAYS.trackNetworks.values().stream().filter(graph -> graph.locateNode(at.edge.getFirst()) != null).count();
+        StringBuilder text = new StringBuilder(state).append("Create places it at ").append(track).append(", ").append(at.position)
+            .append(" along ").append(at.edge.getFirst()).append(" to ").append(at.edge.getSecond()).append(" of graph ").append(at.graph.id)
+            .append(" (").append(graphs).append(" of the ").append(Create.RAILWAYS.trackNetworks.size()).append(" graphs have that node)");
+        if (edge == null)
+            return text.append(", which has no edge there").toString();
+        text.append("; the points on that edge:");
+        for (TrackEdgePoint point : edge.getEdgeData().getPoints())
+            text.append(' ').append(point.getType().getId()).append(" at ").append(point.getLocationOn(edge));
+        return text.toString();
     }
 
     /** The train assembled at the station {@code index}, standing there. */
@@ -650,7 +710,7 @@ final class TrackLine {
             if (turn != null)
                 clear(turn.fromX(), turn.toX(), TRACK_Z, turn.toZ());
             if (loop != null)
-                clear(0, loop.eastX() + loop.radius(), loop.northZ(), loop.southZ());
+                clear(loop.westX(), loop.eastX() + loop.radius(), loop.northZ(), loop.southZ());
         } catch (RuntimeException e) {
             LOGGER.warn("[{}] could not clean up after the track test", helper.testInfo.getTestName(), e);
         } finally {

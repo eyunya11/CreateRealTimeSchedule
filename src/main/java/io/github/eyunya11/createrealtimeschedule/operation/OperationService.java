@@ -25,9 +25,9 @@ import io.github.eyunya11.createrealtimeschedule.clock.RealClock;
 import io.github.eyunya11.createrealtimeschedule.diagram.DutyTimes;
 import io.github.eyunya11.createrealtimeschedule.operation.DutyCalendar.Start;
 import io.github.eyunya11.createrealtimeschedule.operation.TrainDriver.Outcome;
+import io.github.eyunya11.createrealtimeschedule.railway.Leg;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Duty;
-import io.github.eyunya11.createrealtimeschedule.travel.TrainSpecs;
 import net.minecraft.server.MinecraftServer;
 
 /**
@@ -35,7 +35,9 @@ import net.minecraft.server.MinecraftServer;
  *
  * <ol>
  * <li>Once a second, the trains standing at a depot of the timetable with nowhere to go, no schedule
- * of Create's and no duty are counted as free, from the moment they are first seen so.</li>
+ * of Create's and no duty are counted as free, from the moment they are first seen so; and the track
+ * is looked at, so that what it says of the stations is worked out again after it has changed
+ * ({@link TrackFacts#watch}).</li>
  * <li>A duty is given a set {@code duty_lead_seconds} before it first leaves: of the free sets at its
  * depot, the one that has waited longest. Of duties due together, the one that leaves first chooses
  * first. A duty that has had no set by the time it was to leave is given one late, after the duties
@@ -72,6 +74,7 @@ public final class OperationService {
         if (server.getTickCount() % FREE_CHECK_TICKS == 0) {
             findFreeSets(data, timetable, now);
             data.forgetOld(now);
+            TrackFacts.watch(data, timetable, server.getTickCount());
         }
         long lead = ModSettings.dutyLeadSeconds() * (long) RealClock.TICKS_PER_SECOND;
         long defaultMinimumStop = ModSettings.defaultMinimumStopSeconds() * (long) RealClock.TICKS_PER_SECOND;
@@ -86,6 +89,8 @@ public final class OperationService {
      * comes before the sets are stepped, so that a set waiting for one sees it go past on the same tick.
      */
     private static void watchPasses(OperationData data, Timetable timetable, long now) {
+        if (!data.hasWaits())
+            return; // nor is the track read for them
         Waits waits = data.waits(TrackFacts.axes(data, timetable));
         Set<UUID> watched = new HashSet<>();
         for (Map.Entry<UUID, DutyRun> entry : data.runs().entrySet()) {
@@ -133,24 +138,21 @@ public final class OperationService {
         if (call.waits().isEmpty())
             return false;
         Waits waits = data.waits(TrackFacts.axes(data, timetable));
-        RunTimes times = null;
         for (int index = 0; index < call.waits().size(); index++) {
             Timetable.Wait wait = call.waits().get(index);
             Waits.Key about = new Waits.Key(run.duty(), run.day(), run.call(), index);
             Waits.Target target = waits.target(run.duty(), run.call(), index).orElse(null);
             if (target == null)
-                continue; // a train in no duty does not run
-            DutyRun theirs = runOf(data, target.duty(), run.day());
-            Waits.State state = Waits.state(target, theirs);
+                continue; // it waits for nothing (Waits#unmet), as loading the timetable said
+            Map.Entry<UUID, DutyRun> theirs = runOf(data, target.duty(), run.day());
+            Waits.State state = Waits.state(target, theirs == null ? null : theirs.getValue());
             if (state == Waits.State.OVER_UNSEEN && data.firstUnseen(about))
                 data.note(now, run.duty(), run.day(), "train " + wait.train() + " came in after " + wait.at()
                     + " without being seen to run through it: the track has no station " + wait.at() + " on its way");
             if (state != Waits.State.WAITING || data.waitGivenUp(about))
                 continue;
             long longest = run.departure() + (wait.hasMaxWait() ? wait.maxWait() * (long) RealClock.TICKS_PER_SECOND : maxWait);
-            if (times == null)
-                times = unpoweredTimes(data, timetable);
-            long forecast = Waits.forecast(target, theirs, now, times, defaultMinimumStop);
+            long forecast = Waits.forecast(target, theirs.getValue(), now, timesOf(data, timetable, theirs.getKey()), defaultMinimumStop);
             if (now > longest || forecast > longest) {
                 data.giveUpWait(about);
                 data.note(now, run.duty(), run.day(), "did not wait " + (now > longest ? "longer " : "") + "for train " + wait.train()
@@ -172,19 +174,34 @@ public final class OperationService {
         Waits waits = data.waits(TrackFacts.axes(data, timetable));
         for (int index = 0; index < call.waits().size(); index++) {
             Waits.Target target = waits.target(run.duty(), run.call(), index).orElse(null);
-            if (target != null && !data.waitGivenUp(new Waits.Key(run.duty(), run.day(), run.call(), index))
-                && Waits.state(target, runOf(data, target.duty(), run.day())) == Waits.State.WAITING)
+            if (target == null || data.waitGivenUp(new Waits.Key(run.duty(), run.day(), run.call(), index)))
+                continue;
+            Map.Entry<UUID, DutyRun> theirs = runOf(data, target.duty(), run.day());
+            if (Waits.state(target, theirs == null ? null : theirs.getValue()) == Waits.State.WAITING)
                 return call.waits().get(index);
         }
         return null;
     }
 
-    /** The run of {@code duty} on service {@code day} that is going on; null if none is. */
-    private static @Nullable DutyRun runOf(OperationData data, String duty, long day) {
-        for (DutyRun run : data.runs().values())
-            if (run.duty().equals(duty) && run.day() == day)
-                return run;
+    /** The train that runs duty {@code duty} on service {@code day}, with its run; null if none does. */
+    private static @Nullable Map.Entry<UUID, DutyRun> runOf(OperationData data, String duty, long day) {
+        for (Map.Entry<UUID, DutyRun> entry : data.runs().entrySet())
+            if (entry.getValue().duty().equals(duty) && entry.getValue().day() == day)
+                return entry;
         return null;
+    }
+
+    /**
+     * How long the track takes for the train {@code id}, at its own speed and throttle ({@link TrackFacts#timesOf});
+     * the least any train takes if it is gone. Worked out once for the train as it is, and kept while it
+     * has or lacks fuel and runs at the same throttle, as a set may wait for it for many ticks.
+     */
+    private static RunTimes timesOf(OperationData data, Timetable timetable, UUID id) {
+        Map<List<String>, Leg> legs = TrackFacts.legs(data, timetable);
+        Train train = Create.RAILWAYS.trains.get(id);
+        if (train == null)
+            return TrackFacts.fastestTimes(legs);
+        return data.trainTimes(id, List.of(train.fuelTicks > 0, train.throttle), () -> RunTimes.remembered(TrackFacts.timesOf(train, legs)));
     }
 
     private static void stepRuns(OperationData data, Timetable timetable, long now, long defaultMinimumStop, long threshold, long lead,
@@ -252,15 +269,6 @@ public final class OperationService {
         });
     }
 
-    /** How long the track takes for a train without fuel, as the network's export has it; the timetable's times if Create's config leaves it no speed. */
-    private static RunTimes unpoweredTimes(OperationData data, Timetable timetable) {
-        try {
-            return TrackFacts.runTimes(TrackFacts.legs(data, timetable), TrainSpecs.unpowered(), 1);
-        } catch (IllegalArgumentException e) {
-            return RunTimes.NONE;
-        }
-    }
-
     /** Whether the train can be given a duty from {@code depot}: it stands there, with no duty, no schedule of Create's and nowhere to go. */
     private static boolean freeAt(OperationData data, Train train, String depot) {
         return !data.runs().containsKey(train.id) && TrainDriver.whyLetGo(train) == null && TrainDriver.standsAt(train, depot);
@@ -305,7 +313,7 @@ public final class OperationService {
         due.sort(Comparator.comparing((Start start) -> start.missedBy(now)).thenComparingLong(Start::at).thenComparing(Start::duty));
         boolean waiting = false;
         Recovery.Rules rules = null; // worked out for the first late duty, as it reads the track
-        RunTimes unpowered = RunTimes.NONE;
+        RunTimes fastest = RunTimes.NONE; // the least any set takes: whether one that comes free can still start the duty
         for (Start start : due) {
             Duty duty = byId.get(start.duty());
             List<Call> calls = data.calls(duty.id());
@@ -316,10 +324,10 @@ public final class OperationService {
             }
             if (late && threshold > 0 && rules == null) {
                 rules = new Recovery.Rules(timetable, data.allCalls(), TrackFacts.axes(data, timetable), threshold, defaultMinimumStop, lead);
-                unpowered = unpoweredTimes(data, timetable);
+                fastest = TrackFacts.fastestTimes(TrackFacts.legs(data, timetable));
             }
             if (late && (rules == null || !DutyCalendar.mayStartLate(start.day(), DutyPlan.firstDeparture(calls), now, lead)
-                || !Recovery.canStartLate(rules, duty.id(), calls, start.day(), now, unpowered, null))) {
+                || !Recovery.canStartLate(rules, duty.id(), calls, start.day(), now, fastest, null))) {
                 data.dealtWith(duty.id(), start.day());
                 // One that was to start before the timetable was loaded is no duty that did not run.
                 if (start.at() >= data.loadedAt(duty.id()))

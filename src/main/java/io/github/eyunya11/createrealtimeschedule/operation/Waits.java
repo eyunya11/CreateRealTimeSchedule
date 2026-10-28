@@ -1,6 +1,7 @@
 package io.github.eyunya11.createrealtimeschedule.operation;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -26,10 +27,10 @@ import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Wait;
  * it runs through P, is the track's, as the diagram draws it ({@link StationUse#runsThrough}). It does
  * not wait for a train that does not run that day: whose duty has no run going (not started, not run,
  * started before the timetable was loaded, ended or given up), or whose run does not make that call or
- * that way, held past it. A train is seen to run through P when its last carriage goes past a station
- * named P ({@code PassWatch}); one that comes in at the stop after the one after P without being seen
- * so (its last carriage may still be short of P at the first) has no station P on its way, and the wait
- * ends then.
+ * that way, held past it or at it until a later call (the train is cancelled). A train is seen to run
+ * through P when its last carriage goes past a station named P ({@code PassWatch}); one that comes in at
+ * the stop after the one after P without being seen so (its last carriage may still be short of P at
+ * the first) has no station P on its way, and the wait ends then.
  */
 public final class Waits {
 
@@ -42,6 +43,45 @@ public final class Waits {
 
     /** One wait of one call of a duty on one service day: the duty, the day, the call, and the wait's place among the call's. */
     public record Key(String duty, long day, int call, int index) {}
+
+    /**
+     * A wait that waits for nothing, so that the timetable's maker can be told: the train waited for is
+     * in no duty, and so never runs, or by the way the track takes it, it neither leaves the station nor
+     * runs through it before the waiting train leaves (on a loop line, it goes round the other way).
+     *
+     * @param train    the number of the train that waits
+     * @param station  the station of the stop it waits at
+     * @param waitFor  the wait, with its station filled in
+     * @param inNoDuty whether the train waited for is in no duty
+     */
+    public record Unmet(String train, String station, Wait waitFor, boolean inNoDuty) {
+
+        private static final String IN_NO_DUTY = "Train %1$s does not wait at %2$s for train %3$s, which is in no duty and never runs";
+        private static final String NO_WAY = "Train %1$s does not wait at %2$s for train %3$s: the way the track takes that train,"
+            + " it neither leaves %4$s nor runs through it before then";
+
+        /**
+         * What it is, in English, with %1$s for the waiting train, %2$s for its station, %3$s for the
+         * train waited for and %4$s for the station it is waited for at: as the log has it, and as a
+         * translation of the chat's falls back to.
+         */
+        public String pattern() {
+            return inNoDuty ? IN_NO_DUTY : NO_WAY;
+        }
+
+        /** What {@link #pattern()} is filled in with. */
+        public Object[] arguments() {
+            return new Object[] {train, station, waitFor.train(), waitFor.at()};
+        }
+
+        /** What it is, in English. */
+        public String text() {
+            return String.format(pattern(), arguments());
+        }
+    }
+
+    private static final Comparator<Unmet> UNMET_ORDER = Comparator.comparing(Unmet::train).thenComparing(Unmet::station)
+        .thenComparing(unmet -> unmet.waitFor().train()).thenComparing(unmet -> unmet.waitFor().at());
 
     /** What a wait has come to. */
     public enum State {
@@ -56,9 +96,10 @@ public final class Waits {
     /** Where a train's first stop is among the calls of the duty that runs it. */
     private record Start(String duty, int call) {}
 
-    /** The target of each wait, by duty, call, and the wait's place among the call's; empty for a train in no duty. */
+    /** The target of each wait, by duty, call, and the wait's place among the call's; empty for one that waits for nothing ({@link #unmet}). */
     private final Map<String, Map<Integer, List<Optional<Target>>>> targets = new HashMap<>();
     private final Map<String, Map<Integer, Set<String>>> watched = new HashMap<>();
+    private final List<Unmet> unmet = new ArrayList<>();
 
     private Waits() {}
 
@@ -83,8 +124,12 @@ public final class Waits {
                 if (call.waits().isEmpty())
                     continue;
                 List<Optional<Target>> found = new ArrayList<>();
-                for (Wait wait : call.waits())
-                    found.add(target(timetable, axes, starts, call, wait));
+                for (Wait wait : call.waits()) {
+                    Optional<Target> target = target(timetable, axes, starts, call, wait);
+                    found.add(target);
+                    if (target.isEmpty())
+                        waits.unmet.add(new Unmet(call.leavingTrain(), call.station(), wait, !starts.containsKey(wait.train())));
+                }
                 waits.targets.computeIfAbsent(duty, any -> new HashMap<>()).put(index, found);
                 for (Optional<Target> target : found)
                     target.filter(Target::through).ifPresent(through -> waits.watched
@@ -93,7 +138,13 @@ public final class Waits {
                         .add(through.station()));
             }
         });
+        waits.unmet.sort(UNMET_ORDER);
         return waits;
+    }
+
+    /** The waits that wait for nothing, by the waiting train's number and its station. */
+    public List<Unmet> unmet() {
+        return List.copyOf(unmet);
     }
 
     /**
@@ -135,9 +186,12 @@ public final class Waits {
         if (run == null)
             return State.OVER;
         int call = target.call();
+        // Held past the call, or at it until a later one, the set does not run the way from it: the train is cancelled.
+        if (run.skipped(call) || run.skipped(call + 1))
+            return State.OVER;
         if (!target.through())
-            return run.departures().get(call) != DutyRun.NOT_YET || run.skipped(call) ? State.OVER : State.WAITING;
-        if (run.passedBy(call, target.station()) || run.skipped(call) || run.skipped(call + 1))
+            return run.departures().get(call) != DutyRun.NOT_YET ? State.OVER : State.WAITING;
+        if (run.passedBy(call, target.station()))
             return State.OVER;
         List<Long> arrivals = run.arrivals();
         for (int later = call + 2; later < arrivals.size(); later++)
