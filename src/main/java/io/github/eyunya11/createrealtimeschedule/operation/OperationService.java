@@ -142,7 +142,7 @@ public final class OperationService {
             Waits.Key about = new Waits.Key(run.duty(), run.day(), run.call(), index);
             Waits.Target target = waits.target(run.duty(), run.call(), index).orElse(null);
             if (target == null)
-                continue; // a train in no duty does not run
+                continue; // it waits for nothing (Waits#unmet), as loading the timetable said
             Map.Entry<UUID, DutyRun> theirs = runOf(data, target.duty(), run.day());
             Waits.State state = Waits.state(target, theirs == null ? null : theirs.getValue());
             if (state == Waits.State.OVER_UNSEEN && data.firstUnseen(about))

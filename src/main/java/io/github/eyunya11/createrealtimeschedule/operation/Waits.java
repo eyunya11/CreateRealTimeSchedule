@@ -27,10 +27,10 @@ import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Wait;
  * it runs through P, is the track's, as the diagram draws it ({@link StationUse#runsThrough}). It does
  * not wait for a train that does not run that day: whose duty has no run going (not started, not run,
  * started before the timetable was loaded, ended or given up), or whose run does not make that call or
- * that way, held past it or at it until a later call (the train is cancelled). A train is seen to run through P when its last carriage goes past a station
- * named P ({@code PassWatch}); one that comes in at the stop after the one after P without being seen
- * so (its last carriage may still be short of P at the first) has no station P on its way, and the wait
- * ends then.
+ * that way, held past it or at it until a later call (the train is cancelled). A train is seen to run
+ * through P when its last carriage goes past a station named P ({@code PassWatch}); one that comes in at
+ * the stop after the one after P without being seen so (its last carriage may still be short of P at
+ * the first) has no station P on its way, and the wait ends then.
  */
 public final class Waits {
 
@@ -72,7 +72,7 @@ public final class Waits {
     /** Where a train's first stop is among the calls of the duty that runs it. */
     private record Start(String duty, int call) {}
 
-    /** The target of each wait, by duty, call, and the wait's place among the call's; empty for a train in no duty. */
+    /** The target of each wait, by duty, call, and the wait's place among the call's; empty for one that waits for nothing ({@link #unmet}). */
     private final Map<String, Map<Integer, List<Optional<Target>>>> targets = new HashMap<>();
     private final Map<String, Map<Integer, Set<String>>> watched = new HashMap<>();
     private final List<Unmet> unmet = new ArrayList<>();
