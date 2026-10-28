@@ -25,6 +25,7 @@ import io.github.eyunya11.createrealtimeschedule.clock.RealClock;
 import io.github.eyunya11.createrealtimeschedule.diagram.DutyTimes;
 import io.github.eyunya11.createrealtimeschedule.operation.DutyCalendar.Start;
 import io.github.eyunya11.createrealtimeschedule.operation.TrainDriver.Outcome;
+import io.github.eyunya11.createrealtimeschedule.railway.Leg;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Duty;
 import net.minecraft.server.MinecraftServer;
@@ -191,13 +192,16 @@ public final class OperationService {
     }
 
     /**
-     * How long the track takes for the train {@code id}, at its own speed and throttle; the least any
-     * train takes if it is gone, or Create's config leaves it no speed.
+     * How long the track takes for the train {@code id}, at its own speed and throttle ({@link TrackFacts#timesOf});
+     * the least any train takes if it is gone. Worked out once for the train as it is, and kept while it
+     * has or lacks fuel and runs at the same throttle, as a set may wait for it for many ticks.
      */
     private static RunTimes timesOf(OperationData data, Timetable timetable, UUID id) {
+        Map<List<String>, Leg> legs = TrackFacts.legs(data, timetable);
         Train train = Create.RAILWAYS.trains.get(id);
-        Optional<CreateReach> reach = train == null ? Optional.empty() : CreateReach.of(train, TrackFacts.legs(data, timetable));
-        return reach.isPresent() ? reach.get() : TrackFacts.fastestTimes(TrackFacts.legs(data, timetable));
+        if (train == null)
+            return TrackFacts.fastestTimes(legs);
+        return data.trainTimes(id, List.of(train.fuelTicks > 0, train.throttle), () -> RunTimes.remembered(TrackFacts.timesOf(train, legs)));
     }
 
     private static void stepRuns(OperationData data, Timetable timetable, long now, long defaultMinimumStop, long threshold, long lead,

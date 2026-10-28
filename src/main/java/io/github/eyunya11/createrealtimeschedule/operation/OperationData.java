@@ -14,6 +14,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
@@ -129,6 +130,8 @@ public final class OperationData extends SavedData {
     private @Nullable Map<String, LineAxis> axes;
     /** Not saved: the ways between the timetable's stations by their ends, worked out with the axes ({@link TrackFacts}). */
     private @Nullable Map<List<String>, Leg> legs;
+    /** Not saved: how long the track takes for each train waited for, with what it was worked out for (its fuel and throttle). */
+    private final Map<UUID, Map.Entry<Object, RunTimes>> trainTimes = new HashMap<>();
     /** Not saved: whether the track has changed since the axes and the ways were worked out. */
     private final TrackWatch trackWatch = new TrackWatch(TrackFacts.SETTLE_TICKS);
     /** Not saved: the trains the sets wait for, worked out from the timetable when first needed; null until then. */
@@ -179,9 +182,7 @@ public final class OperationData extends SavedData {
             if (!waits.unmet().equals(loggedUnmet)) {
                 loggedUnmet = waits.unmet();
                 for (Waits.Unmet unmet : loggedUnmet)
-                    LOGGER.warn("Train {} does not wait at {} for train {}: {}", unmet.train(), unmet.station(), unmet.waitFor().train(),
-                        unmet.inNoDuty() ? "that train is in no duty, and never runs"
-                            : "the way the track takes that train, it neither leaves " + unmet.waitFor().at() + " nor runs through it before then");
+                    LOGGER.warn(unmet.text());
             }
         }
         return waits;
@@ -224,8 +225,17 @@ public final class OperationData extends SavedData {
         Set<Waits.Key> givenUp = new HashSet<>(waitsGivenUp);
         Set<Waits.Key> unseen = new HashSet<>(waitsUnseen);
         use(timetable);
-        // A duty that is the same goes on, and what its waits have come to with it, so that nothing is noted twice.
-        Predicate<Waits.Key> same = key -> calls.containsKey(key.duty()) && calls.get(key.duty()).equals(before.get(key.duty()));
+        // A duty that is the same goes on, and what its waits have come to with it, so that nothing is noted
+        // twice: while the duty of each train waited for is the same too, as where it is waited for depends on it.
+        Predicate<Waits.Key> same = key -> {
+            List<Call> dutyCalls = calls.get(key.duty());
+            if (dutyCalls == null || !dutyCalls.equals(before.get(key.duty())) || key.call() >= dutyCalls.size()
+                || key.index() >= dutyCalls.get(key.call()).waits().size())
+                return false;
+            String train = dutyCalls.get(key.call()).waits().get(key.index()).train();
+            String theirs = dutyOf(calls, train);
+            return Objects.equals(theirs, dutyOf(before, train)) && (theirs == null || calls.get(theirs).equals(before.get(theirs)));
+        };
         givenUp.stream().filter(same).forEach(waitsGivenUp::add);
         unseen.stream().filter(same).forEach(waitsUnseen::add);
         for (Map.Entry<String, List<Call>> duty : calls.entrySet())
@@ -276,6 +286,14 @@ public final class OperationData extends SavedData {
         nextStart = Long.MIN_VALUE;
         forgetAxes();
         setDirty();
+    }
+
+    /** The duty of {@code calls} that the train {@code number} leaves a call as; null if none does. */
+    private static @Nullable String dutyOf(Map<String, List<Call>> calls, String number) {
+        for (Map.Entry<String, List<Call>> duty : calls.entrySet())
+            if (duty.getValue().stream().anyMatch(call -> call.leavingTrain().equals(number)))
+                return duty.getKey();
+        return null;
     }
 
     private void use(Timetable timetable) {
@@ -379,11 +397,24 @@ public final class OperationData extends SavedData {
         Map<String, LineAxis> before = this.axes;
         this.axes = Map.copyOf(axes);
         this.legs = Map.copyOf(legs);
-        tails.clear(); // the edges the ends of the trains were copied on may be gone
+        trainTimes.clear();
         if (before != null && !before.equals(this.axes)) {
             waits = null;
             revision++;
         }
+    }
+
+    /**
+     * How long the track takes for the train {@code train}, as worked out by {@code make} for it as
+     * {@code key} says it is; worked out again when that changes, or the track does.
+     */
+    public RunTimes trainTimes(UUID train, Object key, Supplier<RunTimes> make) {
+        Map.Entry<Object, RunTimes> known = trainTimes.get(train);
+        if (known == null || !known.getKey().equals(key)) {
+            known = Map.entry(key, make.get());
+            trainTimes.put(train, known);
+        }
+        return known.getValue();
     }
 
     /** Whether the track has changed since the axes and the ways were worked out. */
@@ -425,6 +456,7 @@ public final class OperationData extends SavedData {
     /** Drops the records of service days before the one before that of {@code now}, and what is kept of their waits. */
     public void forgetOld(long now) {
         long first = RealClock.day(now) - 1;
+        trainTimes.keySet().retainAll(runs.keySet());
         waitsGivenUp.removeIf(key -> key.day() < first);
         waitsUnseen.removeIf(key -> key.day() < first);
         if (history.removeIf(record -> record.run().day() < first)) {

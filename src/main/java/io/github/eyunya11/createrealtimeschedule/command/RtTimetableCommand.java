@@ -137,14 +137,8 @@ public final class RtTimetableCommand {
             return List.of();
         List<Component> lines = new ArrayList<>();
         for (Waits.Unmet unmet : data.waits(TrackFacts.axes(data, timetable)).unmet())
-            lines.add((unmet.inNoDuty()
-                ? Component.translatableWithFallback(KEY + "wait_in_no_duty",
-                    "Train %1$s does not wait at %2$s for train %3$s, which is in no duty and never runs",
-                    unmet.train(), unmet.station(), unmet.waitFor().train())
-                : Component.translatableWithFallback(KEY + "wait_no_way",
-                    "Train %1$s does not wait at %2$s for train %3$s: the way the track takes that train, it neither leaves %4$s"
-                        + " nor runs through it before then", unmet.train(), unmet.station(), unmet.waitFor().train(), unmet.waitFor().at()))
-                .withStyle(ChatFormatting.YELLOW));
+            lines.add(Component.translatableWithFallback(KEY + (unmet.inNoDuty() ? "wait_in_no_duty" : "wait_no_way"), unmet.pattern(),
+                unmet.arguments()).withStyle(ChatFormatting.YELLOW));
         return lines;
     }
 

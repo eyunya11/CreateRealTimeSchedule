@@ -1,6 +1,8 @@
 package io.github.eyunya11.createrealtimeschedule.operation;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.OptionalLong;
 
 /**
@@ -18,6 +20,12 @@ public interface RunTimes {
      * {@code to}, with nothing in its way; empty if that is not known.
      */
     OptionalLong ticks(String from, String to);
+
+    /** What {@code times} says, worked out once for each two stations and then remembered. */
+    static RunTimes remembered(RunTimes times) {
+        Map<List<String>, OptionalLong> known = new HashMap<>();
+        return (from, to) -> known.computeIfAbsent(List.of(from, to), ends -> times.ticks(from, to));
+    }
 
     /** The least that any of {@code times} says, between each two stations: the fastest of them; empty where none knows. */
     static RunTimes fastest(List<RunTimes> times) {

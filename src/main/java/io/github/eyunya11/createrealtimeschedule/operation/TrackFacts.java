@@ -1,7 +1,6 @@
 package io.github.eyunya11.createrealtimeschedule.operation;
 
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -13,7 +12,10 @@ import java.util.Set;
 import java.util.function.Supplier;
 
 import com.simibubi.create.Create;
+import com.simibubi.create.content.trains.entity.Train;
+import com.simibubi.create.content.trains.graph.EdgePointType;
 import com.simibubi.create.content.trains.graph.TrackGraph;
+import com.simibubi.create.content.trains.station.GlobalStation;
 
 import io.github.eyunya11.createrealtimeschedule.clock.RealClock;
 import io.github.eyunya11.createrealtimeschedule.diagram.LineAxis;
@@ -59,8 +61,31 @@ public final class TrackFacts {
     public static void watch(OperationData data, Timetable timetable, int tick) {
         if (data.axes() == null || data.legs() == null)
             return;
-        if (data.trackWatch().settledOnAChange(CreateNetwork.fingerprint(Create.RAILWAYS.trackNetworks.values()), tick))
+        if (data.trackWatch().settledOnAChange(CreateNetwork.fingerprint(graphsOf(timetable)), tick))
             read(data, timetable);
+    }
+
+    /**
+     * The track networks that have a station of the timetable's lines: the facts come from these alone,
+     * so that track laid on a network of none of them is not read, nor watched.
+     */
+    private static List<TrackGraph> graphsOf(Timetable timetable) {
+        Set<String> stations = stationsOf(timetable);
+        List<TrackGraph> graphs = new ArrayList<>();
+        for (TrackGraph graph : Create.RAILWAYS.trackNetworks.values())
+            for (GlobalStation station : graph.getPoints(EdgePointType.STATION))
+                if (stations.contains(station.name)) {
+                    graphs.add(graph);
+                    break;
+                }
+        return graphs;
+    }
+
+    private static Set<String> stationsOf(Timetable timetable) {
+        Set<String> stations = new HashSet<>();
+        for (Line line : timetable.lines())
+            stations.addAll(line.stations());
+        return stations;
     }
 
     private static void workOut(OperationData data, Timetable timetable) {
@@ -69,12 +94,9 @@ public final class TrackFacts {
     }
 
     private static void read(OperationData data, Timetable timetable) {
-        Collection<TrackGraph> graphs = Create.RAILWAYS.trackNetworks.values();
+        List<TrackGraph> graphs = graphsOf(timetable);
         long print = CreateNetwork.fingerprint(graphs);
-        Set<String> stations = new HashSet<>();
-        for (Line line : timetable.lines())
-            stations.addAll(line.stations());
-        List<Leg> legs = CreateNetwork.read(graphs).legs(stations);
+        List<Leg> legs = CreateNetwork.read(graphs).legs(stationsOf(timetable));
         Map<String, LineAxis> axes = new LinkedHashMap<>();
         for (Line line : timetable.lines())
             axes.put(line.id(), LineAxis.of(line, legs));
@@ -83,6 +105,11 @@ public final class TrackFacts {
             byEnds.putIfAbsent(List.of(leg.from(), leg.to()), leg);
         data.track(axes, byEnds);
         data.trackWatch().workedOut(print);
+        // The end of a train copied on an edge that is gone is not run on from; it is taken again from where the train is.
+        data.tails().entrySet().removeIf(entry -> {
+            Train train = Create.RAILWAYS.trains.get(entry.getKey());
+            return train == null || !PassWatch.stillOn(entry.getValue(), train.graph);
+        });
     }
 
     /**
@@ -100,6 +127,19 @@ public final class TrackFacts {
             }
         }
         return RunTimes.fastest(times);
+    }
+
+    /**
+     * How long the track takes between two stations of {@code legs} for {@code train}, at its own speed
+     * (with fuel or without, as it is now) and throttle; the least any train takes if Create's config
+     * leaves it no speed.
+     */
+    public static RunTimes timesOf(Train train, Map<List<String>, Leg> legs) {
+        try {
+            return runTimes(legs, TrainSpecs.of(train), train.throttle);
+        } catch (IllegalArgumentException e) {
+            return fastestTimes(legs);
+        }
     }
 
     /** How long the track takes between two stations of {@code legs}, for a train of {@code spec} at {@code throttle}. */

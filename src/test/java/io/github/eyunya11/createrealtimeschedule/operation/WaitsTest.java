@@ -99,6 +99,7 @@ class WaitsTest {
         assertEquals(Optional.empty(), WAITS.target("1A", 2, 2));
         assertEquals(List.of(new Waits.Unmet("1", "S2", new Wait("9", "S1", Stop.NONE), true)), WAITS.unmet(),
             "a wait that waits for nothing, so that the maker can be told");
+        assertEquals("Train 1 does not wait at S2 for train 9, which is in no duty and never runs", WAITS.unmet().getFirst().text());
     }
 
     /**

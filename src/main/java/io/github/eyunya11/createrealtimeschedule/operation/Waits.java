@@ -54,7 +54,31 @@ public final class Waits {
      * @param waitFor  the wait, with its station filled in
      * @param inNoDuty whether the train waited for is in no duty
      */
-    public record Unmet(String train, String station, Wait waitFor, boolean inNoDuty) {}
+    public record Unmet(String train, String station, Wait waitFor, boolean inNoDuty) {
+
+        private static final String IN_NO_DUTY = "Train %1$s does not wait at %2$s for train %3$s, which is in no duty and never runs";
+        private static final String NO_WAY = "Train %1$s does not wait at %2$s for train %3$s: the way the track takes that train,"
+            + " it neither leaves %4$s nor runs through it before then";
+
+        /**
+         * What it is, in English, with %1$s for the waiting train, %2$s for its station, %3$s for the
+         * train waited for and %4$s for the station it is waited for at: as the log has it, and as a
+         * translation of the chat's falls back to.
+         */
+        public String pattern() {
+            return inNoDuty ? IN_NO_DUTY : NO_WAY;
+        }
+
+        /** What {@link #pattern()} is filled in with. */
+        public Object[] arguments() {
+            return new Object[] {train, station, waitFor.train(), waitFor.at()};
+        }
+
+        /** What it is, in English. */
+        public String text() {
+            return String.format(pattern(), arguments());
+        }
+    }
 
     private static final Comparator<Unmet> UNMET_ORDER = Comparator.comparing(Unmet::train).thenComparing(Unmet::station)
         .thenComparing(unmet -> unmet.waitFor().train()).thenComparing(unmet -> unmet.waitFor().at());

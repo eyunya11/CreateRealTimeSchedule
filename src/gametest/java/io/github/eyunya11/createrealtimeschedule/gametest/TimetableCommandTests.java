@@ -228,15 +228,46 @@ public class TimetableCommandTests {
             "a day on, the waits given up are not those of the day before and today");
         helper.assertTrue(data.firstUnseen(yesterday), "a day on, an unseen wait of the day before yesterday is kept");
 
-        data.firstUnseen(ofToday);
         data.loadTimetable(TIMETABLE, TimetableJson.parse(TIMETABLE).timetable(), now);
         helper.assertTrue(data.history().size() == 1, "the record of a duty that has not changed is dropped on a reload");
-        helper.assertTrue(data.waitGivenUp(ofToday) && !data.firstUnseen(ofToday),
-            "what the waits of a duty that has not changed came to is forgotten on a reload");
         String changed = TIMETABLE.replace("\"depart\": \"12:00:20\"", "\"depart\": \"12:00:21\"");
         data.loadTimetable(changed, TimetableJson.parse(changed).timetable(), now);
         helper.assertTrue(data.history().isEmpty(), "the record of a duty whose times have changed is kept");
-        helper.assertTrue(!data.waitGivenUp(ofToday), "a wait given up of a duty whose times have changed is kept");
+        helper.succeed();
+    }
+
+    /**
+     * Train 1 of 1A waits at A for train 2 of 2A: what the wait came to goes on over a reload that leaves
+     * both duties the same, and is forgotten over one that changes 2A only, as where 2 is waited for may
+     * have changed with it.
+     */
+    @GameTest(template = EMPTY, batch = "realtimetimetable_reloaded_waits")
+    public static void aReloadKeepsWhatAWaitCameToWhileBothDutiesAreTheSame(GameTestHelper helper) {
+        String json = TIMETABLE.replace("\"version\": 2", "\"version\": 5")
+            .replace("{\"station\": \"A\", \"depart\": \"12:00:20\"}", "{\"station\": \"A\", \"depart\": \"12:00:20\", \"wait_for\": [{\"train\": \"2\"}]}")
+            .replace("\"duties\": [{\"id\": \"1A\", \"depot\": \"Depot\", \"trains\": [\"D1\", \"1\", \"D2\"]}]",
+                "\"duties\": [{\"id\": \"1A\", \"depot\": \"Depot\", \"trains\": [\"D1\", \"1\", \"D2\"]}, "
+                    + "{\"id\": \"2A\", \"depot\": \"Depot\", \"trains\": [\"D3\", \"2\", \"D4\"]}]")
+            .replace("\"trains\": [\n", "\"trains\": [\n"
+                + "    {\"number\": \"D3\", \"line\": \"loop\", \"deadhead\": true, \"stops\": [\n"
+                + "      {\"station\": \"Depot\", \"depart\": \"11:59:00\"}, {\"station\": \"A\", \"arrive\": \"11:59:10\"}]},\n"
+                + "    {\"number\": \"2\", \"line\": \"loop\", \"stops\": [\n"
+                + "      {\"station\": \"A\", \"depart\": \"12:00:10\"}, {\"station\": \"B\", \"arrive\": \"12:00:15\"}]},\n"
+                + "    {\"number\": \"D4\", \"line\": \"loop\", \"deadhead\": true, \"stops\": [\n"
+                + "      {\"station\": \"B\", \"depart\": \"12:00:30\"}, {\"station\": \"Depot\", \"arrive\": \"12:00:50\"}]},\n");
+        TimetableJson.Result read = TimetableJson.parse(json);
+        helper.assertTrue(read.ok(), "the timetable does not read: " + read.problems());
+        long now = ClockService.now(helper.getLevel().getServer());
+        OperationData data = new OperationData();
+        data.loadTimetable(json, read.timetable(), now);
+        Waits.Key wait = new Waits.Key("1A", RealClock.day(now), 1, 0);
+        data.giveUpWait(wait);
+        data.firstUnseen(wait);
+        data.loadTimetable(json, read.timetable(), now);
+        helper.assertTrue(data.waitGivenUp(wait) && !data.firstUnseen(wait), "what the wait came to is forgotten over a reload that changes nothing");
+        String later = json.replace("\"depart\": \"12:00:10\"", "\"depart\": \"12:00:11\"");
+        data.loadTimetable(later, TimetableJson.parse(later).timetable(), now);
+        helper.assertTrue(!data.waitGivenUp(wait), "the wait is still given up after the duty of the train it waits for has changed");
         helper.succeed();
     }
 

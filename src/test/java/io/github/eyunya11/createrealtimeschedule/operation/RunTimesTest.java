@@ -29,4 +29,18 @@ class RunTimesTest {
         assertEquals(OptionalLong.empty(), fastest.ticks("D", "A"), "what none knows");
         assertEquals(OptionalLong.empty(), RunTimes.fastest(List.of()).ticks("A", "B"));
     }
+
+    @Test
+    void rememberedTimesAreWorkedOutOnceForEachTwoStations() {
+        int[] asked = {0};
+        RunTimes remembered = RunTimes.remembered((from, to) -> {
+            asked[0]++;
+            return from.equals("A") ? OptionalLong.of(100) : OptionalLong.empty();
+        });
+        for (int k = 0; k < 3; k++) {
+            assertEquals(OptionalLong.of(100), remembered.ticks("A", "B"));
+            assertEquals(OptionalLong.empty(), remembered.ticks("B", "A"), "what is not known is remembered too");
+        }
+        assertEquals(2, asked[0]);
+    }
 }

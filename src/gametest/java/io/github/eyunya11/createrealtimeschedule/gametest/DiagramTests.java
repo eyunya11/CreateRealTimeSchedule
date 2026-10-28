@@ -1,9 +1,13 @@
 package io.github.eyunya11.createrealtimeschedule.gametest;
 
 import java.util.List;
+import java.util.Map;
+import java.util.OptionalLong;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+
+import com.simibubi.create.content.trains.entity.Train;
 
 import io.github.eyunya11.createrealtimeschedule.Createrealtimeschedule;
 import io.github.eyunya11.createrealtimeschedule.clock.ClockService;
@@ -15,8 +19,10 @@ import io.github.eyunya11.createrealtimeschedule.network.DiagramSnapshotPayload;
 import io.github.eyunya11.createrealtimeschedule.operation.DutyRun;
 import io.github.eyunya11.createrealtimeschedule.operation.OperationData;
 import io.github.eyunya11.createrealtimeschedule.operation.TrackFacts;
+import io.github.eyunya11.createrealtimeschedule.railway.Leg;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable;
 import io.github.eyunya11.createrealtimeschedule.timetable.TimetableJson;
+import io.github.eyunya11.createrealtimeschedule.travel.TrainSpecs;
 import io.netty.buffer.Unpooled;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
@@ -121,6 +127,40 @@ public class DiagramTests {
             revision[0] = data.revision();
             changedAt[0] = tick;
             track.station(1).name = names[1];
+        });
+    }
+
+    /**
+     * The same line: a train waited for is forecast at its own speed, that of a train with fuel while it
+     * has some and of one without while it has none, and whether a late duty can still start goes by
+     * the faster of the two. By Create's defaults the two differ (40 and 28 blocks a second).
+     */
+    @GameTest(template = TRACK_LINE, batch = "realtimediagram_train_times", timeoutTicks = 1500)
+    public static void aTrainIsTimedAtItsOwnSpeed(GameTestHelper helper) {
+        TrackLine track = new TrackLine(helper, 50, new int[] {6, 26, 46}, new String[] {"Alpha", "Beta", "Gamma"});
+        track.cleanUpWhenTheTestEnds();
+        Timetable timetable = TimetableJson.parse("""
+            {"format": "createrealtimeschedule.timetable", "version": 2, "name": "",
+             "lines": [{"id": "l", "name": "Line", "stations": ["Alpha", "Beta", "Gamma"]}], "trains": [], "duties": []}
+            """).timetable();
+        helper.assertTrue(timetable != null, "the timetable does not read");
+        OperationData data = new OperationData();
+        boolean[] done = {false};
+        helper.onEachTick(() -> {
+            if (done[0] || !track.setUp())
+                return;
+            done[0] = true;
+            Map<List<String>, Leg> legs = TrackFacts.legs(data, timetable);
+            Train train = track.train();
+            long powered = TrackFacts.runTimes(legs, TrainSpecs.powered(), train.throttle).ticks("Alpha", "Gamma").orElseThrow();
+            long unpowered = TrackFacts.runTimes(legs, TrainSpecs.unpowered(), train.throttle).ticks("Alpha", "Gamma").orElseThrow();
+            helper.assertTrue(powered < unpowered, "a train with fuel takes " + powered + " ticks from Alpha to Gamma, and one without " + unpowered);
+            train.fuelTicks = 100;
+            helper.assertValueEqual(OptionalLong.of(powered), TrackFacts.timesOf(train, legs).ticks("Alpha", "Gamma"), "the train with fuel");
+            train.fuelTicks = 0;
+            helper.assertValueEqual(OptionalLong.of(unpowered), TrackFacts.timesOf(train, legs).ticks("Alpha", "Gamma"), "the train without fuel");
+            helper.assertValueEqual(OptionalLong.of(powered), TrackFacts.fastestTimes(legs).ticks("Alpha", "Gamma"), "the fastest any train takes");
+            helper.succeed();
         });
     }
 
