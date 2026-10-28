@@ -166,6 +166,45 @@ class WaitsTest {
         assertFalse(unseen.passedBy(1, "S1"));
     }
 
+    /**
+     * The local L of 1A waits at P for the express X of 2A to leave P, and to run through M. X's set
+     * comes in at P 20 minutes late and is held there until its next call at P, as the recovery does,
+     * so X does not run: the waits are over, and stay so once the set has left P as X2.
+     */
+    @Test
+    void aTrainHeldAtTheStationUntilALaterCallIsNotWaitedFor() {
+        Line line = new Line("l", "Line", List.of("Depot", "P", "M", "B"), false);
+        Stop waits = new Stop("P", Stop.NONE, t("08:12"), Stop.NONE, List.of(new Wait("X", "", 3600), new Wait("X", "M", 3600)));
+        Timetable timetable = new Timetable("", List.of(line), List.of(
+            train("E0", true, Stop.leaving("Depot", t("08:00")), Stop.arriving("P", t("08:05"))),
+            train("X", false, Stop.leaving("P", t("08:10")), Stop.arriving("B", t("08:20"))),
+            train("Y", false, Stop.leaving("B", t("08:25")), Stop.arriving("P", t("08:35"))),
+            train("X2", false, Stop.leaving("P", t("08:40")), Stop.arriving("B", t("08:50"))),
+            train("E9", true, Stop.leaving("B", t("08:55")), Stop.arriving("Depot", t("09:05"))),
+            train("L0", true, Stop.leaving("Depot", t("08:01")), Stop.arriving("P", t("08:06"))),
+            train("L", false, waits, Stop.arriving("B", t("08:25"))),
+            train("L9", true, Stop.leaving("B", t("08:30")), Stop.arriving("Depot", t("08:40")))),
+            List.of(new Duty("2A", "Depot", List.of("E0", "X", "Y", "X2", "E9")), new Duty("1A", "Depot", List.of("L0", "L", "L9"))));
+        assertEquals(List.of(), timetable.problems());
+        Map<String, List<Call>> calls = calls(timetable);
+        Waits all = Waits.of(timetable, calls, Map.of());
+        Target leaves = all.target("1A", 1, 0).orElseThrow();
+        Target runsThrough = all.target("1A", 1, 1).orElseThrow();
+        assertEquals(new Target("X", "2A", 1, false, "P"), leaves);
+        assertEquals(new Target("X", "2A", 1, true, "M"), runsThrough);
+
+        DutyRun express = DutyRun.start("2A", DAY, calls.get("2A"), at("07:59"));
+        express.left(at("08:00"));
+        express.arrived(at("08:25"), MINIMUM);
+        assertEquals(State.WAITING, Waits.state(leaves, express), "at P, and not gone");
+        assertEquals(State.WAITING, Waits.state(runsThrough, express));
+        express.hold(3, at("08:40"));
+        assertEquals(State.OVER, Waits.state(leaves, express), "held at P until X2: X does not leave P");
+        assertEquals(State.OVER, Waits.state(runsThrough, express), "nor run through M");
+        express.left(at("08:40"));
+        assertEquals(State.OVER, Waits.state(leaves, express), "gone from P as X2, not as X");
+    }
+
     @Test
     void theForecastIsWhenTheTrainLeavesItsCallIfNothingHoldsItUp() {
         Target express = WAITS.target("1A", 2, 0).orElseThrow();

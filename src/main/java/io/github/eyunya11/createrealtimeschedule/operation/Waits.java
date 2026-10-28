@@ -26,7 +26,7 @@ import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Wait;
  * it runs through P, is the track's, as the diagram draws it ({@link StationUse#runsThrough}). It does
  * not wait for a train that does not run that day: whose duty has no run going (not started, not run,
  * started before the timetable was loaded, ended or given up), or whose run does not make that call or
- * that way, held past it. A train is seen to run through P when its last carriage goes past a station
+ * that way, held past it or at it until a later call (the train is cancelled). A train is seen to run through P when its last carriage goes past a station
  * named P ({@code PassWatch}); one that comes in at the stop after the one after P without being seen
  * so (its last carriage may still be short of P at the first) has no station P on its way, and the wait
  * ends then.
@@ -135,9 +135,12 @@ public final class Waits {
         if (run == null)
             return State.OVER;
         int call = target.call();
+        // Held past the call, or at it until a later one, the set does not run the way from it: the train is cancelled.
+        if (run.skipped(call) || run.skipped(call + 1))
+            return State.OVER;
         if (!target.through())
-            return run.departures().get(call) != DutyRun.NOT_YET || run.skipped(call) ? State.OVER : State.WAITING;
-        if (run.passedBy(call, target.station()) || run.skipped(call) || run.skipped(call + 1))
+            return run.departures().get(call) != DutyRun.NOT_YET ? State.OVER : State.WAITING;
+        if (run.passedBy(call, target.station()))
             return State.OVER;
         List<Long> arrivals = run.arrivals();
         for (int later = call + 2; later < arrivals.size(); later++)
