@@ -601,20 +601,24 @@ final class TrackLine {
      * already that it cannot share it with (another station, a signal).
      */
     private String whyNoPlace(int index) {
-        TrackTargetingBehaviour<?> target = BlockEntityBehaviour.get(stationEntity(index), TrackTargetingBehaviour.TYPE);
+        StationBlockEntity entity = stationEntity(index);
+        BlockPos block = helper.absolutePos(stationBlock(index));
+        String state = "its block entity is " + (entity.isRemoved() ? "removed" : "there") + (level.getBlockEntity(block) == entity ? "" : " but not the level's")
+            + ", its block " + (level.shouldTickBlocksAt(block) ? "ticks" : "does not tick") + "; ";
+        TrackTargetingBehaviour<?> target = BlockEntityBehaviour.get(entity, TrackTargetingBehaviour.TYPE);
         if (target == null)
-            return "the station has no track target";
+            return state + "the station has no track target";
         String track = target.getGlobalPosition().toShortString() + " facing " + target.getTargetDirection();
         if (!target.hasValidTrack())
-            return "its target " + track + " is not a track";
+            return state + "its target " + track + " is not a track";
         TrackGraphLocation at = target.determineGraphLocation();
         if (at == null)
-            return "Create finds no place on the graph at " + track;
+            return state + "Create finds no place on the graph at " + track;
         TrackNode first = at.graph.locateNode(at.edge.getFirst());
         TrackNode second = at.graph.locateNode(at.edge.getSecond());
         TrackEdge edge = first == null || second == null ? null : at.graph.getConnectionsFrom(first).get(second);
         long graphs = Create.RAILWAYS.trackNetworks.values().stream().filter(graph -> graph.locateNode(at.edge.getFirst()) != null).count();
-        StringBuilder text = new StringBuilder("Create places it at ").append(track).append(", ").append(at.position)
+        StringBuilder text = new StringBuilder(state).append("Create places it at ").append(track).append(", ").append(at.position)
             .append(" along ").append(at.edge.getFirst()).append(" to ").append(at.edge.getSecond()).append(" of graph ").append(at.graph.id)
             .append(" (").append(graphs).append(" of the ").append(Create.RAILWAYS.trackNetworks.size()).append(" graphs have that node)");
         if (edge == null)
