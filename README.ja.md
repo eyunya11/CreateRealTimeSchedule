@@ -70,7 +70,7 @@ English: [README.md](README.md)
 | `/rttimetable status` | オペレーター | 運用ごとに、どの列車が走っているか、どこにいて何秒遅れているか、または次にいつ出るかを表示します。最近うまくいかなかったことも表示します |
 | `/rttimetable unload` | オペレーター | ダイヤでの運行をやめます |
 | `/rtdiagram` | だれでも | ダイヤの最初の路線の運行図を開きます。`/rtdiagram line <路線>` で、ほかの路線を開きます |
-| `/rtdiagram refresh` | オペレーター | 線路を変えたあとに、駅の間隔を線路から求め直します |
+| `/rtdiagram refresh` | オペレーター | 駅の間隔を、すぐに線路から求め直します。線路を変えると、変わらなくなってから5秒後に、サーバーも自分で求め直します |
 | `/rteditor copy timetable` | オペレーター | 運行中のダイヤを、編集ページ用にクリップボードに写します(下の2つと同じくクライアントのコマンドです。クリップボードに触れるのはこの3つだけで、自分で打ったときに限ります) |
 | `/rteditor paste` | オペレーター | クリップボードのダイヤを読み込みます。`load` がファイルを読むのと同じです |
 | `/rteditor copy network` | オペレーター | 線路(駅と所要時間)を、編集ページ用にクリップボードに写します。`/rtnetwork export` は `createrealtimeschedule/network.json` に書き出します |

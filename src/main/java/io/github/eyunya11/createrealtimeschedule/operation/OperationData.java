@@ -128,6 +128,8 @@ public final class OperationData extends SavedData {
     private @Nullable Map<String, LineAxis> axes;
     /** Not saved: the ways between the timetable's stations by their ends, worked out with the axes ({@link TrackFacts}). */
     private @Nullable Map<List<String>, Leg> legs;
+    /** Not saved: whether the track has changed since the axes and the ways were worked out. */
+    private final TrackWatch trackWatch = new TrackWatch(TrackFacts.SETTLE_TICKS);
     /** Not saved: the trains the sets wait for, worked out from the timetable when first needed; null until then. */
     private @Nullable Waits waits;
     /** Not saved: the end of each train watched for running through a station, on the tick before ({@link PassWatch}). */
@@ -341,10 +343,25 @@ public final class OperationData extends SavedData {
         return legs;
     }
 
-    /** Keeps what the track says of the timetable's stations ({@link TrackFacts}). */
+    /**
+     * Keeps what the track says of the timetable's stations ({@link TrackFacts}). Worked out again after
+     * the track has changed, axes that differ from those kept make a client's copy old, and the waits
+     * are worked out again with them.
+     */
     public void track(Map<String, LineAxis> axes, Map<List<String>, Leg> legs) {
+        Map<String, LineAxis> before = this.axes;
         this.axes = Map.copyOf(axes);
         this.legs = Map.copyOf(legs);
+        tails.clear(); // the edges the ends of the trains were copied on may be gone
+        if (before != null && !before.equals(this.axes)) {
+            waits = null;
+            revision++;
+        }
+    }
+
+    /** Whether the track has changed since the axes and the ways were worked out. */
+    public TrackWatch trackWatch() {
+        return trackWatch;
     }
 
     /** How many times the duties' times have changed since the server started. */

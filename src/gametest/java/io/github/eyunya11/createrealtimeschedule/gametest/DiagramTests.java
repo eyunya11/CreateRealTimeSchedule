@@ -14,6 +14,7 @@ import io.github.eyunya11.createrealtimeschedule.diagram.LineAxis;
 import io.github.eyunya11.createrealtimeschedule.network.DiagramSnapshotPayload;
 import io.github.eyunya11.createrealtimeschedule.operation.DutyRun;
 import io.github.eyunya11.createrealtimeschedule.operation.OperationData;
+import io.github.eyunya11.createrealtimeschedule.operation.TrackFacts;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable;
 import io.github.eyunya11.createrealtimeschedule.timetable.TimetableJson;
 import io.netty.buffer.Unpooled;
@@ -62,6 +63,64 @@ public class DiagramTests {
             near(helper, 40, axis.position(2), "Gamma");
             helper.assertTrue(DiagramService.axes(data, timetable).get("l") == axis, "the axis is worked out again each time");
             helper.succeed();
+        });
+    }
+
+    /**
+     * The same line, with Beta renamed Bravo while the timetable is run: the ways and the axis are worked
+     * out again once the track has stayed so for {@link TrackFacts#SETTLE_TICKS}, and not before, and
+     * again once Bravo is Beta again. A client's copy of the axes is old each time they change, and only
+     * then.
+     */
+    @GameTest(template = TRACK_LINE, batch = "realtimediagram_track_changes", timeoutTicks = 1500)
+    public static void theAxesFollowTheTrackOnceItHasStayedAsItIs(GameTestHelper helper) {
+        TrackLine track = new TrackLine(helper, 50, new int[] {6, 26, 46}, new String[] {"Alpha", "Beta", "Gamma"});
+        track.cleanUpWhenTheTestEnds();
+        Timetable timetable = TimetableJson.parse("""
+            {"format": "createrealtimeschedule.timetable", "version": 2, "name": "",
+             "lines": [{"id": "l", "name": "Line", "stations": ["Alpha", "Beta", "Gamma"]}], "trains": [], "duties": []}
+            """).timetable();
+        helper.assertTrue(timetable != null, "the timetable does not read");
+        OperationData data = new OperationData();
+        MinecraftServer server = helper.getLevel().getServer();
+        String[] names = {"Bravo", "Beta"};
+        int[] step = {-1};
+        int[] changedAt = {0};
+        int[] revision = {0};
+        helper.onEachTick(() -> {
+            if (!track.setUp())
+                return;
+            int tick = server.getTickCount();
+            if (step[0] < 0) {
+                near(helper, 20, DiagramService.axes(data, timetable).get("l").position(1), "Beta, as the track was built");
+                step[0] = 0;
+                revision[0] = data.revision();
+                changedAt[0] = tick;
+                track.station(1).name = names[0];
+                return;
+            }
+            TrackFacts.watch(data, timetable, tick);
+            boolean bravo = names[step[0]].equals("Bravo");
+            if (data.revision() == revision[0]) {
+                helper.assertTrue(tick - changedAt[0] <= TrackFacts.SETTLE_TICKS + 1,
+                    "the axes are not worked out again " + (tick - changedAt[0]) + " ticks after Beta was renamed " + names[step[0]]);
+                return;
+            }
+            helper.assertTrue(tick - changedAt[0] >= TrackFacts.SETTLE_TICKS,
+                "the axes are worked out again " + (tick - changedAt[0]) + " ticks after the track changed, before it settled");
+            helper.assertTrue(data.legs().containsKey(List.of("Alpha", "Beta")) != bravo,
+                "with the station named " + names[step[0]] + ", the ways are " + data.legs().keySet());
+            LineAxis axis = data.axes().get("l");
+            if (!bravo)
+                near(helper, 20, axis.position(1), "Beta, named so again");
+            if (step[0] == 1) {
+                helper.succeed();
+                return;
+            }
+            step[0] = 1;
+            revision[0] = data.revision();
+            changedAt[0] = tick;
+            track.station(1).name = names[1];
         });
     }
 

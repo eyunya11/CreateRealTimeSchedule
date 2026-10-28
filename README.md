@@ -74,7 +74,7 @@ The mod can also run trains to a whole day's timetable by itself, without Create
 | `/rteditor copy network` | operators | Puts the track network (stations and running times) on your clipboard, for the editor; `/rtnetwork export` writes it to `createrealtimeschedule/network.json` |
 | `/rteditor` | anyone | Opens the timetable editor in your browser (a command of the client) |
 | `/rtdiagram` | anyone | Opens the diagram of the timetable's first line; `/rtdiagram line <id>` opens that of another |
-| `/rtdiagram refresh` | operators | Works the distances between the stations out from the track again, after it has changed |
+| `/rtdiagram refresh` | operators | Works the distances between the stations out from the track again at once; the server also does so by itself 5 seconds after the track has stopped changing |
 
 - `duty_lead_seconds` (60 by default) before a duty first leaves, it is given the train that has waited longest at its depot station. A train counts as waiting there if it stands at a station of the depot's name with no schedule of Create's and no duty.
 - At each departure time the train is sent to the next station the way Create's destination instruction sends one, and Create drives it. A train that arrives early waits for its time; one that arrives late stops for the minimum stop and goes, by the same rule as the wait condition. The minimum stop is the stop's own if the timetable gives it one, or else its station's, or else `default_minimum_stop_seconds`.

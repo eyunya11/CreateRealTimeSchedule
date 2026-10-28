@@ -34,7 +34,9 @@ import net.minecraft.server.MinecraftServer;
  *
  * <ol>
  * <li>Once a second, the trains standing at a depot of the timetable with nowhere to go, no schedule
- * of Create's and no duty are counted as free, from the moment they are first seen so.</li>
+ * of Create's and no duty are counted as free, from the moment they are first seen so; and the track
+ * is looked at, so that what it says of the stations is worked out again after it has changed
+ * ({@link TrackFacts#watch}).</li>
  * <li>A duty is given a set {@code duty_lead_seconds} before it first leaves: of the free sets at its
  * depot, the one that has waited longest. Of duties due together, the one that leaves first chooses
  * first. A duty that has had no set by the time it was to leave is given one late, after the duties
@@ -71,6 +73,7 @@ public final class OperationService {
         if (server.getTickCount() % FREE_CHECK_TICKS == 0) {
             findFreeSets(data, timetable, now);
             data.forgetOld(now);
+            TrackFacts.watch(data, timetable, server.getTickCount());
         }
         long lead = ModSettings.dutyLeadSeconds() * (long) RealClock.TICKS_PER_SECOND;
         long defaultMinimumStop = ModSettings.defaultMinimumStopSeconds() * (long) RealClock.TICKS_PER_SECOND;
