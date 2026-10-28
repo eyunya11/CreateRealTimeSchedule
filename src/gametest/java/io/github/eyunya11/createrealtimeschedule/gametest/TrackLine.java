@@ -17,9 +17,12 @@ import com.simibubi.create.content.contraptions.glue.SuperGlueEntity;
 import com.simibubi.create.content.processing.burner.BlazeBurnerBlock;
 import com.simibubi.create.content.trains.entity.RemoveTrainPacket;
 import com.simibubi.create.content.trains.entity.Train;
+import com.simibubi.create.content.trains.graph.TrackEdge;
 import com.simibubi.create.content.trains.graph.TrackGraph;
 import com.simibubi.create.content.trains.graph.TrackGraphHelper;
 import com.simibubi.create.content.trains.graph.TrackGraphLocation;
+import com.simibubi.create.content.trains.graph.TrackNode;
+import com.simibubi.create.content.trains.signal.TrackEdgePoint;
 import com.simibubi.create.content.trains.station.GlobalStation;
 import com.simibubi.create.content.trains.station.StationBlockEntity;
 import com.simibubi.create.content.trains.track.BezierConnection;
@@ -567,7 +570,8 @@ final class TrackLine {
     private void waitForStations() {
         for (int i = 0; i < stationTracks.length; i++)
             if (stationEntity(i).getStation() == null) {
-                stuckAfter(40, "the station at " + stationTracks[i].toShortString() + " has no place in the graph");
+                if (phaseTicks > 40)
+                    stuckAfter(40, "the station at " + stationTracks[i].toShortString() + " has no place in the graph: " + whyNoPlace(i));
                 return;
             }
         for (Signal signal : signals) {
@@ -588,6 +592,37 @@ final class TrackLine {
         for (int index : parkedAt)
             parked.add(assembleAt(index));
         enter(Phase.WAIT_FOR_CONDUCTOR);
+    }
+
+    /**
+     * What Create finds where station {@code index} is to go, for a failure message: why it may have
+     * no place in the graph. Create gives a station none, and tries again each tick, when it finds no
+     * place on the graph at its track, when that place is on no edge, or when the edge has a point there
+     * already that it cannot share it with (another station, a signal).
+     */
+    private String whyNoPlace(int index) {
+        TrackTargetingBehaviour<?> target = BlockEntityBehaviour.get(stationEntity(index), TrackTargetingBehaviour.TYPE);
+        if (target == null)
+            return "the station has no track target";
+        String track = target.getGlobalPosition().toShortString() + " facing " + target.getTargetDirection();
+        if (!target.hasValidTrack())
+            return "its target " + track + " is not a track";
+        TrackGraphLocation at = target.determineGraphLocation();
+        if (at == null)
+            return "Create finds no place on the graph at " + track;
+        TrackNode first = at.graph.locateNode(at.edge.getFirst());
+        TrackNode second = at.graph.locateNode(at.edge.getSecond());
+        TrackEdge edge = first == null || second == null ? null : at.graph.getConnectionsFrom(first).get(second);
+        long graphs = Create.RAILWAYS.trackNetworks.values().stream().filter(graph -> graph.locateNode(at.edge.getFirst()) != null).count();
+        StringBuilder text = new StringBuilder("Create places it at ").append(track).append(", ").append(at.position)
+            .append(" along ").append(at.edge.getFirst()).append(" to ").append(at.edge.getSecond()).append(" of graph ").append(at.graph.id)
+            .append(" (").append(graphs).append(" of the ").append(Create.RAILWAYS.trackNetworks.size()).append(" graphs have that node)");
+        if (edge == null)
+            return text.append(", which has no edge there").toString();
+        text.append("; the points on that edge:");
+        for (TrackEdgePoint point : edge.getEdgeData().getPoints())
+            text.append(' ').append(point.getType().getId()).append(" at ").append(point.getLocationOn(edge));
+        return text.toString();
     }
 
     /** The train assembled at the station {@code index}, standing there. */
