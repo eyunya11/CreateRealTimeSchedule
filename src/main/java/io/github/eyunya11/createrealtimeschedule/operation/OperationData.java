@@ -13,6 +13,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Predicate;
 
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
@@ -132,6 +133,10 @@ public final class OperationData extends SavedData {
     private final TrackWatch trackWatch = new TrackWatch(TrackFacts.SETTLE_TICKS);
     /** Not saved: the trains the sets wait for, worked out from the timetable when first needed; null until then. */
     private @Nullable Waits waits;
+    /** Not saved: whether a stop of the duties waits for a train, so that nothing is read for waits when none does. */
+    private boolean hasWaits;
+    /** Not saved: the waits that wait for nothing that the log has been told of last. */
+    private List<Waits.Unmet> loggedUnmet = List.of();
     /** Not saved: the end of each train watched for running through a station, on the tick before ({@link PassWatch}). */
     private final Map<UUID, PassWatch.Tail> tails = new HashMap<>();
     /** Not saved: the waits given up; a set that waits no more leaves on the tick it gives up. */
@@ -169,9 +174,22 @@ public final class OperationData extends SavedData {
      * asked for since the timetable or the track changed; the timetable has to be there.
      */
     public Waits waits(Map<String, LineAxis> axes) {
-        if (waits == null)
+        if (waits == null) {
             waits = Waits.of(Objects.requireNonNull(timetable, "timetable"), calls, axes);
+            if (!waits.unmet().equals(loggedUnmet)) {
+                loggedUnmet = waits.unmet();
+                for (Waits.Unmet unmet : loggedUnmet)
+                    LOGGER.warn("Train {} does not wait at {} for train {}: {}", unmet.train(), unmet.station(), unmet.waitFor().train(),
+                        unmet.inNoDuty() ? "that train is in no duty, and never runs"
+                            : "the way the track takes that train, it neither leaves " + unmet.waitFor().at() + " nor runs through it before then");
+            }
+        }
         return waits;
+    }
+
+    /** Whether a stop of the timetable's duties waits for a train. */
+    public boolean hasWaits() {
+        return hasWaits;
     }
 
     /** The end of each train watched for running through a station, on the tick before, by the train. */
@@ -203,7 +221,13 @@ public final class OperationData extends SavedData {
     public void loadTimetable(String json, Timetable timetable, long now) {
         this.json = json;
         Map<String, List<Call>> before = new HashMap<>(calls);
+        Set<Waits.Key> givenUp = new HashSet<>(waitsGivenUp);
+        Set<Waits.Key> unseen = new HashSet<>(waitsUnseen);
         use(timetable);
+        // A duty that is the same goes on, and what its waits have come to with it, so that nothing is noted twice.
+        Predicate<Waits.Key> same = key -> calls.containsKey(key.duty()) && calls.get(key.duty()).equals(before.get(key.duty()));
+        givenUp.stream().filter(same).forEach(waitsGivenUp::add);
+        unseen.stream().filter(same).forEach(waitsUnseen::add);
         for (Map.Entry<String, List<Call>> duty : calls.entrySet())
             if (!duty.getValue().equals(before.get(duty.getKey())))
                 loadedAt.put(duty.getKey(), now);
@@ -241,6 +265,7 @@ public final class OperationData extends SavedData {
         json = "";
         timetable = null;
         calls.clear();
+        hasWaits = false;
         lastDays.clear();
         loadedAt.clear();
         runs.clear();
@@ -255,6 +280,7 @@ public final class OperationData extends SavedData {
 
     private void use(Timetable timetable) {
         waits = null;
+        loggedUnmet = List.of();
         tails.clear();
         waitsGivenUp.clear();
         waitsUnseen.clear();
@@ -262,6 +288,7 @@ public final class OperationData extends SavedData {
         calls.clear();
         for (Duty duty : timetable.duties())
             calls.put(duty.id(), DutyPlan.calls(timetable, duty));
+        hasWaits = calls.values().stream().anyMatch(dutyCalls -> dutyCalls.stream().anyMatch(call -> !call.waits().isEmpty()));
     }
 
     // ------------------------------------------------------------------ the duties

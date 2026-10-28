@@ -1,6 +1,7 @@
 package io.github.eyunya11.createrealtimeschedule.operation;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -43,6 +44,21 @@ public final class Waits {
     /** One wait of one call of a duty on one service day: the duty, the day, the call, and the wait's place among the call's. */
     public record Key(String duty, long day, int call, int index) {}
 
+    /**
+     * A wait that waits for nothing, so that the timetable's maker can be told: the train waited for is
+     * in no duty, and so never runs, or by the way the track takes it, it neither leaves the station nor
+     * runs through it before the waiting train leaves (on a loop line, it goes round the other way).
+     *
+     * @param train    the number of the train that waits
+     * @param station  the station of the stop it waits at
+     * @param waitFor  the wait, with its station filled in
+     * @param inNoDuty whether the train waited for is in no duty
+     */
+    public record Unmet(String train, String station, Wait waitFor, boolean inNoDuty) {}
+
+    private static final Comparator<Unmet> UNMET_ORDER = Comparator.comparing(Unmet::train).thenComparing(Unmet::station)
+        .thenComparing(unmet -> unmet.waitFor().train()).thenComparing(unmet -> unmet.waitFor().at());
+
     /** What a wait has come to. */
     public enum State {
         /** The train waited for has not left the station or run through it yet. */
@@ -59,6 +75,7 @@ public final class Waits {
     /** The target of each wait, by duty, call, and the wait's place among the call's; empty for a train in no duty. */
     private final Map<String, Map<Integer, List<Optional<Target>>>> targets = new HashMap<>();
     private final Map<String, Map<Integer, Set<String>>> watched = new HashMap<>();
+    private final List<Unmet> unmet = new ArrayList<>();
 
     private Waits() {}
 
@@ -83,8 +100,12 @@ public final class Waits {
                 if (call.waits().isEmpty())
                     continue;
                 List<Optional<Target>> found = new ArrayList<>();
-                for (Wait wait : call.waits())
-                    found.add(target(timetable, axes, starts, call, wait));
+                for (Wait wait : call.waits()) {
+                    Optional<Target> target = target(timetable, axes, starts, call, wait);
+                    found.add(target);
+                    if (target.isEmpty())
+                        waits.unmet.add(new Unmet(call.leavingTrain(), call.station(), wait, !starts.containsKey(wait.train())));
+                }
                 waits.targets.computeIfAbsent(duty, any -> new HashMap<>()).put(index, found);
                 for (Optional<Target> target : found)
                     target.filter(Target::through).ifPresent(through -> waits.watched
@@ -93,7 +114,13 @@ public final class Waits {
                         .add(through.station()));
             }
         });
+        waits.unmet.sort(UNMET_ORDER);
         return waits;
+    }
+
+    /** The waits that wait for nothing, by the waiting train's number and its station. */
+    public List<Unmet> unmet() {
+        return List.copyOf(unmet);
     }
 
     /**

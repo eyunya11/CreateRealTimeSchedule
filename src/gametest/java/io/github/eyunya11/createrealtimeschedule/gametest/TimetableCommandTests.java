@@ -5,6 +5,7 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -23,6 +24,7 @@ import io.github.eyunya11.createrealtimeschedule.operation.OperationData;
 import io.github.eyunya11.createrealtimeschedule.operation.Waits;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable;
 import io.github.eyunya11.createrealtimeschedule.timetable.TimetableJson;
+import net.minecraft.commands.CommandSource;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
@@ -226,12 +228,76 @@ public class TimetableCommandTests {
             "a day on, the waits given up are not those of the day before and today");
         helper.assertTrue(data.firstUnseen(yesterday), "a day on, an unseen wait of the day before yesterday is kept");
 
+        data.firstUnseen(ofToday);
         data.loadTimetable(TIMETABLE, TimetableJson.parse(TIMETABLE).timetable(), now);
         helper.assertTrue(data.history().size() == 1, "the record of a duty that has not changed is dropped on a reload");
+        helper.assertTrue(data.waitGivenUp(ofToday) && !data.firstUnseen(ofToday),
+            "what the waits of a duty that has not changed came to is forgotten on a reload");
         String changed = TIMETABLE.replace("\"depart\": \"12:00:20\"", "\"depart\": \"12:00:21\"");
         data.loadTimetable(changed, TimetableJson.parse(changed).timetable(), now);
         helper.assertTrue(data.history().isEmpty(), "the record of a duty whose times have changed is kept");
+        helper.assertTrue(!data.waitGivenUp(ofToday), "a wait given up of a duty whose times have changed is kept");
         helper.succeed();
+    }
+
+    /**
+     * Train 1 waits at A for train 9, which is in no duty and so never runs: the timetable is run, and
+     * whoever loads it is told that train 1 does not wait, as /rttimetable status tells too.
+     */
+    @GameTest(template = EMPTY, batch = "realtimetimetable_unmet_wait")
+    public static void aWaitForATrainThatNeverRunsIsToldOf(GameTestHelper helper) {
+        MinecraftServer server = helper.getLevel().getServer();
+        try {
+            String json = TIMETABLE.replace("\"version\": 2", "\"version\": 5")
+                .replace("{\"station\": \"A\", \"depart\": \"12:00:20\"}", "{\"station\": \"A\", \"depart\": \"12:00:20\", \"wait_for\": [{\"train\": \"9\"}]}")
+                .replace("\"trains\": [\n", "\"trains\": [\n"
+                    + "    {\"number\": \"9\", \"line\": \"loop\", \"stops\": [\n"
+                    + "      {\"station\": \"A\", \"depart\": \"12:00:10\"}, {\"station\": \"B\", \"arrive\": \"12:00:15\"}]},\n");
+            Told told = new Told();
+            CommandSourceStack source = server.createCommandSourceStack().withSource(told);
+            helper.assertTrue(RtTimetableCommand.loadText(source, json, Component.literal("a test")) == 1, "the timetable was not loaded");
+            helper.assertTrue(told.tellsOfTheWait(), "loading it does not tell that train 1 does not wait for train 9: " + told.texts());
+            told.messages.clear();
+            server.getCommands().performPrefixedCommand(source, "rttimetable status");
+            helper.assertTrue(told.tellsOfTheWait(), "/rttimetable status does not tell that train 1 does not wait for train 9: " + told.texts());
+            helper.succeed();
+        } finally {
+            cleanUp(server);
+        }
+    }
+
+    /** A source of commands that keeps what it is told, in order. */
+    private static final class Told implements CommandSource {
+        final List<Component> messages = new ArrayList<>();
+
+        @Override
+        public void sendSystemMessage(Component message) {
+            messages.add(message);
+        }
+
+        @Override
+        public boolean acceptsSuccess() {
+            return true;
+        }
+
+        @Override
+        public boolean acceptsFailure() {
+            return true;
+        }
+
+        @Override
+        public boolean shouldInformAdmins() {
+            return false;
+        }
+
+        List<String> texts() {
+            return messages.stream().map(Component::getString).toList();
+        }
+
+        /** Whether it was told that train 1 does not wait at A for train 9, which is in no duty. */
+        boolean tellsOfTheWait() {
+            return texts().stream().anyMatch(text -> text.startsWith("Train 1 does not wait at A for train 9") && text.contains("no duty"));
+        }
     }
 
     @GameTest(template = EMPTY, batch = "realtimetimetable_reloaded")

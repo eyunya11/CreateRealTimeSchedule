@@ -88,6 +88,8 @@ public final class OperationService {
      * comes before the sets are stepped, so that a set waiting for one sees it go past on the same tick.
      */
     private static void watchPasses(OperationData data, Timetable timetable, long now) {
+        if (!data.hasWaits())
+            return; // nor is the track read for them
         Waits waits = data.waits(TrackFacts.axes(data, timetable));
         Set<UUID> watched = new HashSet<>();
         for (Map.Entry<UUID, DutyRun> entry : data.runs().entrySet()) {

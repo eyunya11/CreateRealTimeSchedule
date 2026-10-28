@@ -97,6 +97,8 @@ class WaitsTest {
     @Test
     void aTrainInNoDutyIsNotWaitedFor() {
         assertEquals(Optional.empty(), WAITS.target("1A", 2, 2));
+        assertEquals(List.of(new Waits.Unmet("1", "S2", new Wait("9", "S1", Stop.NONE), true)), WAITS.unmet(),
+            "a wait that waits for nothing, so that the maker can be told");
     }
 
     /**
@@ -114,11 +116,14 @@ class WaitsTest {
         Map<String, List<Call>> calls = calls(timetable);
         Waits byTheList = Waits.of(timetable, calls, Map.of());
         assertEquals(Optional.empty(), byTheList.target("W", 0, 0), "with nothing from the track, down the list: through B");
+        assertEquals(List.of(new Waits.Unmet("L", "B", new Wait("X", "D", Stop.NONE), false)), byTheList.unmet(),
+            "X does not run through D before L leaves B");
         LineAxis up = new LineAxis("o", true, List.of("A", "B", "C", "D", "A"), List.of(0.0, 10.0, 20.0, 30.0, 40.0),
             List.of(new LineAxis.Way("A", "C", false)));
         Waits byTheTrack = Waits.of(timetable, calls, Map.of("o", up));
         assertEquals(Optional.of(new Target("X", "E", 0, true, "D")), byTheTrack.target("W", 0, 0));
         assertEquals(Set.of("D"), byTheTrack.watched("E", 0));
+        assertEquals(List.of(), byTheTrack.unmet());
     }
 
     @Test
