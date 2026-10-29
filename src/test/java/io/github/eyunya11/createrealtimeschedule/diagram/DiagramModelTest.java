@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -13,6 +14,7 @@ import io.github.eyunya11.createrealtimeschedule.clock.RealClock;
 import io.github.eyunya11.createrealtimeschedule.diagram.DiagramModel.PlannedTrain;
 import io.github.eyunya11.createrealtimeschedule.diagram.DiagramModel.RanDuty;
 import io.github.eyunya11.createrealtimeschedule.diagram.DiagramModel.Segment;
+import io.github.eyunya11.createrealtimeschedule.diagram.DiagramModel.WaitMark;
 import io.github.eyunya11.createrealtimeschedule.operation.DutyRun;
 import io.github.eyunya11.createrealtimeschedule.railway.Leg;
 import io.github.eyunya11.createrealtimeschedule.timetable.ServiceTime;
@@ -21,6 +23,7 @@ import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Duty;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Line;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Stop;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Train;
+import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Wait;
 
 class DiagramModelTest {
 
@@ -228,5 +231,71 @@ class DiagramModelTest {
         Timetable timetable = new Timetable("", List.of(loop), List.of(out), List.of());
         assertEquals(List.of(new Segment(t("10:00"), 0, t("10:02"), 60)),
             DiagramModel.of(timetable, axis, DAY, List.of(), 0).planned().getFirst().segments());
+    }
+
+    // ------------------------------------------------------------------ the waits (the cases of the editor's layout.test.js)
+
+    /** A stop that waits for trains before it leaves. */
+    private static Stop waiting(String station, String arrive, String depart, Wait... waits) {
+        return new Stop(station, t(arrive), t(depart), Stop.NONE, List.of(waits));
+    }
+
+    @Test
+    void aWaitIsDrawnFromWhereTheTrainWaitedForRunsThroughTheStationToWhereTheWaitingTrainLeaves() {
+        // A to S1 30 blocks, S1 to S2 30, S2 to B 40: the express runs through S1 at 08:03 by its share of the way.
+        Line line = new Line("l", "l", List.of("A", "S1", "S2", "B"), false);
+        LineAxis axis = LineAxis.of(line, List.of(new Leg("A", "S1", 30, List.of(), List.of()), new Leg("S1", "S2", 30, List.of(), List.of()),
+            new Leg("S2", "B", 40, List.of(), List.of())));
+        Train local = new Train("1", "l", "", List.of(Stop.leaving("A", t("07:58")),
+            waiting("S2", "08:03", "08:06", new Wait("3001", "S1", Stop.NONE)), Stop.arriving("B", t("08:15"))));
+        Train express = new Train("3001", "l", "", List.of(Stop.leaving("A", t("08:00")), Stop.arriving("B", t("08:10"))));
+        Timetable timetable = new Timetable("", List.of(line), List.of(local, express), List.of());
+        assertEquals(List.of(new WaitMark(new Segment(t("08:03"), 30, t("08:06"), 60), false)),
+            DiagramModel.of(timetable, axis, DAY, List.of(), 0).waits());
+    }
+
+    @Test
+    void aWaitIsDrawnFromTheLastWayTheTrainWaitedForRunsThroughTheStationAcrossTheFirstStationOfALoopToo() {
+        // X runs through Depot at 09:42 and again at 10:02, on its way from C round to A: the local waits for the second.
+        Line loop = new Line("loop", "loop", List.of("Depot", "A", "B", "C"), true);
+        LineAxis axis = LineAxis.of(loop, List.of(new Leg("Depot", "A", 30, List.of(), List.of()), new Leg("A", "B", 30, List.of(), List.of()),
+            new Leg("B", "C", 30, List.of(), List.of()), new Leg("C", "Depot", 30, List.of(), List.of())));
+        Train express = new Train("X", "loop", "", List.of(Stop.leaving("C", t("09:40")), Stop.calling("A", t("09:44"), t("09:50")),
+            Stop.calling("C", t("09:56"), t("10:00")), Stop.arriving("A", t("10:04"))));
+        Train local = new Train("1", "loop", "", List.of(Stop.leaving("A", t("10:06")),
+            waiting("B", "10:07", "10:10", new Wait("X", "Depot", Stop.NONE)), Stop.arriving("C", t("10:14"))));
+        Timetable timetable = new Timetable("", List.of(loop), List.of(express, local), List.of());
+        assertEquals(List.of(new WaitMark(new Segment(t("10:02"), 120, t("10:10"), 60), false)),
+            DiagramModel.of(timetable, axis, DAY, List.of(), 0).waits());
+    }
+
+    @Test
+    void aWaitForATrainThatCallsAtTheStationIsDrawnFromWhereItLeavesAndOneForATrainOnAnotherLineNotAtAll() {
+        Line line = new Line("l", "l", List.of("A", "S2", "B"), false);
+        LineAxis axis = LineAxis.of(line, List.of(new Leg("A", "S2", 50, List.of(), List.of()), new Leg("S2", "B", 50, List.of(), List.of())));
+        Train local = new Train("1", "l", "", List.of(Stop.leaving("A", t("07:58")),
+            waiting("S2", "08:03", "08:06", new Wait("2"), new Wait("9")), Stop.arriving("B", t("08:15"))));
+        Train other = new Train("2", "l", "", List.of(Stop.leaving("A", t("07:55")), Stop.calling("S2", t("08:00"), t("08:04")),
+            Stop.arriving("B", t("08:12"))));
+        Train elsewhere = new Train("9", "m", "", List.of(Stop.leaving("S2", t("08:00")), Stop.arriving("Z", t("08:05"))));
+        Timetable timetable = new Timetable("", List.of(line, new Line("m", "m", List.of("S2", "Z"), false)), List.of(local, other, elsewhere),
+            List.of());
+        assertEquals(List.of(new WaitMark(new Segment(t("08:04"), 50, t("08:06"), 50), false)),
+            DiagramModel.of(timetable, axis, DAY, List.of(), 0).waits());
+    }
+
+    @Test
+    void aWaitForATrainCancelledOnTheDayIsMarkedSo() {
+        // W waits at M for train 1, which the hold of 1A cancels on DAY.
+        Timetable base = timetable("l");
+        List<Train> trains = new ArrayList<>(base.trains());
+        trains.add(new Train("W", "l", "local", List.of(Stop.leaving("A", t("08:02")),
+            waiting("M", "08:05:30", "08:07", new Wait("1")), Stop.arriving("B", t("08:12")))));
+        Timetable timetable = new Timetable("", base.lines(), trains, base.duties());
+        DutyTimes done = held(DutyTimes.Status.FINISHED, at("08:21"), at("08:30"), at("08:35"));
+        Segment arrow = new Segment(t("08:06"), 60, t("08:07"), 60);
+        assertEquals(List.of(new WaitMark(arrow, true)), DiagramModel.of(timetable, AXIS, DAY, List.of(done), at("09:00")).waits());
+        assertEquals(List.of(new WaitMark(arrow, false)),
+            DiagramModel.of(timetable, AXIS, DAY + 1, List.of(done), at("09:00") + RealClock.TICKS_PER_DAY).waits(), "the hold was on the day before");
     }
 }

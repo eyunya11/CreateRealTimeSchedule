@@ -1,7 +1,7 @@
 /*
  * What a line's diagram draws of the timetable's trains, and where on the screen it goes: the planned
- * part of DiagramModel and DiagramView in the mod, line for line, so that a train looks the same in
- * the editor as in the game. Times are seconds from 00:00 of the service day and run on past 24:00;
+ * part of DiagramModel (the trains and their waits) and DiagramView in the mod, line for line, so that
+ * a train looks the same in the editor as in the game. Times are seconds from 00:00 of the service day and run on past 24:00;
  * positions are those of the axis.
  *
  * Besides the segments the mod draws, each train has the points of its stops, for the editor to take
@@ -227,10 +227,10 @@
   }
 
   /**
-   * The arrows the diagram draws for the waits of the trains on the axis's line: from where the train
-   * waited for leaves its station, or runs through it, to where the waiting train leaves; both on the
-   * line. Of a train that does either more than once, the last before the waiting train leaves, as the
-   * mod waits for.
+   * The arrows the diagram draws for the waits of the trains on the axis's line, as DiagramModel's
+   * waits(): from where the train waited for leaves its station, or runs through it, to where the
+   * waiting train leaves; both on the line. Of a train that does either more than once, the last
+   * before the waiting train leaves, as the mod waits for.
    */
   function waitMarks(timetable, axis) {
     const planned = new Map(plannedTrains(timetable, axis).map(train => [train.number, train]));

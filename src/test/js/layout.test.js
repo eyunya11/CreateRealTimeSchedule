@@ -1,7 +1,7 @@
 'use strict';
 
-// The cases of the mod's LineAxisTest, DiagramModelTest (the planned trains) and DiagramViewTest, so
-// that the editor draws a line as the game's diagram does.
+// The cases of the mod's LineAxisTest, DiagramModelTest (the planned trains and the waits) and
+// DiagramViewTest, so that the editor draws a line as the game's diagram does.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -217,7 +217,7 @@ test('a segment is cut to the time shown', () => {
   assert.equal(v.clip(segment(6 * 3600, 0, 7 * 3600, 200), 200), null);
 });
 
-// ------------------------------------------------------------------ the waits (the editor's own)
+// ------------------------------------------------------------------ the waits (DiagramModelTest)
 
 test('a wait is drawn from where the train waited for runs through the station to where the waiting train leaves', () => {
   // A to S1 30 blocks, S1 to S2 30, S2 to B 40: the express runs through S1 at 08:03 by its share of the way.

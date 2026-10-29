@@ -17,6 +17,7 @@ import io.github.eyunya11.createrealtimeschedule.timetable.Timetable;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Duty;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Stop;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Train;
+import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Wait;
 
 /**
  * What a line's diagram draws for one service day: the timetable's trains on the line, as planned,
@@ -30,8 +31,9 @@ import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Train;
  * @param day     the service day
  * @param planned the timetable's trains on the line, in the timetable's order
  * @param ran     the duties of the day that ran on the line, each with the part of it on the line
+ * @param waits   the waits of the timetable's trains on the line, as arrows
  */
-public record DiagramModel(LineAxis axis, long day, List<PlannedTrain> planned, List<RanDuty> ran) {
+public record DiagramModel(LineAxis axis, long day, List<PlannedTrain> planned, List<RanDuty> ran, List<WaitMark> waits) {
 
     /** A straight line from one point of the diagram to another; {@code from} is the earlier. */
     public record Segment(double fromSecond, double fromPosition, double toSecond, double toPosition) {}
@@ -57,9 +59,18 @@ public record DiagramModel(LineAxis axis, long day, List<PlannedTrain> planned, 
         }
     }
 
+    /**
+     * A wait of a train of the timetable for another, both on the line: an arrow from where the train
+     * waited for leaves the station, or runs through it, to where the waiting train leaves.
+     *
+     * @param cancelled whether either train does not run on the day, so that there is no wait
+     */
+    public record WaitMark(Segment arrow, boolean cancelled) {}
+
     public DiagramModel {
         planned = List.copyOf(planned);
         ran = List.copyOf(ran);
+        waits = List.copyOf(waits);
     }
 
     /**
@@ -94,6 +105,7 @@ public record DiagramModel(LineAxis axis, long day, List<PlannedTrain> planned, 
                 cancelled.addAll(DutyPlan.cancelledTrains(dutyCalls, duty.skipped()));
         }
         List<PlannedTrain> planned = new ArrayList<>();
+        Map<String, Path> paths = new HashMap<>();
         for (Train train : timetable.trains()) {
             if (!train.line().equals(axis.line()))
                 continue;
@@ -105,6 +117,7 @@ public record DiagramModel(LineAxis axis, long day, List<PlannedTrain> planned, 
                 visits.add(new Visit(stop.station(), arrive, seconds(stop.depart()), true, true, down));
             }
             Path path = path(axis, visits);
+            paths.put(train.number(), path);
             planned.add(new PlannedTrain(train.number(), train.type(), train.deadhead(), path.segments,
                 train.stops().getFirst().depart(), path.firstPosition, cancelled.contains(train.number())));
         }
@@ -143,7 +156,88 @@ public record DiagramModel(LineAxis axis, long day, List<PlannedTrain> planned, 
             if (!segments.isEmpty())
                 ran.add(new RanDuty(duty, segments));
         }
-        return new DiagramModel(axis, day, planned, ran);
+        return new DiagramModel(axis, day, planned, ran, waits(timetable, axis, paths, cancelled));
+    }
+
+    /**
+     * The arrows for the waits of the trains on the line, as the editor's {@code waitMarks} draws them:
+     * from where the train waited for leaves its station, or runs through it, to where the waiting
+     * train leaves; both on the line. Of a train that does either more than once, the last before the
+     * waiting train leaves, as the operation waits for.
+     */
+    private static List<WaitMark> waits(Timetable timetable, LineAxis axis, Map<String, Path> paths, Set<String> cancelled) {
+        List<WaitMark> marks = new ArrayList<>();
+        for (Train train : timetable.trains()) {
+            if (!train.line().equals(axis.line()))
+                continue;
+            List<Stop> stops = train.stops();
+            for (int k = 0; k + 1 < stops.size(); k++) {
+                Stop stop = stops.get(k);
+                if (!stop.hasDepart())
+                    continue;
+                for (Wait wait : stop.waits()) {
+                    Train other = timetable.train(wait.train()).orElse(null);
+                    if (other == null || !other.line().equals(axis.line()) || other.number().equals(train.number()))
+                        continue;
+                    Point from = leavesAt(other, paths.get(other.number()), axis, wait.station(stop.station()), stop.depart());
+                    if (from != null)
+                        marks.add(new WaitMark(new Segment(from.second(), from.position(), stop.depart(), paths.get(train.number()).departs[k]),
+                            cancelled.contains(train.number()) || cancelled.contains(other.number())));
+                }
+            }
+        }
+        return marks;
+    }
+
+    private record Point(double second, double position) {}
+
+    /**
+     * Where on the diagram {@code train} leaves {@code station}, or runs through it, for the last time
+     * before {@code before}; null if it does neither. It runs through the station where its line on the
+     * diagram crosses the station's row, which goes the way round a loop line the axis has it, as the
+     * operation waits for.
+     */
+    private static Point leavesAt(Train train, Path path, LineAxis axis, String station, int before) {
+        Point found = null;
+        List<Stop> stops = train.stops();
+        for (int s = 0; s + 1 < stops.size(); s++) {
+            Stop stop = stops.get(s);
+            if (!stop.hasDepart() || stop.depart() >= before)
+                continue;
+            Point crossing = stop.station().equals(station)
+                ? new Point(stop.depart(), path.departs[s])
+                : through(path, stop.depart(), stops.get(s + 1), axis, station);
+            if (crossing != null)
+                found = crossing;
+        }
+        return found;
+    }
+
+    /**
+     * Where the way that leaves at {@code from} and comes in at stop {@code next} crosses the row of
+     * {@code station}: within a segment, or where a way across the first station of a loop line is cut
+     * at the bottom row; null if it does not.
+     */
+    private static Point through(Path path, int from, Stop next, LineAxis axis, String station) {
+        int until = next.hasArrive() ? next.arrive() : next.depart();
+        for (int row = 0; row < axis.stations().size(); row++) {
+            if (!axis.stations().get(row).equals(station))
+                continue;
+            double position = axis.position(row);
+            for (Segment segment : path.segments) {
+                if (segment.fromSecond() < from || segment.toSecond() > until)
+                    continue;
+                if (segment.toPosition() == position && segment.toSecond() < until)
+                    return new Point(segment.toSecond(), position);
+                double low = Math.min(segment.fromPosition(), segment.toPosition());
+                double high = Math.max(segment.fromPosition(), segment.toPosition());
+                if (position <= low || position >= high)
+                    continue;
+                double share = (position - segment.fromPosition()) / (segment.toPosition() - segment.fromPosition());
+                return new Point(segment.fromSecond() + share * (segment.toSecond() - segment.fromSecond()), position);
+            }
+        }
+        return null;
     }
 
     private static boolean onLine(Timetable timetable, String number, LineAxis axis) {
@@ -173,7 +267,11 @@ public record DiagramModel(LineAxis axis, long day, List<PlannedTrain> planned, 
      */
     private record Visit(String station, double arrive, double depart, boolean stay, boolean moveOn, boolean down) {}
 
-    private record Path(List<Segment> segments, double firstPosition) {}
+    /**
+     * @param departs the position each visit leaves from: the row it goes out from, or else the row it
+     *                came in at; NaN if neither is known
+     */
+    private record Path(List<Segment> segments, double firstPosition, double[] departs) {}
 
     /**
      * The segments of a train's way through {@code visits}. The way between two stations is that of
@@ -219,6 +317,12 @@ public record DiagramModel(LineAxis axis, long day, List<PlannedTrain> planned, 
         }
         segments.sort(Comparator.comparingDouble(Segment::fromSecond));
         int first = rowOut[0] >= 0 ? rowOut[0] : visits.isEmpty() ? -1 : axis.row(visits.getFirst().station());
-        return new Path(segments, first >= 0 ? axis.position(first) : 0);
+        double[] departs = new double[n];
+        for (int k = 0; k < n; k++) {
+            int in = rowIn[k] >= 0 ? rowIn[k] : rowOut[k] >= 0 ? rowOut[k] : axis.row(visits.get(k).station());
+            int out = rowOut[k] >= 0 ? rowOut[k] : in;
+            departs[k] = out >= 0 ? axis.position(out) : Double.NaN;
+        }
+        return new Path(segments, first >= 0 ? axis.position(first) : 0, departs);
     }
 }
