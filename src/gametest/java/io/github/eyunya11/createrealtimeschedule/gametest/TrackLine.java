@@ -115,8 +115,14 @@ final class TrackLine {
      * from the middle of a straight. Both curves are S-bends, as a {@link Bend} is.
      */
     record Siding(int outFromX, int outToX, int backFromX, int backToX, int shift) {
+        /**
+         * The least shift: a station of the first row has its block south of its track, and a signal
+         * beside the siding is north of the siding's, so that the two rows need a block between them.
+         */
+        static final int LEAST_SHIFT = 3;
+
         Siding {
-            if (!(outFromX < outToX && outToX < backFromX && backFromX < backToX && shift > 0))
+            if (!(outFromX < outToX && outToX < backFromX && backFromX < backToX && shift >= LEAST_SHIFT))
                 throw new IllegalArgumentException("not a siding: out from " + outFromX + " to " + outToX + ", back from " + backFromX
                     + " to " + backToX + ", " + shift + " over");
         }
@@ -135,9 +141,12 @@ final class TrackLine {
      */
     record Signal(int x, boolean eastward, int z) {
 
-        /** A signal beside the first row. */
+        /** What {@link #z} is for a signal beside the first row, wherever that runs at {@link #x}. */
+        static final int FIRST_ROW = Integer.MIN_VALUE;
+
+        /** A signal beside the first row, on the row it runs on at {@code x} (past a bend, the row the bend leads to). */
         Signal(int x, boolean eastward) {
-            this(x, eastward, TRACK_Z);
+            this(x, eastward, FIRST_ROW);
         }
     }
 
@@ -368,7 +377,8 @@ final class TrackLine {
      * first row, with track a block either side of its own. Called before {@link #setUp()}.
      */
     TrackLine parkATrainAt(int index) {
-        if (index <= 0 || index >= stationTracks.length || southward(stationTracks[index]))
+        BlockPos track = index <= 0 || index >= stationTracks.length ? null : stationTracks[index];
+        if (track == null || southward(track) || track.getZ() != rowZ(track.getX()))
             throw new IllegalArgumentException("a train can be parked at a station of the first row other than the first, not at " + index);
         parkedAt.add(index);
         return this;
@@ -577,13 +587,18 @@ final class TrackLine {
     }
 
     private BlockPos signalBlock(Signal signal) {
-        return new BlockPos(signal.x(), TRACK_Y, signal.z()).north();
+        return signalTrack(signal).north();
+    }
+
+    /** The track block a signal stands beside and points at. */
+    private BlockPos signalTrack(Signal signal) {
+        return signal.z() == Signal.FIRST_ROW ? track(signal.x()) : new BlockPos(signal.x(), TRACK_Y, signal.z());
     }
 
     /** Does what placing the item does, as for a station; the arrow of a signal for trains running east points as a station's does. */
     private void placeSignal(Signal signal) {
         BlockPos at = helper.absolutePos(signalBlock(signal));
-        BlockPos trackPos = helper.absolutePos(new BlockPos(signal.x(), TRACK_Y, signal.z()));
+        BlockPos trackPos = helper.absolutePos(signalTrack(signal));
         level.setBlock(at, AllBlocks.TRACK_SIGNAL.getDefaultState(), 3);
         CompoundTag data = new CompoundTag();
         data.put("TargetTrack", NbtUtils.writeBlockPos(trackPos.subtract(at)));

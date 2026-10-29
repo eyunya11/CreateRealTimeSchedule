@@ -358,8 +358,8 @@ public class OperationTests {
             @Override
             boolean watch(OperationData data, long now) {
                 if (local == null || express == null) {
-                    local = data.trainOf("1A").map(id -> data.runs().get(id)).orElse(null);
-                    express = data.trainOf("2A").map(id -> data.runs().get(id)).orElse(null);
+                    local = runOf(data, "1A");
+                    express = runOf(data, "2A");
                     return false;
                 }
                 if (local.departures().get(1) == DutyRun.NOT_YET) {
@@ -399,8 +399,8 @@ public class OperationTests {
             @Override
             boolean watch(OperationData data, long now) {
                 if (local == null || express == null) {
-                    local = data.trainOf("1A").map(id -> data.runs().get(id)).orElse(null);
-                    express = data.trainOf("2A").map(id -> data.runs().get(id)).orElse(null);
+                    local = runOf(data, "1A");
+                    express = runOf(data, "2A");
                     return false;
                 }
                 if (local.departures().get(1) == DutyRun.NOT_YET)
@@ -430,7 +430,7 @@ public class OperationTests {
             @Override
             boolean watch(OperationData data, long now) {
                 if (local == null) {
-                    local = data.trainOf("1A").map(id -> data.runs().get(id)).orElse(null);
+                    local = runOf(data, "1A");
                     return false;
                 }
                 if (local.departures().get(1) == DutyRun.NOT_YET)
@@ -459,8 +459,8 @@ public class OperationTests {
             @Override
             boolean watch(OperationData data, long now) {
                 if (local == null || express == null) {
-                    local = data.trainOf("1A").map(id -> data.runs().get(id)).orElse(null);
-                    express = data.trainOf("2A").map(id -> data.runs().get(id)).orElse(null);
+                    local = runOf(data, "1A");
+                    express = runOf(data, "2A");
                     return false;
                 }
                 if (local.departures().get(1) == DutyRun.NOT_YET)
@@ -603,8 +603,8 @@ public class OperationTests {
             @Override
             boolean watch(OperationData data, long now) {
                 if (local == null || express == null) {
-                    local = data.trainOf("1A").map(id -> data.runs().get(id)).orElse(null);
-                    express = data.trainOf("2A").map(id -> data.runs().get(id)).orElse(null);
+                    local = runOf(data, "1A");
+                    express = runOf(data, "2A");
                     return false;
                 }
                 if (local.departures().get(1) == DutyRun.NOT_YET) {
@@ -680,12 +680,6 @@ public class OperationTests {
     }
 
     /**
-     * 1A, a local: out of the depot at 12:02 to A, on to B from 12:02:30, back to the depot. At A it
-     * waits for the express E of 2A at A, as long as {@code maxWait} seconds past its time (or the
-     * server's, for {@link Timetable.Stop#NONE}). 2A runs E out of the depot at {@code expressLeaves}
-     * round to B, calling at A for 8 seconds if {@code callsAtA}, and back to the depot.
-     */
-    /**
      * The local of 1A out of Dl to the siding at A2, and from there, once the express E of 2A has run
      * through A, to B; E out of Dx to B. The deadheads back to the depots are never run: the sets cannot
      * turn round, and the test ends before.
@@ -706,6 +700,12 @@ public class OperationTests {
         return timetable;
     }
 
+    /**
+     * 1A, a local: out of the depot at 12:02 to A, on to B from 12:02:30, back to the depot. At A it
+     * waits for the express E of 2A at A, as long as {@code maxWait} seconds past its time (or the
+     * server's, for {@link Timetable.Stop#NONE}). 2A runs E out of the depot at {@code expressLeaves}
+     * round to B, calling at A for 8 seconds if {@code callsAtA}, and back to the depot.
+     */
     private static Timetable overtaking(String expressLeaves, boolean callsAtA, int maxWait) {
         int start = ServiceTime.of("12:02:00");
         Timetable.Stop waits = new Timetable.Stop("A", Timetable.Stop.NONE, start + 30, Timetable.Stop.NONE,
@@ -821,6 +821,11 @@ public class OperationTests {
             this.timetable = timetable;
             this.lines = List.of(lines);
             this.server = helper.getLevel().getServer();
+        }
+
+        /** The run of {@code duty} going on, once it has been given a set; null until then. */
+        @Nullable DutyRun runOf(OperationData data, String duty) {
+            return data.trainOf(duty).map(id -> data.runs().get(id)).orElse(null);
         }
 
         /** True once the test has seen what it is for; it fails by throwing. It is not asked again after that. */
