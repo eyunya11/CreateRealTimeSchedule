@@ -14,6 +14,7 @@ import io.github.eyunya11.createrealtimeschedule.diagram.DiagramModel;
 import io.github.eyunya11.createrealtimeschedule.diagram.DiagramModel.PlannedTrain;
 import io.github.eyunya11.createrealtimeschedule.diagram.DiagramModel.RanDuty;
 import io.github.eyunya11.createrealtimeschedule.diagram.DiagramModel.Segment;
+import io.github.eyunya11.createrealtimeschedule.diagram.DiagramModel.WaitMark;
 import io.github.eyunya11.createrealtimeschedule.diagram.DiagramView;
 import io.github.eyunya11.createrealtimeschedule.diagram.DutyTimes;
 import io.github.eyunya11.createrealtimeschedule.diagram.LineAxis;
@@ -28,6 +29,8 @@ import net.minecraft.network.chat.Component;
  * The diagram of one line of the timetable being run: time across, the line's stations down, as far
  * apart as the track between them. The timetable's trains are thin lines, coloured by their type, and
  * deadheads are dashed; the duties of the service day are drawn over them, thick, as they really ran.
+ * A train's wait for another is a dashed arrow, from where the train waited for leaves its station or
+ * runs through it to where the waiting train leaves.
  *
  * <p>The wheel zooms the time, dragging moves it, the arrow keys go to the line before or after,
  * Page Up and Page Down to the service day before or back to today, and Home back to now.
@@ -45,6 +48,9 @@ public final class DiagramScreen extends Screen {
     private static final int MIN_MARK_GAP = 36;
     private static final double DASH = 4;
     private static final double DASH_GAP = 3;
+    /** The length of the strokes of a wait's arrow head, in screen units, and their angle to the arrow. */
+    private static final double HEAD = 5;
+    private static final double HEAD_ANGLE = Math.toRadians(25);
 
     private static final int PLOT_BACKGROUND = 0xE0101418;
     private static final int GRID = 0xFF2C3238;
@@ -54,6 +60,8 @@ public final class DiagramScreen extends Screen {
     private static final int NOW = 0xFFFFE066;
     private static final int RAN = 0xFFFF5050;
     private static final int GIVEN_UP = 0xFFC070FF;
+    /** The editor's accent, as its waits are drawn in the dark. */
+    private static final int WAIT = 0xFF6EA2FF;
     private static final int DEADHEAD = 0xFF8A8A8A;
     private static final int UNTYPED = 0xFFB8C4D0;
     private static final int[] TYPE_COLOURS = {0xFF6FA8DC, 0xFF93C47D, 0xFFF6B26B, 0xFFE06666, 0xFF76A5AF, 0xFFFFD966, 0xFFC27BA0};
@@ -172,6 +180,8 @@ public final class DiagramScreen extends Screen {
         for (RanDuty duty : diagram.ran())
             for (Segment segment : duty.segments())
                 drawSegment(graphics, segment, length, 2, duty.times().status() == DutyTimes.Status.GIVEN_UP ? GIVEN_UP : RAN, false);
+        for (WaitMark wait : diagram.waits())
+            drawWait(graphics, wait, length);
         if (nowSecond >= view.start() && nowSecond <= view.end())
             quad(graphics, view.x(nowSecond), top, view.x(nowSecond), bottom, 1, NOW);
         graphics.flush();
@@ -271,6 +281,30 @@ public final class DiagramScreen extends Screen {
                 continue;
             quad(graphics, cut[0] + dx * from / along, cut[1] + dy * from / along, cut[0] + dx * to / along, cut[1] + dy * to / along,
                 thickness, colour);
+        }
+    }
+
+    /** A wait as a dashed arrow, with its head where the waiting train leaves; faded when there is no wait on the day. */
+    private void drawWait(GuiGraphics graphics, WaitMark wait, double length) {
+        Segment arrow = wait.arrow();
+        if (Double.isNaN(arrow.fromPosition()) || Double.isNaN(arrow.toPosition()) || view.clip(arrow, length) == null)
+            return;
+        int colour = wait.cancelled() ? faded(WAIT) : WAIT;
+        drawSegment(graphics, arrow, length, 1, colour, true);
+        double x1 = view.x(arrow.fromSecond());
+        double y1 = view.y(arrow.fromPosition(), length);
+        double x2 = view.x(arrow.toSecond());
+        double y2 = view.y(arrow.toPosition(), length);
+        double along = Math.hypot(x2 - x1, y2 - y1);
+        if (along < 1e-6)
+            return;
+        // The head: two strokes back from the end, turned either way from the arrow. Off the plot, the scissor cuts it.
+        double backX = -(x2 - x1) / along;
+        double backY = -(y2 - y1) / along;
+        double cos = Math.cos(HEAD_ANGLE);
+        for (int side = -1; side <= 1; side += 2) {
+            double sin = side * Math.sin(HEAD_ANGLE);
+            quad(graphics, x2, y2, x2 + (backX * cos - backY * sin) * HEAD, y2 + (backX * sin + backY * cos) * HEAD, 1, colour);
         }
     }
 
