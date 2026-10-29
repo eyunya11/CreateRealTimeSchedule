@@ -108,12 +108,47 @@ final class TrackLine {
     }
 
     /**
-     * A signal of Create's beside the first row at {@code x}, on its north side, for trains running
-     * east, or with {@code eastward} false for trains running west. A signal lets trains through only
-     * the way it faces ({@code SignalBoundary.canNavigateVia}), so one for trains running west closes
-     * the line to trains running east.
+     * A siding beside the first row: a curved track from the first row at {@code outFromX} over to a row
+     * {@code shift} blocks further south at {@code outToX}, that row on to {@code backFromX}, and a curved
+     * track from there back to the first row at {@code backToX}. The first row runs on past both ends,
+     * so the blocks at {@code outFromX} and {@code backToX} are junctions, as when a player lays a siding
+     * from the middle of a straight. Both curves are S-bends, as a {@link Bend} is.
      */
-    record Signal(int x, boolean eastward) {}
+    record Siding(int outFromX, int outToX, int backFromX, int backToX, int shift) {
+        /**
+         * The least shift: a station of the first row has its block south of its track, and a signal
+         * beside the siding is north of the siding's, so that the two rows need a block between them.
+         */
+        static final int LEAST_SHIFT = 3;
+
+        Siding {
+            if (!(outFromX < outToX && outToX < backFromX && backFromX < backToX && shift >= LEAST_SHIFT))
+                throw new IllegalArgumentException("not a siding: out from " + outFromX + " to " + outToX + ", back from " + backFromX
+                    + " to " + backToX + ", " + shift + " over");
+        }
+
+        /** The row of the siding. */
+        int z() {
+            return TRACK_Z + shift;
+        }
+    }
+
+    /**
+     * A signal of Create's beside the row along z = {@code z} at {@code x}, on its north side, for trains
+     * running east, or with {@code eastward} false for trains running west. A signal lets trains through
+     * only the way it faces ({@code SignalBoundary.canNavigateVia}), so one for trains running west
+     * closes the line to trains running east.
+     */
+    record Signal(int x, boolean eastward, int z) {
+
+        /** What {@link #z} is for a signal beside the first row, wherever that runs at {@link #x}. */
+        static final int FIRST_ROW = Integer.MIN_VALUE;
+
+        /** A signal beside the first row, on the row it runs on at {@code x} (past a bend, the row the bend leads to). */
+        Signal(int x, boolean eastward) {
+            this(x, eastward, FIRST_ROW);
+        }
+    }
 
     /**
      * A loop that a train goes round and comes back to where it started: the first row, along
@@ -177,6 +212,7 @@ final class TrackLine {
     private final @Nullable Bend bend;
     private final @Nullable Turn turn;
     private final @Nullable Loop loop;
+    private final @Nullable Siding siding;
     private final List<Signal> signals;
     private final long savedOffset;
     private final UUID owner = UUID.randomUUID();
@@ -193,32 +229,32 @@ final class TrackLine {
 
     /** A line that leaves the clock alone, for a test that does not read it. */
     TrackLine(GameTestHelper helper, int lastX, int[] stationX, String[] names) {
-        this(helper, lastX, onTheRow(stationX, null), names, OptionalLong.empty(), null, null, List.of(), null);
+        this(helper, lastX, onTheRow(stationX, null), names, OptionalLong.empty(), null, null, List.of(), null, null);
     }
 
     /** A line that puts the clock at {@code startClock} when it is built, so that a failure reads in times that mean something. */
     TrackLine(GameTestHelper helper, int lastX, int[] stationX, String[] names, long startClock) {
-        this(helper, lastX, onTheRow(stationX, null), names, OptionalLong.of(startClock), null, null, List.of(), null);
+        this(helper, lastX, onTheRow(stationX, null), names, OptionalLong.of(startClock), null, null, List.of(), null, null);
     }
 
     /** A line with a bend in it, which leaves the clock alone. A station past the bend is on the row it leads to. */
     TrackLine(GameTestHelper helper, int lastX, int[] stationX, String[] names, Bend bend) {
-        this(helper, lastX, onTheRow(stationX, bend), names, OptionalLong.empty(), bend, null, List.of(), null);
+        this(helper, lastX, onTheRow(stationX, bend), names, OptionalLong.empty(), bend, null, List.of(), null, null);
     }
 
     /** A line with signals beside it, which leaves the clock alone. */
     TrackLine(GameTestHelper helper, int lastX, int[] stationX, String[] names, List<Signal> signals) {
-        this(helper, lastX, onTheRow(stationX, null), names, OptionalLong.empty(), null, null, signals, null);
+        this(helper, lastX, onTheRow(stationX, null), names, OptionalLong.empty(), null, null, signals, null, null);
     }
 
     /** A loop, which leaves the clock alone, with stations on its first row. */
     TrackLine(GameTestHelper helper, Loop loop, int[] stationX, String[] names) {
-        this(helper, loop.eastX(), onTheLoop(stationX, loop), names, OptionalLong.empty(), null, null, List.of(), loop);
+        this(helper, loop.eastX(), onTheLoop(stationX, loop), names, OptionalLong.empty(), null, null, List.of(), loop, null);
     }
 
     /** A loop that puts the clock at {@code startClock} when it is built, with stations on its first row. */
     TrackLine(GameTestHelper helper, Loop loop, int[] stationX, String[] names, long startClock) {
-        this(helper, loop.eastX(), onTheLoop(stationX, loop), names, OptionalLong.of(startClock), null, null, List.of(), loop);
+        this(helper, loop.eastX(), onTheLoop(stationX, loop), names, OptionalLong.of(startClock), null, null, List.of(), loop, null);
     }
 
     /**
@@ -227,7 +263,7 @@ final class TrackLine {
      * it at {@code secondZ}.
      */
     TrackLine(GameTestHelper helper, Turn turn, int firstX, int secondZ, String[] names) {
-        this(helper, turn.fromX(), aroundTheTurn(turn, firstX, secondZ), names, OptionalLong.empty(), null, turn, List.of(), null);
+        this(helper, turn.fromX(), aroundTheTurn(turn, firstX, secondZ), names, OptionalLong.empty(), null, turn, List.of(), null, null);
     }
 
     /**
@@ -236,7 +272,16 @@ final class TrackLine {
      * first row or on the line south of the turn; the train is built at the first, on the first row.
      */
     TrackLine(GameTestHelper helper, int lastX, Turn turn, BlockPos[] stationTracks, String[] names) {
-        this(helper, lastX, stationTracks, names, OptionalLong.empty(), null, turn, List.of(), null);
+        this(helper, lastX, stationTracks, names, OptionalLong.empty(), null, turn, List.of(), null, null);
+    }
+
+    /**
+     * A line whose first row runs to {@code lastX} with a siding beside it, and signals, which leaves the
+     * clock alone. A station is given by its track block, on the first row or on the siding's; the train
+     * is built at the first, on the first row.
+     */
+    TrackLine(GameTestHelper helper, int lastX, Siding siding, BlockPos[] stationTracks, String[] names, List<Signal> signals) {
+        this(helper, lastX, stationTracks, names, OptionalLong.empty(), null, null, signals, null, siding);
     }
 
     /**
@@ -245,7 +290,7 @@ final class TrackLine {
      * @param names         the stations' names
      */
     private TrackLine(GameTestHelper helper, int lastX, BlockPos[] stationTracks, String[] names, OptionalLong startClock,
-        @Nullable Bend bend, @Nullable Turn turn, List<Signal> signals, @Nullable Loop loop) {
+        @Nullable Bend bend, @Nullable Turn turn, List<Signal> signals, @Nullable Loop loop, @Nullable Siding siding) {
         this.helper = helper;
         this.level = helper.getLevel();
         this.server = level.getServer();
@@ -256,6 +301,7 @@ final class TrackLine {
         this.bend = bend;
         this.turn = turn;
         this.loop = loop;
+        this.siding = siding;
         this.signals = List.copyOf(signals);
         this.savedOffset = ClockService.data(server).offset();
         this.stations = new GlobalStation[stationTracks.length];
@@ -331,7 +377,8 @@ final class TrackLine {
      * first row, with track a block either side of its own. Called before {@link #setUp()}.
      */
     TrackLine parkATrainAt(int index) {
-        if (index <= 0 || index >= stationTracks.length || southward(stationTracks[index]))
+        BlockPos track = index <= 0 || index >= stationTracks.length ? null : stationTracks[index];
+        if (track == null || southward(track) || track.getZ() != rowZ(track.getX()))
             throw new IllegalArgumentException("a train can be parked at a station of the first row other than the first, not at " + index);
         parkedAt.add(index);
         return this;
@@ -448,8 +495,15 @@ final class TrackLine {
             if (!straightAt(x))
                 continue;
             boolean endsACurve = bend != null && (x == bend.fromX() || x == bend.toX()) || turn != null && x == turn.fromX()
-                || loop != null && (x == loop.firstRowX() || x == loop.eastX());
+                || loop != null && (x == loop.firstRowX() || x == loop.eastX()) || siding != null && (x == siding.outFromX() || x == siding.backToX());
             helper.setBlock(track(x), endsACurve ? curveEnd : track);
+        }
+        if (siding != null) {
+            for (int x = siding.outToX(); x <= siding.backFromX(); x++)
+                helper.setBlock(new BlockPos(x, TRACK_Y, siding.z()), x == siding.outToX() || x == siding.backFromX() ? curveEnd : track);
+            Vec3 east = new Vec3(1, 0, 0), west = new Vec3(-1, 0, 0);
+            layCurve(track(siding.outFromX()), east, new BlockPos(siding.outToX(), TRACK_Y, siding.z()), west);
+            layCurve(new BlockPos(siding.backFromX(), TRACK_Y, siding.z()), east, track(siding.backToX()), west);
         }
         if (bend != null)
             layCurve(track(bend.fromX()), new Vec3(1, 0, 0), track(bend.toX()), new Vec3(-1, 0, 0));
@@ -533,13 +587,18 @@ final class TrackLine {
     }
 
     private BlockPos signalBlock(Signal signal) {
-        return track(signal.x()).north();
+        return signalTrack(signal).north();
+    }
+
+    /** The track block a signal stands beside and points at. */
+    private BlockPos signalTrack(Signal signal) {
+        return signal.z() == Signal.FIRST_ROW ? track(signal.x()) : new BlockPos(signal.x(), TRACK_Y, signal.z());
     }
 
     /** Does what placing the item does, as for a station; the arrow of a signal for trains running east points as a station's does. */
     private void placeSignal(Signal signal) {
         BlockPos at = helper.absolutePos(signalBlock(signal));
-        BlockPos trackPos = helper.absolutePos(track(signal.x()));
+        BlockPos trackPos = helper.absolutePos(signalTrack(signal));
         level.setBlock(at, AllBlocks.TRACK_SIGNAL.getDefaultState(), 3);
         CompoundTag data = new CompoundTag();
         data.put("TargetTrack", NbtUtils.writeBlockPos(trackPos.subtract(at)));
@@ -711,6 +770,8 @@ final class TrackLine {
                 clear(turn.fromX(), turn.toX(), TRACK_Z, turn.toZ());
             if (loop != null)
                 clear(loop.westX(), loop.eastX() + loop.radius(), loop.northZ(), loop.southZ());
+            if (siding != null)
+                clear(siding.outFromX(), siding.backToX(), TRACK_Z, siding.z());
         } catch (RuntimeException e) {
             LOGGER.warn("[{}] could not clean up after the track test", helper.testInfo.getTestName(), e);
         } finally {

@@ -24,6 +24,8 @@ import io.github.eyunya11.createrealtimeschedule.clock.ClockService;
 import io.github.eyunya11.createrealtimeschedule.clock.RealClock;
 import io.github.eyunya11.createrealtimeschedule.diagram.DutyTimes;
 import io.github.eyunya11.createrealtimeschedule.gametest.TrackLine.Loop;
+import io.github.eyunya11.createrealtimeschedule.gametest.TrackLine.Siding;
+import io.github.eyunya11.createrealtimeschedule.gametest.TrackLine.Signal;
 import io.github.eyunya11.createrealtimeschedule.operation.DutyRun;
 import io.github.eyunya11.createrealtimeschedule.operation.OperationData;
 import io.github.eyunya11.createrealtimeschedule.operation.OperationService;
@@ -31,6 +33,7 @@ import io.github.eyunya11.createrealtimeschedule.operation.TrainDriver;
 import io.github.eyunya11.createrealtimeschedule.timetable.ServiceTime;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable;
 import io.github.eyunya11.createrealtimeschedule.timetable.TimetableJson;
+import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestAssertException;
 import net.minecraft.gametest.framework.GameTestHelper;
@@ -355,8 +358,8 @@ public class OperationTests {
             @Override
             boolean watch(OperationData data, long now) {
                 if (local == null || express == null) {
-                    local = data.trainOf("1A").map(id -> data.runs().get(id)).orElse(null);
-                    express = data.trainOf("2A").map(id -> data.runs().get(id)).orElse(null);
+                    local = runOf(data, "1A");
+                    express = runOf(data, "2A");
                     return false;
                 }
                 if (local.departures().get(1) == DutyRun.NOT_YET) {
@@ -396,8 +399,8 @@ public class OperationTests {
             @Override
             boolean watch(OperationData data, long now) {
                 if (local == null || express == null) {
-                    local = data.trainOf("1A").map(id -> data.runs().get(id)).orElse(null);
-                    express = data.trainOf("2A").map(id -> data.runs().get(id)).orElse(null);
+                    local = runOf(data, "1A");
+                    express = runOf(data, "2A");
                     return false;
                 }
                 if (local.departures().get(1) == DutyRun.NOT_YET)
@@ -427,7 +430,7 @@ public class OperationTests {
             @Override
             boolean watch(OperationData data, long now) {
                 if (local == null) {
-                    local = data.trainOf("1A").map(id -> data.runs().get(id)).orElse(null);
+                    local = runOf(data, "1A");
                     return false;
                 }
                 if (local.departures().get(1) == DutyRun.NOT_YET)
@@ -456,8 +459,8 @@ public class OperationTests {
             @Override
             boolean watch(OperationData data, long now) {
                 if (local == null || express == null) {
-                    local = data.trainOf("1A").map(id -> data.runs().get(id)).orElse(null);
-                    express = data.trainOf("2A").map(id -> data.runs().get(id)).orElse(null);
+                    local = runOf(data, "1A");
+                    express = runOf(data, "2A");
                     return false;
                 }
                 if (local.departures().get(1) == DutyRun.NOT_YET)
@@ -558,6 +561,83 @@ public class OperationTests {
         }
     }
 
+    // ------------------------------------------------------------------ standing aside on a siding
+
+    /** The siding beside the main line at A, 3 blocks south of it, from x = 40 out to 56 and from 82 back to 98. */
+    private static final Siding SIDING = new Siding(40, 56, 82, 98, 3);
+    /** The two depots behind each other, A on the main line and A2 on the siding beside it, and B. */
+    private static final String[] SIDING_NAMES = {"Dx", "Dl", "A", "A2", "B"};
+    /**
+     * Signals for trains running east: before the junction out, at the start and the end of the siding,
+     * before the junction back on the main line, and past it. Between them, the junctions and the main
+     * line beside the siding are one block, the siding another, and the junction back a third.
+     */
+    private static final List<Signal> SIDING_SIGNALS = List.of(new Signal(36, true), new Signal(60, true, SIDING.z()),
+        new Signal(78, true, SIDING.z()), new Signal(92, true), new Signal(104, true));
+    /** How long the express may take from its depot to past A, at the most, if it is not held up on the way. */
+    private static final long EXPRESS_TO_A = 15 * RealClock.TICKS_PER_SECOND;
+    /** How long the local may stand after the express has run through A: until the junction back is clear of it. */
+    private static final long JUNCTION_CLEAR = 10 * RealClock.TICKS_PER_SECOND;
+    /** How long the test runs on after the local has left, so that it can be watched going on a client too. */
+    private static final long WATCHED_ON = 5 * RealClock.TICKS_PER_SECOND;
+
+    /**
+     * M9's goal on one track, under signals: the local of 1A comes out of its depot Dl at 12:02:00, turns
+     * off onto the siding and stands at A2 by 12:02:12. Its time to leave is 12:02:30, but it waits there
+     * until the express E of 2A, out of its depot Dx behind it at 12:02:28, has run through A on the main
+     * line beside it, its last carriage gone past. The signals keep the two apart: the express is not held
+     * up by the local standing aside, and the local goes back onto the main line once the express has
+     * cleared the junction back.
+     */
+    @GameTest(template = TURN, batch = "realtimeoperation_siding", timeoutTicks = 6000)
+    public static void aLocalStandsAsideOnASidingWhileTheExpressRunsThrough(GameTestHelper helper) {
+        TrackLine line = new TrackLine(helper, 115, SIDING,
+            new BlockPos[] {onTheMainLine(8), onTheMainLine(24), onTheMainLine(72), new BlockPos(72, TrackLine.TRACK_Y, SIDING.z()),
+                onTheMainLine(110)},
+            SIDING_NAMES, SIDING_SIGNALS).parkATrainAt(1);
+        new Operation(helper, sidingTimetable(), line) {
+            @Nullable DutyRun local;
+            @Nullable DutyRun express;
+            long leftAt = Long.MIN_VALUE;
+
+            @Override
+            boolean watch(OperationData data, long now) {
+                if (local == null || express == null) {
+                    local = runOf(data, "1A");
+                    express = runOf(data, "2A");
+                    return false;
+                }
+                if (local.departures().get(1) == DutyRun.NOT_YET) {
+                    helper.assertTrue(local.call() <= 1, "the local left A2 without its time being recorded");
+                    return false;
+                }
+                if (leftAt == Long.MIN_VALUE) {
+                    leftAt = now;
+                    log(local);
+                    log(express);
+                    helper.assertTrue(local.arrivals().get(1) != DutyRun.NOT_YET, "the local did not stand at A2 on the siding");
+                    List<DutyRun.Pass> passes = express.passes();
+                    helper.assertTrue(passes.size() == 1 && passes.getFirst().way() == 0 && passes.getFirst().station().equals("A"),
+                        "the express is not seen to run through A once: " + passes);
+                    long passed = passes.getFirst().at();
+                    helper.assertTrue(passed > local.plannedDeparture(1), "the express ran through A by " + TestTimes.show(passed)
+                        + ", before the local was to leave: the test shows no wait");
+                    helper.assertTrue(passed - express.departures().get(0) <= EXPRESS_TO_A, "the express took from "
+                        + TestTimes.show(express.departures().get(0)) + " to " + TestTimes.show(passed) + " to run through A: held up on the way");
+                    long gone = local.departures().get(1);
+                    helper.assertTrue(gone > passed && gone <= passed + JUNCTION_CLEAR, "the local left A2 at " + TestTimes.show(gone)
+                        + ", not soon after the express ran through A at " + TestTimes.show(passed));
+                    helper.assertTrue(newNotes(data).isEmpty(), "something went wrong: " + newNotes(data));
+                }
+                return now >= leftAt + WATCHED_ON;
+            }
+        }.begin();
+    }
+
+    private static BlockPos onTheMainLine(int x) {
+        return new BlockPos(x, TrackLine.TRACK_Y, TrackLine.TRACK_Z);
+    }
+
     // ------------------------------------------------------------------ the timetable
 
     /** A duty of the loop: out of the depot to A, train {@code number} on to B, and round to the depot, {@code later} seconds after 1A's times. */
@@ -597,6 +677,27 @@ public class OperationTests {
         if (!result.ok())
             throw new IllegalStateException(result.problems() + " in " + json);
         return result.timetable();
+    }
+
+    /**
+     * The local of 1A out of Dl to the siding at A2, and from there, once the express E of 2A has run
+     * through A, to B; E out of Dx to B. The deadheads back to the depots are never run: the sets cannot
+     * turn round, and the test ends before.
+     */
+    private static Timetable sidingTimetable() {
+        int start = ServiceTime.of("12:02:00");
+        Timetable.Stop waits = new Timetable.Stop("A2", Timetable.Stop.NONE, start + 30, Timetable.Stop.NONE,
+            List.of(new Timetable.Wait("E", "A", Timetable.Stop.NONE)));
+        Timetable timetable = new Timetable("Siding", List.of(new Timetable.Line("main", "Main", List.of(SIDING_NAMES), false)), List.of(
+            new Timetable.Train("D1", "main", "", List.of(Timetable.Stop.leaving("Dl", start), Timetable.Stop.arriving("A2", start + 12)), true),
+            new Timetable.Train("L", "main", "local", List.of(waits, Timetable.Stop.arriving("B", start + 50))),
+            new Timetable.Train("D2", "main", "", List.of(Timetable.Stop.leaving("B", start + 70), Timetable.Stop.arriving("Dl", start + 100)), true),
+            new Timetable.Train("E", "main", "rapid", List.of(Timetable.Stop.leaving("Dx", start + 28), Timetable.Stop.arriving("B", start + 42))),
+            new Timetable.Train("R", "main", "", List.of(Timetable.Stop.leaving("B", start + 60), Timetable.Stop.arriving("Dx", start + 90)), true)),
+            List.of(new Timetable.Duty("1A", "Dl", List.of("D1", "L", "D2")), new Timetable.Duty("2A", "Dx", List.of("E", "R"))));
+        if (!timetable.problems().isEmpty())
+            throw new IllegalStateException(timetable.problems().toString());
+        return timetable;
     }
 
     /**
@@ -720,6 +821,11 @@ public class OperationTests {
             this.timetable = timetable;
             this.lines = List.of(lines);
             this.server = helper.getLevel().getServer();
+        }
+
+        /** The run of {@code duty} going on, once it has been given a set; null until then. */
+        @Nullable DutyRun runOf(OperationData data, String duty) {
+            return data.trainOf(duty).map(id -> data.runs().get(id)).orElse(null);
         }
 
         /** True once the test has seen what it is for; it fails by throwing. It is not asked again after that. */
