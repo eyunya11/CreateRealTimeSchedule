@@ -126,8 +126,9 @@ public final class OperationService {
 
     /**
      * Whether the set of {@code run}, due to leave its call, is still to wait for a train there (see
-     * {@link Waits}): one it waits for that has not left the station or run through it yet, unless
-     * that is past the longest wait, or is forecast to be. A wait given up so is noted, once, and so is
+     * {@link Waits}): one it waits for that has not left the station or run through it yet, or left
+     * it less than the timetable's gap ago, unless the wait is past the longest, or is forecast to end
+     * past it. A wait given up so is noted, once, and so is
      * one that ended without the train being seen to run through the station.
      *
      * @param maxWait the longest wait, in ticks, of a wait that does not say
@@ -145,7 +146,7 @@ public final class OperationService {
             if (target == null)
                 continue; // it waits for nothing (Waits#unmet), as loading the timetable said
             Map.Entry<UUID, DutyRun> theirs = runOf(data, target.duty(), run.day());
-            Waits.State state = Waits.state(target, theirs == null ? null : theirs.getValue());
+            Waits.State state = Waits.state(target, theirs == null ? null : theirs.getValue(), now);
             if (state == Waits.State.OVER_UNSEEN && data.firstUnseen(about))
                 data.note(now, run.duty(), run.day(), "train " + wait.train() + " came in after " + wait.at()
                     + " without being seen to run through it: the track has no station " + wait.at() + " on its way");
@@ -156,7 +157,7 @@ public final class OperationService {
             if (now > longest || forecast > longest) {
                 data.giveUpWait(about);
                 data.note(now, run.duty(), run.day(), "did not wait " + (now > longest ? "longer " : "") + "for train " + wait.train()
-                    + " to leave " + wait.at() + " or run through it: it was " + (now > longest ? "not there by " : "forecast to be there at ")
+                    + " to leave " + wait.at() + " or run through it: " + (now > longest ? "the longest wait ended at " : "the wait was forecast to end at ")
                     + RealClock.format(now > longest ? longest : forecast));
                 continue;
             }
@@ -177,7 +178,7 @@ public final class OperationService {
             if (target == null || data.waitGivenUp(new Waits.Key(run.duty(), run.day(), run.call(), index)))
                 continue;
             Map.Entry<UUID, DutyRun> theirs = runOf(data, target.duty(), run.day());
-            if (Waits.state(target, theirs == null ? null : theirs.getValue()) == Waits.State.WAITING)
+            if (Waits.state(target, theirs == null ? null : theirs.getValue(), now) == Waits.State.WAITING)
                 return call.waits().get(index);
         }
         return null;

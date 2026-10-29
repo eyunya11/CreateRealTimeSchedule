@@ -11,6 +11,7 @@ import java.util.Set;
 
 import org.jetbrains.annotations.Nullable;
 
+import io.github.eyunya11.createrealtimeschedule.clock.RealClock;
 import io.github.eyunya11.createrealtimeschedule.diagram.LineAxis;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Stop;
@@ -23,7 +24,10 @@ import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Wait;
  *
  * <p>A set that waits at a call for train X at station P waits until X, on the same service day, has
  * left P (a train that stops there) or run through it without stopping (one that does not): the last
- * time it does so before the set's own time to leave. Which way round a loop line X runs, and so where
+ * time it does so before the set's own time to leave. After a train that stops at P, the set keeps the
+ * timetable's gap: it leaves no sooner than that long after X has really left P, so that it leaves as
+ * much later than its time as X left P later than its. After one that runs through, it may leave at
+ * once; the signals keep the two apart. Which way round a loop line X runs, and so where
  * it runs through P, is the track's, as the diagram draws it ({@link StationUse#runsThrough}). It does
  * not wait for a train that does not run that day: whose duty has no run going (not started, not run,
  * started before the timetable was loaded, ended or given up), or whose run does not make that call or
@@ -38,8 +42,12 @@ public final class Waits {
      * Where a train waited for is to be: leaving call {@code call} of duty {@code duty} (a train that
      * stops at the station), or running through {@code station} on the way from that call (one that
      * does not).
+     *
+     * @param gap how long after the train has left the station the waiting set leaves at the soonest, in
+     *            ticks: for one that stops there, the time from its leaving to the waiting set's by the
+     *            timetable; 0 for one that runs through
      */
-    public record Target(String train, String duty, int call, boolean through, String station) {}
+    public record Target(String train, String duty, int call, boolean through, String station, long gap) {}
 
     /** One wait of one call of a duty on one service day: the duty, the day, the call, and the wait's place among the call's. */
     public record Key(String duty, long day, int call, int index) {}
@@ -85,7 +93,7 @@ public final class Waits {
 
     /** What a wait has come to. */
     public enum State {
-        /** The train waited for has not left the station or run through it yet. */
+        /** The train waited for has not left the station or run through it yet, or left it less than the gap ago ({@link Target#gap}). */
         WAITING,
         /** It has, or it does not run: the set need not wait. */
         OVER,
@@ -163,9 +171,10 @@ public final class Waits {
             if (!stop.hasDepart() || stop.depart() >= call.depart())
                 continue;
             if (stop.station().equals(wait.at()))
-                found = new Target(wait.train(), start.duty(), start.call() + s, false, wait.at());
+                found = new Target(wait.train(), start.duty(), start.call() + s, false, wait.at(),
+                    (call.depart() - stop.depart()) * (long) RealClock.TICKS_PER_SECOND);
             else if (StationUse.runsThrough(timetable, axes, train, stop.station(), train.stops().get(s + 1).station(), wait.at()))
-                found = new Target(wait.train(), start.duty(), start.call() + s, true, wait.at());
+                found = new Target(wait.train(), start.duty(), start.call() + s, true, wait.at(), 0);
         }
         return Optional.ofNullable(found);
     }
@@ -181,16 +190,21 @@ public final class Waits {
         return watched.getOrDefault(duty, Map.of()).getOrDefault(way, Set.of());
     }
 
-    /** What the wait for {@code target} has come to, with {@code run} the run of its duty that is going on the day, or null if none is. */
-    public static State state(Target target, @Nullable DutyRun run) {
+    /**
+     * What the wait for {@code target} has come to at clock {@code now}, with {@code run} the run of its
+     * duty that is going on the day, or null if none is.
+     */
+    public static State state(Target target, @Nullable DutyRun run, long now) {
         if (run == null)
             return State.OVER;
         int call = target.call();
         // Held past the call, or at it until a later one, the set does not run the way from it: the train is cancelled.
         if (run.skipped(call) || run.skipped(call + 1))
             return State.OVER;
-        if (!target.through())
-            return run.departures().get(call) != DutyRun.NOT_YET ? State.OVER : State.WAITING;
+        if (!target.through()) {
+            long left = run.departures().get(call);
+            return left != DutyRun.NOT_YET && now >= afterLeaving(target, left) ? State.OVER : State.WAITING;
+        }
         if (run.passedBy(call, target.station()))
             return State.OVER;
         List<Long> arrivals = run.arrivals();
@@ -201,13 +215,28 @@ public final class Waits {
     }
 
     /**
-     * When the train of {@code run} is to leave the call of {@code target}, if nothing holds it up
-     * ({@link Forecast}): for a train that runs through the station after it, the least it can be when
-     * it does.
+     * When the wait for a train that stops at the station ends, it having left at clock {@code left}:
+     * {@link Target#gap} after the second it left in. The timetable's times are whole seconds, and a set
+     * sent on its time leaves the tick after, so one that left on its time keeps the waiting set no
+     * later than its own time.
+     */
+    private static long afterLeaving(Target target, long left) {
+        return left - Math.floorMod(left, RealClock.TICKS_PER_SECOND) + target.gap();
+    }
+
+    /**
+     * When the wait for {@code target} is to end, if nothing holds up the train of {@code run}
+     * ({@link Forecast}): {@link Target#gap} after it leaves the call of {@code target}. For a train that
+     * runs through the station after the call, the least it can be when it does.
      *
      * @param defaultMinimumStop the minimum stop, in ticks, at a call the timetable gives none
      */
     public static long forecast(Target target, DutyRun run, long now, RunTimes times, long defaultMinimumStop) {
+        long leaves = leaves(target, run, now, times, defaultMinimumStop);
+        return target.through() ? leaves : afterLeaving(target, leaves);
+    }
+
+    private static long leaves(Target target, DutyRun run, long now, RunTimes times, long defaultMinimumStop) {
         int call = target.call();
         if (run.departures().get(call) != DutyRun.NOT_YET)
             return run.departures().get(call);
