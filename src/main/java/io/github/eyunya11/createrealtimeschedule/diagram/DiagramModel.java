@@ -61,7 +61,9 @@ public record DiagramModel(LineAxis axis, long day, List<PlannedTrain> planned, 
 
     /**
      * A wait of a train of the timetable for another, both on the line: an arrow from where the train
-     * waited for leaves the station, or runs through it, to where the waiting train leaves.
+     * waited for leaves the station, or runs through it, to where the waiting train leaves. Unlike the
+     * trains' segments, it goes back in time where the timetable has the train waited for leave, or run
+     * through, after the waiting train's own time to leave: the waiting train is to wait past its time.
      *
      * @param cancelled whether either train does not run on the day, so that there is no wait
      */

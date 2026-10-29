@@ -287,10 +287,14 @@ public final class DiagramScreen extends Screen {
     /** A wait as a dashed arrow, with its head where the waiting train leaves; faded when there is no wait on the day. */
     private void drawWait(GuiGraphics graphics, WaitMark wait, double length) {
         Segment arrow = wait.arrow();
-        if (Double.isNaN(arrow.fromPosition()) || Double.isNaN(arrow.toPosition()) || view.clip(arrow, length) == null)
+        // The view cuts a segment by its time, earlier end first: an arrow going back in time is given to it the other way round.
+        Segment line = arrow.toSecond() < arrow.fromSecond()
+            ? new Segment(arrow.toSecond(), arrow.toPosition(), arrow.fromSecond(), arrow.fromPosition())
+            : arrow;
+        if (Double.isNaN(arrow.fromPosition()) || Double.isNaN(arrow.toPosition()) || view.clip(line, length) == null)
             return;
         int colour = wait.cancelled() ? faded(WAIT) : WAIT;
-        drawSegment(graphics, arrow, length, 1, colour, true);
+        drawSegment(graphics, line, length, 1, colour, true);
         double x1 = view.x(arrow.fromSecond());
         double y1 = view.y(arrow.fromPosition(), length);
         double x2 = view.x(arrow.toSecond());
