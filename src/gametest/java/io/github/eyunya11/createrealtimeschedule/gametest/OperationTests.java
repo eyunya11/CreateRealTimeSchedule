@@ -471,8 +471,6 @@ public class OperationTests {
     private static final long SIDING_FULL_THROTTLE = TestTimes.clock(DAY, 12, 2, 40);
     /** How long the express may take from past A to B, at the most, if it is not held up on the way. */
     private static final long EXPRESS_A_TO_B = 10 * RealClock.TICKS_PER_SECOND;
-    /** How long the local may stand after the express has run through A: until the junction back is clear of it. */
-    private static final long JUNCTION_CLEAR = 10 * RealClock.TICKS_PER_SECOND;
     /** How long the test runs on after the local has left, so that it can be watched going on a client too. */
     private static final long WATCHED_ON = 5 * RealClock.TICKS_PER_SECOND;
 
@@ -575,8 +573,10 @@ public class OperationTests {
                     helper.assertTrue(passed > local.plannedDeparture(1), "the express ran through A by " + TestTimes.show(passed)
                         + ", before the local was to leave: the test shows no wait");
                     long gone = local.departures().get(1);
-                    helper.assertTrue(gone > passed && gone <= passed + JUNCTION_CLEAR, "the local left A2 at " + TestTimes.show(gone)
-                        + ", not soon after the express ran through A at " + TestTimes.show(passed));
+                    // Sent on the tick the express was seen past A, it moves off the platform the tick after, up to the
+                    // signal at the end of the siding, where it waits for the junction back to clear.
+                    helper.assertTrue(gone == passed + DutyRunTests.SENT_TO_GONE, "the local left A2 at " + TestTimes.show(gone)
+                        + ", not the tick after the express ran through A at " + TestTimes.show(passed));
                     helper.assertTrue(newNotes(data).isEmpty(), "something went wrong: " + newNotes(data));
                 }
                 long passed = express.passes().getFirst().at();
