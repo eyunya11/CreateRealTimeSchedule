@@ -14,6 +14,7 @@ import io.github.eyunya11.createrealtimeschedule.diagram.DiagramModel;
 import io.github.eyunya11.createrealtimeschedule.diagram.DiagramModel.PlannedTrain;
 import io.github.eyunya11.createrealtimeschedule.diagram.DiagramModel.RanDuty;
 import io.github.eyunya11.createrealtimeschedule.diagram.DiagramModel.Segment;
+import io.github.eyunya11.createrealtimeschedule.diagram.DiagramModel.WaitMark;
 import io.github.eyunya11.createrealtimeschedule.diagram.DiagramView;
 import io.github.eyunya11.createrealtimeschedule.diagram.DutyTimes;
 import io.github.eyunya11.createrealtimeschedule.diagram.LineAxis;
@@ -28,6 +29,8 @@ import net.minecraft.network.chat.Component;
  * The diagram of one line of the timetable being run: time across, the line's stations down, as far
  * apart as the track between them. The timetable's trains are thin lines, coloured by their type, and
  * deadheads are dashed; the duties of the service day are drawn over them, thick, as they really ran.
+ * A train's wait for another is a dashed arrow, from where the train waited for leaves its station or
+ * runs through it to where the waiting train leaves.
  *
  * <p>The wheel zooms the time, dragging moves it, the arrow keys go to the line before or after,
  * Page Up and Page Down to the service day before or back to today, and Home back to now.
@@ -45,6 +48,10 @@ public final class DiagramScreen extends Screen {
     private static final int MIN_MARK_GAP = 36;
     private static final double DASH = 4;
     private static final double DASH_GAP = 3;
+    /** The length of the strokes of a wait's arrow head, in screen units, and their angle to the arrow. */
+    private static final double HEAD = 5;
+    private static final double HEAD_COS = Math.cos(Math.toRadians(25));
+    private static final double HEAD_SIN = Math.sin(Math.toRadians(25));
 
     private static final int PLOT_BACKGROUND = 0xE0101418;
     private static final int GRID = 0xFF2C3238;
@@ -54,6 +61,8 @@ public final class DiagramScreen extends Screen {
     private static final int NOW = 0xFFFFE066;
     private static final int RAN = 0xFFFF5050;
     private static final int GIVEN_UP = 0xFFC070FF;
+    /** The editor's accent, as its waits are drawn in the dark. */
+    private static final int WAIT = 0xFF6EA2FF;
     private static final int DEADHEAD = 0xFF8A8A8A;
     private static final int UNTYPED = 0xFFB8C4D0;
     private static final int[] TYPE_COLOURS = {0xFF6FA8DC, 0xFF93C47D, 0xFFF6B26B, 0xFFE06666, 0xFF76A5AF, 0xFFFFD966, 0xFFC27BA0};
@@ -106,13 +115,16 @@ public final class DiagramScreen extends Screen {
     }
 
     private @Nullable DiagramModel model(Timetable timetable, LineAxis axis, long now) {
-        // Made again when a snapshot comes, the line or the day changes, or a second has gone by for a set standing until now.
-        if (model == null || modelVersion != DiagramClient.version() || !modelLine.equals(axis.line()) || modelDay != day
-            || now - modelNow >= RealClock.TICKS_PER_SECOND) {
+        // Made again when a snapshot comes, or the line or the day changes; and its duties that ran, when a second has gone by
+        // for a set standing until now.
+        if (model == null || modelVersion != DiagramClient.version() || !modelLine.equals(axis.line()) || modelDay != day) {
             model = DiagramModel.of(timetable, DiagramClient.calls(), axis, day, DiagramClient.duties(), now);
             modelVersion = DiagramClient.version();
             modelLine = axis.line();
             modelDay = day;
+            modelNow = now;
+        } else if (now - modelNow >= RealClock.TICKS_PER_SECOND) {
+            model = model.at(timetable, DiagramClient.calls(), DiagramClient.duties(), now);
             modelNow = now;
         }
         return model;
@@ -172,6 +184,8 @@ public final class DiagramScreen extends Screen {
         for (RanDuty duty : diagram.ran())
             for (Segment segment : duty.segments())
                 drawSegment(graphics, segment, length, 2, duty.times().status() == DutyTimes.Status.GIVEN_UP ? GIVEN_UP : RAN, false);
+        for (WaitMark wait : diagram.waits())
+            drawWait(graphics, wait, length);
         if (nowSecond >= view.start() && nowSecond <= view.end())
             quad(graphics, view.x(nowSecond), top, view.x(nowSecond), bottom, 1, NOW);
         graphics.flush();
@@ -246,20 +260,21 @@ public final class DiagramScreen extends Screen {
         return type.isEmpty() ? UNTYPED : TYPE_COLOURS[Math.floorMod(type.hashCode(), TYPE_COLOURS.length)];
     }
 
-    private void drawSegment(GuiGraphics graphics, Segment segment, double length, double thickness, int colour, boolean dashed) {
+    /** Draws {@code segment}; false if none of it is in the time shown. */
+    private boolean drawSegment(GuiGraphics graphics, Segment segment, double length, double thickness, int colour, boolean dashed) {
         double[] cut = view.clip(segment, length);
         if (cut == null)
-            return;
+            return false;
         if (!dashed) {
             quad(graphics, cut[0], cut[1], cut[2], cut[3], thickness, colour);
-            return;
+            return true;
         }
         double dx = cut[2] - cut[0];
         double dy = cut[3] - cut[1];
         double along = Math.hypot(dx, dy);
         if (along < DASH) {
             quad(graphics, cut[0], cut[1], cut[2], cut[3], thickness, colour);
-            return;
+            return true;
         }
         // Dashes count from the segment's own start, not from where the view cuts it, so that they stay
         // where they are while the view is moved.
@@ -271,6 +286,31 @@ public final class DiagramScreen extends Screen {
                 continue;
             quad(graphics, cut[0] + dx * from / along, cut[1] + dy * from / along, cut[0] + dx * to / along, cut[1] + dy * to / along,
                 thickness, colour);
+        }
+        return true;
+    }
+
+    /** A wait as a dashed arrow, with its head where the waiting train leaves; faded when there is no wait on the day. */
+    private void drawWait(GuiGraphics graphics, WaitMark wait, double length) {
+        Segment arrow = wait.arrow();
+        if (Double.isNaN(arrow.fromPosition()) || Double.isNaN(arrow.toPosition()))
+            return;
+        int colour = wait.cancelled() ? faded(WAIT) : WAIT;
+        if (!drawSegment(graphics, arrow, length, 1, colour, true))
+            return;
+        double x1 = view.x(arrow.fromSecond());
+        double y1 = view.y(arrow.fromPosition(), length);
+        double x2 = view.x(arrow.toSecond());
+        double y2 = view.y(arrow.toPosition(), length);
+        double along = Math.hypot(x2 - x1, y2 - y1);
+        if (along < 1e-6)
+            return;
+        // The head: two strokes back from the end, turned either way from the arrow. Off the plot, the scissor cuts it.
+        double backX = -(x2 - x1) / along;
+        double backY = -(y2 - y1) / along;
+        for (int side = -1; side <= 1; side += 2) {
+            double sin = side * HEAD_SIN;
+            quad(graphics, x2, y2, x2 + (backX * HEAD_COS - backY * sin) * HEAD, y2 + (backX * sin + backY * HEAD_COS) * HEAD, 1, colour);
         }
     }
 

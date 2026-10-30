@@ -98,18 +98,19 @@ public final class DiagramView {
 
     /**
      * The part of {@code segment} that is in the time shown, on an axis {@code length} blocks long, as
-     * {@code {x1, y1, x2, y2}} on the screen; null if none of it is.
+     * {@code {x1, y1, x2, y2}} on the screen, from its {@code from} end to its {@code to} end; null if
+     * none of it is. A segment may go back in time, as a wait's arrow can.
      */
     public double @Nullable [] clip(Segment segment, double length) {
         double from = segment.fromSecond();
         double to = segment.toSecond();
-        if (to < start || from > end())
+        if (Math.max(from, to) < start || Math.min(from, to) > end())
             return null;
         double fromPosition = segment.fromPosition();
         double toPosition = segment.toPosition();
-        if (to > from) {
-            double a = Math.max(from, start);
-            double b = Math.min(to, end());
+        if (to != from) {
+            double a = Math.clamp(from, start, end());
+            double b = Math.clamp(to, start, end());
             double slope = (toPosition - fromPosition) / (to - from);
             double aPosition = fromPosition + (a - from) * slope;
             double bPosition = fromPosition + (b - from) * slope;

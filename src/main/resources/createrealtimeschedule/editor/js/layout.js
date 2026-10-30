@@ -1,7 +1,7 @@
 /*
  * What a line's diagram draws of the timetable's trains, and where on the screen it goes: the planned
- * part of DiagramModel and DiagramView in the mod, line for line, so that a train looks the same in
- * the editor as in the game. Times are seconds from 00:00 of the service day and run on past 24:00;
+ * part of DiagramModel (the trains and their waits) and DiagramView in the mod, line for line, so that
+ * a train looks the same in the editor as in the game. Times are seconds from 00:00 of the service day and run on past 24:00;
  * positions are those of the axis.
  *
  * Besides the segments the mod draws, each train has the points of its stops, for the editor to take
@@ -203,17 +203,20 @@
       return STEPS[STEPS.length - 1];
     }
 
-    /** The part of a segment in the time shown, as [x1, y1, x2, y2] on the screen; null if none of it is. */
+    /**
+     * The part of a segment in the time shown, as [x1, y1, x2, y2] on the screen from its from end to
+     * its to end; null if none of it is. A segment may go back in time, as a wait's arrow can.
+     */
     clip(segment, length) {
       let from = segment.fromSecond;
       let to = segment.toSecond;
-      if (to < this.startSecond || from > this.end())
+      if (Math.max(from, to) < this.startSecond || Math.min(from, to) > this.end())
         return null;
       let fromPosition = segment.fromPosition;
       let toPosition = segment.toPosition;
-      if (to > from) {
-        const a = Math.max(from, this.startSecond);
-        const b = Math.min(to, this.end());
+      if (to !== from) {
+        const a = Math.min(Math.max(from, this.startSecond), this.end());
+        const b = Math.min(Math.max(to, this.startSecond), this.end());
         const slope = (toPosition - fromPosition) / (to - from);
         const aPosition = fromPosition + (a - from) * slope;
         const bPosition = fromPosition + (b - from) * slope;
@@ -227,10 +230,10 @@
   }
 
   /**
-   * The arrows the diagram draws for the waits of the trains on the axis's line: from where the train
-   * waited for leaves its station, or runs through it, to where the waiting train leaves; both on the
-   * line. Of a train that does either more than once, the last before the waiting train leaves, as the
-   * mod waits for.
+   * The arrows the diagram draws for the waits of the trains on the axis's line, as DiagramModel's
+   * waits(): from where the train waited for leaves its station, or runs through it, to where the
+   * waiting train leaves; both on the line. Of a train that does either more than once, the last
+   * before the waiting train leaves, as the mod waits for.
    */
   function waitMarks(timetable, axis) {
     const planned = new Map(plannedTrains(timetable, axis).map(train => [train.number, train]));

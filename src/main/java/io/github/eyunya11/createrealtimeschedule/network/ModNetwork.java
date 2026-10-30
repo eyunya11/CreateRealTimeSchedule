@@ -17,9 +17,10 @@ public final class ModNetwork {
      * 2 since the diagram's payloads came in, 3 since the clipboard's, 4 since the calls a held duty
      * leaves out, and 5 since the timetable in the diagram's payload may be of version 5 (the trains a
      * stop waits for), which a client of before cannot read: it would show the diagram as of no
-     * timetable, where this keeps it off the server with a message saying why.
+     * timetable, where this keeps it off the server with a message saying why. 6 since a duty's times
+     * in the diagram's payload carry the stations it ran through.
      */
-    private static final String PROTOCOL_VERSION = "5";
+    private static final String PROTOCOL_VERSION = "6";
 
     private ModNetwork() {}
 

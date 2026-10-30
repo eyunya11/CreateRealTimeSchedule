@@ -16,6 +16,7 @@ import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 
 import com.mojang.logging.LogUtils;
+import com.simibubi.create.Create;
 import com.simibubi.create.content.trains.entity.Train;
 
 import io.github.eyunya11.createrealtimeschedule.Createrealtimeschedule;
@@ -335,96 +336,16 @@ public class OperationTests {
     // ------------------------------------------------------------------ waiting for a train
 
     /*
-     * Each of these runs on, once it has seen what it is for, until the sets are back at the depot, so
-     * that the trains can be watched going on after the wait on a client too (/test run).
+     * The waits as a local stands aside on a siding of a double line are below (standing aside on a
+     * siding). This one runs on, once it has seen what it is for, until the set is back at the depot, so
+     * that the train can be watched going on after the wait on a client too (/test run).
      */
-
-    /**
-     * M9's goal, on the two tracks of the double line: the local of 1A (outer) stands at A from
-     * 12:02:10 and is to leave at 12:02:30, but waits there until the express E of 2A (inner), out of
-     * the depot at 12:02:28, has run through a station named A, its last carriage gone past; it leaves
-     * on the next tick. Each track has its own A, side by side, so the local stands aside on one track
-     * while the express runs past on the other.
-     */
-    @GameTest(template = TURN, batch = "realtimeoperation_waits_for_a_pass", timeoutTicks = 8000)
-    public static void aLocalWaitsForAnExpressToRunThroughAndLeavesAfterIt(GameTestHelper helper) {
-        Timetable timetable = overtaking("12:02:28", false, Timetable.Stop.NONE);
-        TrackLine outer = new TrackLine(helper, OUTER, STATION_X, NAMES);
-        TrackLine inner = new TrackLine(helper, INNER, STATION_X, NAMES);
-        new Operation(helper, timetable, outer, inner) {
-            @Nullable DutyRun local;
-            @Nullable DutyRun express;
-
-            @Override
-            boolean watch(OperationData data, long now) {
-                if (local == null || express == null) {
-                    local = runOf(data, "1A");
-                    express = runOf(data, "2A");
-                    return false;
-                }
-                if (local.departures().get(1) == DutyRun.NOT_YET) {
-                    helper.assertTrue(local.call() <= 1, "the local left A without its time being recorded");
-                    return false;
-                }
-                log(local);
-                log(express);
-                List<DutyRun.Pass> passes = express.passes();
-                helper.assertTrue(passes.size() == 1 && passes.getFirst().way() == 0 && passes.getFirst().station().equals("A"),
-                    "the express is not seen to run through A once on its way out: " + passes);
-                long passed = passes.getFirst().at();
-                helper.assertTrue(passed > local.plannedDeparture(1), "the express ran through A by " + TestTimes.show(passed)
-                    + ", before the local was to leave: the test shows no wait");
-                helper.assertTrue(local.departures().get(1) == passed + DutyRunTests.SENT_TO_GONE, "the local left A at "
-                    + TestTimes.show(local.departures().get(1)) + ", not the tick after the express ran through at " + TestTimes.show(passed));
-                helper.assertTrue(newNotes(data).isEmpty(), "something went wrong: " + newNotes(data));
-                return true;
-            }
-        }.toTheEnd().begin();
-    }
-
-    /**
-     * The express calls at A instead, from 12:02:20 to 12:02:28 by the timetable, but stands there its
-     * 20 seconds at the least, so it leaves later than the local's 12:02:30; the local waits until it
-     * has left.
-     */
-    @GameTest(template = TURN, batch = "realtimeoperation_waits_for_a_leaving", timeoutTicks = 8000)
-    public static void aLocalWaitsForATrainThatCallsAtTheStationToLeaveFirst(GameTestHelper helper) {
-        Timetable timetable = overtaking("12:02:15", true, Timetable.Stop.NONE);
-        TrackLine outer = new TrackLine(helper, OUTER, STATION_X, NAMES);
-        TrackLine inner = new TrackLine(helper, INNER, STATION_X, NAMES);
-        new Operation(helper, timetable, outer, inner) {
-            @Nullable DutyRun local;
-            @Nullable DutyRun express;
-
-            @Override
-            boolean watch(OperationData data, long now) {
-                if (local == null || express == null) {
-                    local = runOf(data, "1A");
-                    express = runOf(data, "2A");
-                    return false;
-                }
-                if (local.departures().get(1) == DutyRun.NOT_YET)
-                    return false;
-                log(local);
-                log(express);
-                long left = express.departures().get(1);
-                helper.assertTrue(left != DutyRun.NOT_YET && left > local.plannedDeparture(1),
-                    "the express left A at " + (left == DutyRun.NOT_YET ? "-" : TestTimes.show(left)) + ": the test shows no wait");
-                long gone = local.departures().get(1);
-                helper.assertTrue(gone > left && gone <= left + 2, "the local left A at " + TestTimes.show(gone)
-                    + ", not just after the express left it at " + TestTimes.show(left));
-                helper.assertTrue(newNotes(data).isEmpty(), "something went wrong: " + newNotes(data));
-                return true;
-            }
-        }.toTheEnd().begin();
-    }
 
     /** With one set, 2A does not run, and the local does not wait for its express: it leaves A on its time. */
     @GameTest(template = TURN, batch = "realtimeoperation_waits_for_none", timeoutTicks = 8000)
     public static void aLocalDoesNotWaitForATrainThatDoesNotRun(GameTestHelper helper) {
-        Timetable timetable = overtaking("12:02:28", false, Timetable.Stop.NONE);
         TrackLine outer = new TrackLine(helper, OUTER, STATION_X, NAMES);
-        new Operation(helper, timetable, outer) {
+        new Operation(helper, overtaking(), outer) {
             @Nullable DutyRun local;
 
             @Override
@@ -438,39 +359,6 @@ public class OperationTests {
                 helper.assertTrue(data.trainOf("2A").isEmpty(), "2A got a set");
                 helper.assertTrue(local.departures().get(1) == local.plannedDeparture(1) + DutyRunTests.SENT_TO_GONE,
                     "the local left A at " + TestTimes.show(local.departures().get(1)) + ", not on its time");
-                return true;
-            }
-        }.toTheEnd().begin();
-    }
-
-    /**
-     * The local's wait says it waits no time past its own (max_wait 0): when the express is not
-     * through A by then, it gives the wait up, notes so, and leaves before the express runs through.
-     */
-    @GameTest(template = TURN, batch = "realtimeoperation_waits_no_longer", timeoutTicks = 8000)
-    public static void aLocalGivesUpAWaitPastItsLimit(GameTestHelper helper) {
-        Timetable timetable = overtaking("12:02:28", false, 0);
-        TrackLine outer = new TrackLine(helper, OUTER, STATION_X, NAMES);
-        TrackLine inner = new TrackLine(helper, INNER, STATION_X, NAMES);
-        new Operation(helper, timetable, outer, inner) {
-            @Nullable DutyRun local;
-            @Nullable DutyRun express;
-
-            @Override
-            boolean watch(OperationData data, long now) {
-                if (local == null || express == null) {
-                    local = runOf(data, "1A");
-                    express = runOf(data, "2A");
-                    return false;
-                }
-                if (local.departures().get(1) == DutyRun.NOT_YET)
-                    return false;
-                long gone = local.departures().get(1);
-                helper.assertTrue(gone <= local.plannedDeparture(1) + 3, "the local left A at " + TestTimes.show(gone) + ", not as soon as its time was past");
-                helper.assertTrue(express.passes().isEmpty(), "the express ran through A before the local left: the test shows nothing");
-                List<OperationData.Note> notes = newNotes(data);
-                helper.assertTrue(notes.size() == 1 && notes.getFirst().duty().equals("1A")
-                    && notes.getFirst().what().startsWith("did not wait longer for train E to leave A"), "the wait is not noted as given up: " + notes);
                 return true;
             }
         }.toTheEnd().begin();
@@ -574,28 +462,90 @@ public class OperationTests {
      */
     private static final List<Signal> SIDING_SIGNALS = List.of(new Signal(36, true), new Signal(60, true, SIDING.z()),
         new Signal(78, true, SIDING.z()), new Signal(92, true), new Signal(104, true));
-    /** How long the express may take from its depot to past A, at the most, if it is not held up on the way. */
-    private static final long EXPRESS_TO_A = 15 * RealClock.TICKS_PER_SECOND;
-    /** How long the local may stand after the express has run through A: until the junction back is clear of it. */
-    private static final long JUNCTION_CLEAR = 10 * RealClock.TICKS_PER_SECOND;
+    /**
+     * When the late express is back at full throttle: some 35 blocks out of Dx, short of the junction out
+     * and A. A late train runs on at the line's speed. Run at {@link #SLOW} past A, it would not yet have
+     * the block of the junction back when its last carriage went past A, and the local, let go then,
+     * could take that block first and hold it up.
+     */
+    private static final long SIDING_FULL_THROTTLE = TestTimes.clock(DAY, 12, 2, 40);
+    /** How long the express may take from past A to B, at the most, if it is not held up on the way. */
+    private static final long EXPRESS_A_TO_B = 10 * RealClock.TICKS_PER_SECOND;
     /** How long the test runs on after the local has left, so that it can be watched going on a client too. */
     private static final long WATCHED_ON = 5 * RealClock.TICKS_PER_SECOND;
 
-    /**
-     * M9's goal on one track, under signals: the local of 1A comes out of its depot Dl at 12:02:00, turns
-     * off onto the siding and stands at A2 by 12:02:12. Its time to leave is 12:02:30, but it waits there
-     * until the express E of 2A, out of its depot Dx behind it at 12:02:28, has run through A on the main
-     * line beside it, its last carriage gone past. The signals keep the two apart: the express is not held
-     * up by the local standing aside, and the local goes back onto the main line once the express has
-     * cleared the junction back.
+    /*
+     * Each timetable here has, on time, the express past A, or gone from it, before the local's time to
+     * leave, as a timetable is made: a test that has the local wait makes the express late.
      */
-    @GameTest(template = TURN, batch = "realtimeoperation_siding", timeoutTicks = 6000)
-    public static void aLocalStandsAsideOnASidingWhileTheExpressRunsThrough(GameTestHelper helper) {
-        TrackLine line = new TrackLine(helper, 115, SIDING,
+
+    /** The throttle a late express runs at: some 1.4 blocks a second. */
+    private static final double SLOW = 0.05;
+
+    /** Has the train that runs {@code duty} run at {@link #SLOW} until {@code fast}, and at full throttle after. */
+    private static void slowUntil(OperationData data, String duty, boolean fast) {
+        Train train = data.trainOf(duty).map(Create.RAILWAYS.trains::get).orElse(null);
+        if (train != null)
+            train.throttle = fast ? 1 : SLOW;
+    }
+
+    /**
+     * The line of the siding, with the express's set at Dx and the local's parked at Dl behind it: the
+     * one track of a double line that runs east, as a local and an express share it, with a siding at
+     * the station A where the local stands aside.
+     */
+    private static TrackLine sidingLine(GameTestHelper helper) {
+        return new TrackLine(helper, 115, SIDING,
             new BlockPos[] {onTheMainLine(8), onTheMainLine(24), onTheMainLine(72), new BlockPos(72, TrackLine.TRACK_Y, SIDING.z()),
                 onTheMainLine(110)},
             SIDING_NAMES, SIDING_SIGNALS).parkATrainAt(1);
-        new Operation(helper, sidingTimetable(), line) {
+    }
+
+    /**
+     * A timetable is made so that, on time, no train waits past its time: the local of 1A, out of its
+     * depot Dl at 12:02:00 and at A2 on the siding by 12:02:12, is to leave at 12:02:35, and the express
+     * E of 2A, out of its depot Dx behind it at 12:02:15, runs through A on the main line well before
+     * then. The local leaves on its time.
+     */
+    @GameTest(template = TURN, batch = "realtimeoperation_siding_on_time", timeoutTicks = 6000)
+    public static void aLocalLeavesTheSidingOnItsTimeWhenTheExpressRunsThroughOnTime(GameTestHelper helper) {
+        new Operation(helper, sidingTimetable(false, Timetable.Stop.NONE), sidingLine(helper)) {
+            @Nullable DutyRun local;
+            @Nullable DutyRun express;
+
+            @Override
+            boolean watch(OperationData data, long now) {
+                if (local == null || express == null) {
+                    local = runOf(data, "1A");
+                    express = runOf(data, "2A");
+                    return false;
+                }
+                if (local.departures().get(1) == DutyRun.NOT_YET)
+                    return false;
+                log(local);
+                log(express);
+                helper.assertTrue(local.arrivals().get(1) != DutyRun.NOT_YET, "the local did not stand at A2 on the siding");
+                List<DutyRun.Pass> passes = express.passes();
+                helper.assertTrue(passes.size() == 1 && passes.getFirst().station().equals("A") && passes.getFirst().at() < local.plannedDeparture(1),
+                    "the express did not run through A before the local's time: " + passes);
+                helper.assertTrue(local.departures().get(1) == local.plannedDeparture(1) + DutyRunTests.SENT_TO_GONE,
+                    "the local left A2 at " + TestTimes.show(local.departures().get(1)) + ", not on its time");
+                helper.assertTrue(newNotes(data).isEmpty(), "something went wrong: " + newNotes(data));
+                return true;
+            }
+        }.runOn(WATCHED_ON).begin();
+    }
+
+    /**
+     * M9's goal: the express is late, run at {@link #SLOW} until {@link #SIDING_FULL_THROTTLE}, so it
+     * runs through A after the local's 12:02:35. The local waits at A2 until the express has run
+     * through A on the main line beside it, its last carriage gone past, and leaves on the next tick.
+     * The signals keep the two apart from then on: the express is not held up by the local standing
+     * aside, and the local goes back onto the main line once the express has cleared the junction back.
+     */
+    @GameTest(template = TURN, batch = "realtimeoperation_siding", timeoutTicks = 6000)
+    public static void aLocalStandsAsideOnASidingWhileALateExpressRunsThrough(GameTestHelper helper) {
+        new Operation(helper, sidingTimetable(false, Timetable.Stop.NONE), sidingLine(helper)) {
             @Nullable DutyRun local;
             @Nullable DutyRun express;
             long leftAt = Long.MIN_VALUE;
@@ -607,6 +557,7 @@ public class OperationTests {
                     express = runOf(data, "2A");
                     return false;
                 }
+                slowUntil(data, "2A", now >= SIDING_FULL_THROTTLE);
                 if (local.departures().get(1) == DutyRun.NOT_YET) {
                     helper.assertTrue(local.call() <= 1, "the local left A2 without its time being recorded");
                     return false;
@@ -614,7 +565,6 @@ public class OperationTests {
                 if (leftAt == Long.MIN_VALUE) {
                     leftAt = now;
                     log(local);
-                    log(express);
                     helper.assertTrue(local.arrivals().get(1) != DutyRun.NOT_YET, "the local did not stand at A2 on the siding");
                     List<DutyRun.Pass> passes = express.passes();
                     helper.assertTrue(passes.size() == 1 && passes.getFirst().way() == 0 && passes.getFirst().station().equals("A"),
@@ -622,16 +572,124 @@ public class OperationTests {
                     long passed = passes.getFirst().at();
                     helper.assertTrue(passed > local.plannedDeparture(1), "the express ran through A by " + TestTimes.show(passed)
                         + ", before the local was to leave: the test shows no wait");
-                    helper.assertTrue(passed - express.departures().get(0) <= EXPRESS_TO_A, "the express took from "
-                        + TestTimes.show(express.departures().get(0)) + " to " + TestTimes.show(passed) + " to run through A: held up on the way");
                     long gone = local.departures().get(1);
-                    helper.assertTrue(gone > passed && gone <= passed + JUNCTION_CLEAR, "the local left A2 at " + TestTimes.show(gone)
-                        + ", not soon after the express ran through A at " + TestTimes.show(passed));
+                    // Sent on the tick the express was seen past A, it moves off the platform the tick after, up to the
+                    // signal at the end of the siding, where it waits for the junction back to clear.
+                    helper.assertTrue(gone == passed + DutyRunTests.SENT_TO_GONE, "the local left A2 at " + TestTimes.show(gone)
+                        + ", not the tick after the express ran through A at " + TestTimes.show(passed));
                     helper.assertTrue(newNotes(data).isEmpty(), "something went wrong: " + newNotes(data));
                 }
-                return now >= leftAt + WATCHED_ON;
+                long passed = express.passes().getFirst().at();
+                long atB = express.arrivals().get(1);
+                if (now < leftAt + WATCHED_ON || atB == DutyRun.NOT_YET && now <= passed + EXPRESS_A_TO_B)
+                    return false;
+                log(express);
+                helper.assertTrue(atB != DutyRun.NOT_YET && atB - passed <= EXPRESS_A_TO_B, "the express ran through A at " + TestTimes.show(passed)
+                    + " and was " + (atB == DutyRun.NOT_YET ? "not at B by " + TestTimes.show(now) : "at B at " + TestTimes.show(atB)) + ": held up on the way");
+                return true;
             }
         }.begin();
+    }
+
+    /**
+     * The express calls at A on the main line instead, from 12:02:23 to 12:02:27, and leaves on its
+     * time: the local on the siding, which keeps the timetable's 8 seconds after it, leaves on its own
+     * time too, not a tick later.
+     */
+    @GameTest(template = TURN, batch = "realtimeoperation_siding_leaving_on_time", timeoutTicks = 6000)
+    public static void aLocalLeavesTheSidingOnItsTimeAfterAnExpressThatCallsAndLeavesOnTime(GameTestHelper helper) {
+        new Operation(helper, sidingTimetable(true, Timetable.Stop.NONE), sidingLine(helper)) {
+            @Nullable DutyRun local;
+            @Nullable DutyRun express;
+
+            @Override
+            boolean watch(OperationData data, long now) {
+                if (local == null || express == null) {
+                    local = runOf(data, "1A");
+                    express = runOf(data, "2A");
+                    return false;
+                }
+                if (local.departures().get(1) == DutyRun.NOT_YET)
+                    return false;
+                log(local);
+                log(express);
+                helper.assertTrue(express.departures().get(1) == express.plannedDeparture(1) + DutyRunTests.SENT_TO_GONE,
+                    "the express left A at " + show(express.departures().get(1)) + ", not on its time: the test shows nothing");
+                helper.assertTrue(local.departures().get(1) == local.plannedDeparture(1) + DutyRunTests.SENT_TO_GONE,
+                    "the local left A2 at " + TestTimes.show(local.departures().get(1)) + ", not on its time");
+                helper.assertTrue(newNotes(data).isEmpty(), "something went wrong: " + newNotes(data));
+                return true;
+            }
+        }.runOn(WATCHED_ON).begin();
+    }
+
+    /**
+     * The express calls at A, late, run at {@link #SLOW} until {@link #SIDING_FULL_THROTTLE}: it leaves
+     * A later than the local's 12:02:35. The local keeps the timetable's 8 seconds from the express's
+     * leaving to its own, counted from the second the express left in, and so leaves as late as the
+     * express did.
+     */
+    @GameTest(template = TURN, batch = "realtimeoperation_siding_leaving", timeoutTicks = 6000)
+    public static void aLocalOnTheSidingKeepsTheTimetablesGapAfterALateExpressThatCalls(GameTestHelper helper) {
+        new Operation(helper, sidingTimetable(true, Timetable.Stop.NONE), sidingLine(helper)) {
+            @Nullable DutyRun local;
+            @Nullable DutyRun express;
+
+            @Override
+            boolean watch(OperationData data, long now) {
+                if (local == null || express == null) {
+                    local = runOf(data, "1A");
+                    express = runOf(data, "2A");
+                    return false;
+                }
+                slowUntil(data, "2A", now >= SIDING_FULL_THROTTLE);
+                if (local.departures().get(1) == DutyRun.NOT_YET)
+                    return false;
+                log(local);
+                log(express);
+                long left = express.departures().get(1);
+                helper.assertTrue(left != DutyRun.NOT_YET && left > local.plannedDeparture(1),
+                    "the express left A at " + show(left) + ": the test shows no wait");
+                long gone = local.departures().get(1);
+                long kept = left - Math.floorMod(left, RealClock.TICKS_PER_SECOND) + (local.plannedDeparture(1) - express.plannedDeparture(1));
+                helper.assertTrue(gone == kept + DutyRunTests.SENT_TO_GONE, "the local left A2 at " + TestTimes.show(gone)
+                    + ", not the timetable's gap after the express left A at " + TestTimes.show(left));
+                helper.assertTrue(newNotes(data).isEmpty(), "something went wrong: " + newNotes(data));
+                return true;
+            }
+        }.runOn(WATCHED_ON).begin();
+    }
+
+    /**
+     * The local's wait says it waits no time past its own (max_wait 0): when the late express is not
+     * through A by then, it gives the wait up, notes so, and leaves the siding before the express runs
+     * through A.
+     */
+    @GameTest(template = TURN, batch = "realtimeoperation_siding_waits_no_longer", timeoutTicks = 6000)
+    public static void aLocalOnTheSidingGivesUpAWaitPastItsLimit(GameTestHelper helper) {
+        new Operation(helper, sidingTimetable(false, 0), sidingLine(helper)) {
+            @Nullable DutyRun local;
+            @Nullable DutyRun express;
+
+            @Override
+            boolean watch(OperationData data, long now) {
+                if (local == null || express == null) {
+                    local = runOf(data, "1A");
+                    express = runOf(data, "2A");
+                    return false;
+                }
+                slowUntil(data, "2A", now >= SIDING_FULL_THROTTLE);
+                if (local.departures().get(1) == DutyRun.NOT_YET)
+                    return false;
+                long gone = local.departures().get(1);
+                helper.assertTrue(gone <= local.plannedDeparture(1) + 3, "the local left A2 at " + TestTimes.show(gone) + ", not as soon as its time was past");
+                helper.assertTrue(express.passes().isEmpty(), "the express ran through A before the local left: the test shows nothing");
+                List<OperationData.Note> notes = newNotes(data);
+                helper.assertTrue(notes.size() == 1 && notes.getFirst().duty().equals("1A")
+                    && notes.getFirst().what().startsWith("did not wait longer for train E to leave A"), "the wait is not noted as given up: " + notes);
+                return true;
+            }
+        }.runOn(WATCHED_ON).begin();
     }
 
     private static BlockPos onTheMainLine(int x) {
@@ -680,19 +738,28 @@ public class OperationTests {
     }
 
     /**
-     * The local of 1A out of Dl to the siding at A2, and from there, once the express E of 2A has run
-     * through A, to B; E out of Dx to B. The deadheads back to the depots are never run: the sets cannot
-     * turn round, and the test ends before.
+     * The local of 1A out of Dl to the siding at A2, and from there, at 12:02:35, once the express E of
+     * 2A has left A or run through it, to B; it waits as long as {@code maxWait} seconds past its time
+     * (or the server's, for {@link Timetable.Stop#NONE}). E runs out of Dx at 12:02:15 to B, calling at
+     * A on the main line from 12:02:23 to 12:02:27 if {@code callsAtA}. As a timetable is made, E on time
+     * is past A, or gone from it 8 seconds, by the local's time: the local waits for E only when E is
+     * late. The deadheads back to the depots are never run: the sets cannot turn round, and the test
+     * ends before.
      */
-    private static Timetable sidingTimetable() {
+    private static Timetable sidingTimetable(boolean callsAtA, int maxWait) {
         int start = ServiceTime.of("12:02:00");
-        Timetable.Stop waits = new Timetable.Stop("A2", Timetable.Stop.NONE, start + 30, Timetable.Stop.NONE,
-            List.of(new Timetable.Wait("E", "A", Timetable.Stop.NONE)));
+        Timetable.Stop waits = new Timetable.Stop("A2", Timetable.Stop.NONE, start + 35, Timetable.Stop.NONE,
+            List.of(new Timetable.Wait("E", "A", maxWait)));
+        List<Timetable.Stop> express = new ArrayList<>();
+        express.add(Timetable.Stop.leaving("Dx", start + 15));
+        if (callsAtA)
+            express.add(new Timetable.Stop("A", start + 23, start + 27, 2));
+        express.add(Timetable.Stop.arriving("B", start + (callsAtA ? 35 : 30)));
         Timetable timetable = new Timetable("Siding", List.of(new Timetable.Line("main", "Main", List.of(SIDING_NAMES), false)), List.of(
             new Timetable.Train("D1", "main", "", List.of(Timetable.Stop.leaving("Dl", start), Timetable.Stop.arriving("A2", start + 12)), true),
             new Timetable.Train("L", "main", "local", List.of(waits, Timetable.Stop.arriving("B", start + 50))),
             new Timetable.Train("D2", "main", "", List.of(Timetable.Stop.leaving("B", start + 70), Timetable.Stop.arriving("Dl", start + 100)), true),
-            new Timetable.Train("E", "main", "rapid", List.of(Timetable.Stop.leaving("Dx", start + 28), Timetable.Stop.arriving("B", start + 42))),
+            new Timetable.Train("E", "main", "rapid", express),
             new Timetable.Train("R", "main", "", List.of(Timetable.Stop.leaving("B", start + 60), Timetable.Stop.arriving("Dx", start + 90)), true)),
             List.of(new Timetable.Duty("1A", "Dl", List.of("D1", "L", "D2")), new Timetable.Duty("2A", "Dx", List.of("E", "R"))));
         if (!timetable.problems().isEmpty())
@@ -701,29 +768,22 @@ public class OperationTests {
     }
 
     /**
-     * 1A, a local: out of the depot at 12:02 to A, on to B from 12:02:30, back to the depot. At A it
-     * waits for the express E of 2A at A, as long as {@code maxWait} seconds past its time (or the
-     * server's, for {@link Timetable.Stop#NONE}). 2A runs E out of the depot at {@code expressLeaves}
-     * round to B, calling at A for 8 seconds if {@code callsAtA}, and back to the depot.
+     * 1A, a local: out of the depot at 12:02 to A, on to B from 12:02:40, back to the depot. At A it
+     * waits for the express E of 2A at A. 2A runs E out of the depot at 12:02:25 round to B, and back to
+     * the depot.
      */
-    private static Timetable overtaking(String expressLeaves, boolean callsAtA, int maxWait) {
+    private static Timetable overtaking() {
         int start = ServiceTime.of("12:02:00");
-        Timetable.Stop waits = new Timetable.Stop("A", Timetable.Stop.NONE, start + 30, Timetable.Stop.NONE,
-            List.of(new Timetable.Wait("E", "", maxWait)));
+        Timetable.Stop waits = new Timetable.Stop("A", Timetable.Stop.NONE, start + 40, Timetable.Stop.NONE,
+            List.of(new Timetable.Wait("E")));
         Timetable.Train out = new Timetable.Train("D1", "loop", "",
             List.of(Timetable.Stop.leaving("Depot", start), Timetable.Stop.arriving("A", start + 10)), true);
-        Timetable.Train local = new Timetable.Train("L", "loop", "local", List.of(waits, Timetable.Stop.arriving("B", start + 40)));
+        Timetable.Train local = new Timetable.Train("L", "loop", "local", List.of(waits, Timetable.Stop.arriving("B", start + 50)));
         Timetable.Train in = new Timetable.Train("D2", "loop", "",
-            List.of(Timetable.Stop.leaving("B", start + 60), Timetable.Stop.arriving("Depot", start + 90)), true);
-        int leaves = ServiceTime.of(expressLeaves);
-        List<Timetable.Stop> stops = new ArrayList<>();
-        stops.add(Timetable.Stop.leaving("Depot", leaves));
-        if (callsAtA)
-            stops.add(Timetable.Stop.calling("A", leaves + 5, leaves + 13));
+            List.of(Timetable.Stop.leaving("B", start + 70), Timetable.Stop.arriving("Depot", start + 100)), true);
         // Out to B and round to the depot again in one train, so that it runs down the line through A.
-        stops.add(Timetable.Stop.calling("B", leaves + 30, leaves + 50));
-        stops.add(Timetable.Stop.arriving("Depot", leaves + 90));
-        Timetable.Train express = new Timetable.Train("E", "loop", "rapid", stops);
+        Timetable.Train express = new Timetable.Train("E", "loop", "rapid", List.of(Timetable.Stop.leaving("Depot", start + 25),
+            Timetable.Stop.calling("B", start + 42, start + 62), Timetable.Stop.arriving("Depot", start + 100)));
         Timetable timetable = new Timetable("Overtaking", List.of(new Timetable.Line("loop", "Loop", List.of("Depot", "A", "B"), true)),
             List.of(out, local, in, express),
             List.of(new Timetable.Duty("1A", "Depot", List.of("D1", "L", "D2")), new Timetable.Duty("2A", "Depot", List.of("E"))));
@@ -808,6 +868,10 @@ public class OperationTests {
         private boolean seen;
         /** Whether it then runs on until every line's set is back and free at the depot. */
         private boolean toTheEnd;
+        /** How long it then runs on, in ticks, at the least. */
+        private long runOn;
+        /** The clock when it saw what it is for. */
+        private long seenAt;
         /**
          * The notes there were when the timetable was loaded, the very objects: the server keeps those
          * of the tests before, and of the runs before, since the test world is saved. Not how many there
@@ -834,6 +898,15 @@ public class OperationTests {
         /** Has the test run on, once it has seen what it is for, until every line's set is back and free at the depot. */
         Operation toTheEnd() {
             toTheEnd = true;
+            return this;
+        }
+
+        /**
+         * Has the test run on for {@code ticks}, once it has seen what it is for, so that the trains can
+         * be watched going on on a client too: on a line the sets cannot come back to the depot along.
+         */
+        Operation runOn(long ticks) {
+            runOn = ticks;
             return this;
         }
 
@@ -895,9 +968,11 @@ public class OperationTests {
                     helper.assertTrue(now < departure(0) - ModSettings.dutyLeadSeconds() * (long) RealClock.TICKS_PER_SECOND,
                         "the sets were not all free before the first duty was to be given one, at " + TestTimes.show(now));
             }
-            if (!seen)
+            if (!seen) {
                 seen = watch(data, now);
-            if (seen && (!toTheEnd || lines.stream().allMatch(line -> data.freeSince().containsKey(line.train().id))))
+                seenAt = now;
+            }
+            if (seen && now >= seenAt + runOn && (!toTheEnd || lines.stream().allMatch(line -> data.freeSince().containsKey(line.train().id))))
                 helper.succeed();
         }
     }

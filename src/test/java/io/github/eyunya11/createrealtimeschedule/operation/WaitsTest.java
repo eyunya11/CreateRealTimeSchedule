@@ -86,8 +86,8 @@ class WaitsTest {
 
     @Test
     void aWaitIsForTheCallTheTrainLeavesOrTheWayItRunsThroughTheStationOn() {
-        assertEquals(Optional.of(new Target("3001", "2A", 1, true, "S1")), WAITS.target("1A", 2, 0));
-        assertEquals(Optional.of(new Target("2", "3A", 1, false, "S2")), WAITS.target("1A", 2, 1));
+        assertEquals(Optional.of(new Target("3001", "2A", 1, true, "S1", 0)), WAITS.target("1A", 2, 0));
+        assertEquals(Optional.of(new Target("2", "3A", 1, false, "S2", 4 * 60 * SECOND)), WAITS.target("1A", 2, 1));
         assertEquals(Optional.empty(), WAITS.target("1A", 1, 0), "the call at A waits for nothing");
         assertEquals(Set.of("S1"), WAITS.watched("2A", 1), "2A's set is watched for running through S1 on its way from A");
         assertEquals(Set.of(), WAITS.watched("2A", 0));
@@ -122,7 +122,7 @@ class WaitsTest {
         LineAxis up = new LineAxis("o", true, List.of("A", "B", "C", "D", "A"), List.of(0.0, 10.0, 20.0, 30.0, 40.0),
             List.of(new LineAxis.Way("A", "C", false)));
         Waits byTheTrack = Waits.of(timetable, calls, Map.of("o", up));
-        assertEquals(Optional.of(new Target("X", "E", 0, true, "D")), byTheTrack.target("W", 0, 0));
+        assertEquals(Optional.of(new Target("X", "E", 0, true, "D", 0)), byTheTrack.target("W", 0, 0));
         assertEquals(Set.of("D"), byTheTrack.watched("E", 0));
         assertEquals(List.of(), byTheTrack.unmet());
     }
@@ -130,20 +130,36 @@ class WaitsTest {
     @Test
     void aTrainThatDoesNotRunThatDayIsNotWaitedFor() {
         Target target = WAITS.target("1A", 2, 0).orElseThrow();
-        assertEquals(State.OVER, Waits.state(target, null));
+        assertEquals(State.OVER, Waits.state(target, null, at("08:10")));
     }
 
-    /** 2's set at S2: waited for until it leaves, and not once it is held past it. */
+    /**
+     * 2's set at S2: waited for until it leaves, and then for the timetable's 4 minutes from its leaving
+     * to the local's, so that the local leaves as late as it did.
+     */
     @Test
-    void aTrainThatCallsAtTheStationIsWaitedForUntilItLeaves() {
+    void aTrainThatCallsAtTheStationIsWaitedForUntilItLeavesAndTheTimetablesGapAfter() {
         Target target = WAITS.target("1A", 2, 1).orElseThrow();
         DutyRun two = DutyRun.start("3A", DAY, CALLS.get("3A"), at("07:49"));
-        assertEquals(State.WAITING, Waits.state(target, two), "not there yet");
+        assertEquals(State.WAITING, Waits.state(target, two, at("07:49")), "not there yet");
         two.left(at("07:50"));
         two.arrived(at("08:00"), MINIMUM);
-        assertEquals(State.WAITING, Waits.state(target, two), "there, and not gone");
-        two.left(at("08:06"));
-        assertEquals(State.OVER, Waits.state(target, two));
+        assertEquals(State.WAITING, Waits.state(target, two, at("08:10")), "there, and not gone");
+        // Two minutes late: the local is to leave two minutes late too.
+        two.left(at("08:08") + 1);
+        assertEquals(State.WAITING, Waits.state(target, two, at("08:12") - 1), "gone, but not 4 minutes ago");
+        assertEquals(State.OVER, Waits.state(target, two, at("08:12")));
+    }
+
+    @Test
+    void aTrainThatLeavesOnItsTimeHoldsTheWaitingTrainNoLonger() {
+        Target target = WAITS.target("1A", 2, 1).orElseThrow();
+        DutyRun two = DutyRun.start("3A", DAY, CALLS.get("3A"), at("07:49"));
+        two.left(at("07:50"));
+        two.arrived(at("08:00"), MINIMUM);
+        // Sent at 08:06, it leaves the tick after.
+        two.left(at("08:06") + 1);
+        assertEquals(State.OVER, Waits.state(target, two, at("08:10")), "the local's own time");
     }
 
     /**
@@ -157,18 +173,18 @@ class WaitsTest {
         express.left(at("07:55"));
         express.arrived(at("08:00"), MINIMUM);
         express.left(at("08:02"));
-        assertEquals(State.WAITING, Waits.state(target, express), "on its way, not past S1 yet");
+        assertEquals(State.WAITING, Waits.state(target, express, at("08:03")), "on its way, not past S1 yet");
         express.passed(1, "S1", at("08:04"));
-        assertEquals(State.OVER, Waits.state(target, express));
+        assertEquals(State.OVER, Waits.state(target, express, at("08:04")));
         DutyRun unseen = DutyRun.restore(express.state(), CALLS.get("2A"));
         DutyRun.State state = unseen.state();
         unseen = DutyRun.restore(new DutyRun.State(state.duty(), state.day(), state.call(), state.phase(), state.departure(), state.arrivals(),
             state.departures(), state.skipped(), List.of()), CALLS.get("2A"));
         unseen.arrived(at("08:12"), MINIMUM);
-        assertEquals(State.WAITING, Waits.state(target, unseen), "at B, its end may not be past S1 yet");
+        assertEquals(State.WAITING, Waits.state(target, unseen, at("08:12")), "at B, its end may not be past S1 yet");
         unseen.left(at("08:20"));
         unseen.arrived(at("08:40"), MINIMUM);
-        assertEquals(State.OVER_UNSEEN, Waits.state(target, unseen), "back at the depot without being seen to run through S1");
+        assertEquals(State.OVER_UNSEEN, Waits.state(target, unseen, at("08:40")), "back at the depot without being seen to run through S1");
         assertFalse(unseen.passedBy(1, "S1"));
     }
 
@@ -196,19 +212,19 @@ class WaitsTest {
         Waits all = Waits.of(timetable, calls, Map.of());
         Target leaves = all.target("1A", 1, 0).orElseThrow();
         Target runsThrough = all.target("1A", 1, 1).orElseThrow();
-        assertEquals(new Target("X", "2A", 1, false, "P"), leaves);
-        assertEquals(new Target("X", "2A", 1, true, "M"), runsThrough);
+        assertEquals(new Target("X", "2A", 1, false, "P", 2 * 60 * SECOND), leaves);
+        assertEquals(new Target("X", "2A", 1, true, "M", 0), runsThrough);
 
         DutyRun express = DutyRun.start("2A", DAY, calls.get("2A"), at("07:59"));
         express.left(at("08:00"));
         express.arrived(at("08:25"), MINIMUM);
-        assertEquals(State.WAITING, Waits.state(leaves, express), "at P, and not gone");
-        assertEquals(State.WAITING, Waits.state(runsThrough, express));
+        assertEquals(State.WAITING, Waits.state(leaves, express, at("08:25")), "at P, and not gone");
+        assertEquals(State.WAITING, Waits.state(runsThrough, express, at("08:25")));
         express.hold(3, at("08:40"));
-        assertEquals(State.OVER, Waits.state(leaves, express), "held at P until X2: X does not leave P");
-        assertEquals(State.OVER, Waits.state(runsThrough, express), "nor run through M");
+        assertEquals(State.OVER, Waits.state(leaves, express, at("08:40")), "held at P until X2: X does not leave P");
+        assertEquals(State.OVER, Waits.state(runsThrough, express, at("08:40")), "nor run through M");
         express.left(at("08:40"));
-        assertEquals(State.OVER, Waits.state(leaves, express), "gone from P as X2, not as X");
+        assertEquals(State.OVER, Waits.state(leaves, express, at("08:41")), "gone from P as X2, not as X");
     }
 
     @Test
@@ -224,5 +240,9 @@ class WaitsTest {
         run.left(at("08:15:20"));
         assertEquals(at("08:15:20"), Waits.forecast(express, run, at("08:16"), RunTimes.NONE, MINIMUM), "once it has left, when it did");
         assertTrue(Waits.forecast(express, run, at("08:16"), RunTimes.NONE, MINIMUM) <= at("08:16"));
+
+        // 2 is to leave S2 at 08:06, and the wait for it to end the timetable's 4 minutes later.
+        Target two = WAITS.target("1A", 2, 1).orElseThrow();
+        assertEquals(at("08:10"), Waits.forecast(two, DutyRun.start("3A", DAY, CALLS.get("3A"), at("07:49")), at("07:49"), RunTimes.NONE, MINIMUM));
     }
 }

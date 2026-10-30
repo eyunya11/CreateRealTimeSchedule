@@ -39,7 +39,7 @@ public final class DiagramClient {
     private static long serverNow;
     /** The level's game time when the last snapshot came, from which the server's clock is run on. */
     private static long receivedAt;
-    /** Goes up with every snapshot, so that the screen knows to draw it again. */
+    /** Goes up with every snapshot that has something new, the timetable or the duties' times, so that the screen knows to draw it again. */
     private static int version;
     private static String lastLine = "";
     private static int ticks;
@@ -73,8 +73,9 @@ public final class DiagramClient {
         serverNow = payload.now();
         Minecraft minecraft = Minecraft.getInstance();
         receivedAt = minecraft.level == null ? 0 : minecraft.level.getGameTime();
+        if (!received || content != null || payload.duties() != null)
+            version++;
         received = true;
-        version++;
     }
 
     /** Opens the diagram at the line of id {@code line}, or at the one shown last if that is empty. */

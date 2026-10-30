@@ -69,4 +69,13 @@ class DiagramViewTest {
         assertNull(view.clip(new Segment(6 * 3600, 0, 7 * 3600, 200), 200));
         assertNull(view.clip(new Segment(10 * 3600, 0, 11 * 3600, 200), 200));
     }
+
+    @Test
+    void aSegmentBackInTimeIsCutTheSameWayAndKeepsItsEnds() {
+        DiagramView view = view();
+        // From 08:10 at 200 back to 07:50 at 0, as a wait's arrow can go: its to end is cut at 08:00.
+        assertArrayEquals(new double[] {70, 120, 10, 70}, view.clip(new Segment(8 * 3600 + 600, 200, 7 * 3600 + 3000, 0), 200), 1e-9);
+        assertNull(view.clip(new Segment(7 * 3600, 200, 6 * 3600, 0), 200));
+        assertNull(view.clip(new Segment(11 * 3600, 200, 10 * 3600, 0), 200));
+    }
 }
