@@ -65,7 +65,8 @@ public record DiagramModel(LineAxis axis, long day, List<PlannedTrain> planned, 
      * trains' segments, it goes back in time where the timetable has the train waited for leave, or run
      * through, after the waiting train's own time to leave: the waiting train is to wait past its time.
      *
-     * @param cancelled whether either train does not run on the day, so that there is no wait
+     * @param cancelled whether either train does not run on the day, cancelled or in no duty, so that
+     *                  there is no wait
      */
     public record WaitMark(Segment arrow, boolean cancelled) {}
 
@@ -108,6 +109,12 @@ public record DiagramModel(LineAxis axis, long day, List<PlannedTrain> planned, 
             if (duty.day() == day && dutyCalls != null && dutyCalls.size() == duty.arrivals().size())
                 cancelled.addAll(DutyPlan.cancelledTrains(dutyCalls, duty.skipped()));
         }
+        // A train that no duty runs never runs, and is not waited for.
+        Set<String> run = new HashSet<>();
+        for (List<Call> dutyCalls : calls.values())
+            for (Call call : dutyCalls)
+                if (!call.leavingTrain().isEmpty())
+                    run.add(call.leavingTrain());
         List<PlannedTrain> planned = new ArrayList<>();
         Map<String, Path> paths = new HashMap<>();
         for (Train train : timetable.trains()) {
@@ -125,7 +132,20 @@ public record DiagramModel(LineAxis axis, long day, List<PlannedTrain> planned, 
             planned.add(new PlannedTrain(train.number(), train.type(), train.deadhead(), path.segments,
                 train.stops().getFirst().depart(), path.firstPosition, cancelled.contains(train.number())));
         }
+        return new DiagramModel(axis, day, planned, ran(timetable, calls, axis, day, times, now), waits(timetable, axis, paths, cancelled, run));
+    }
 
+    /**
+     * This diagram at clock {@code now}, with the same planned trains and waits: of those only the
+     * duties that ran change with the clock, as long as their {@code times} are the same as before.
+     */
+    public DiagramModel at(Timetable timetable, Map<String, List<Call>> calls, List<DutyTimes> times, long now) {
+        return new DiagramModel(axis, day, planned, ran(timetable, calls, axis, day, times, now), waits);
+    }
+
+    /** The duties of {@code times} that ran on the line of {@code axis} on {@code day}, at clock {@code now}. */
+    private static List<RanDuty> ran(Timetable timetable, Map<String, List<Call>> calls, LineAxis axis, long day, List<DutyTimes> times,
+                                     long now) {
         List<RanDuty> ran = new ArrayList<>();
         for (DutyTimes duty : times) {
             if (duty.day() != day)
@@ -155,32 +175,43 @@ public record DiagramModel(LineAxis axis, long day, List<PlannedTrain> planned, 
                     .map(train -> axis.down(train.stops().stream().map(Stop::station).toList())).orElse(true);
                 visits.add(new Visit(call.station(), arrive, depart, leavesOnLine || onLine(timetable, arrivingTrain, axis), leavesOnLine, down));
                 made = i;
-                if (duty.departures().get(i) == DutyRun.NOT_YET)
+                if (duty.departures().get(i) == DutyRun.NOT_YET || !leavesOnLine)
                     continue;
-                // The stations of the line it was seen to run through on the way from here, so that the line bends there as the train did.
+                // The stations of the line it was seen to run through on the way from here, so that the line bends there as the
+                // train did; not one its last carriage went past only after its front was in at the next call, as a long train's can.
+                long next = nextArrival(duty, skipped, i);
                 int way = i;
                 duty.passes().stream()
-                    .filter(pass -> pass.way() == way && axis.row(pass.station()) >= 0)
+                    .filter(pass -> pass.way() == way && axis.row(pass.station()) >= 0 && (next == DutyRun.NOT_YET || pass.at() <= next))
                     .sorted(Comparator.comparingLong(DutyRun.Pass::at))
                     .forEach(pass -> {
                         double at = clockSeconds(pass.at(), day);
-                        visits.add(new Visit(pass.station(), at, at, false, leavesOnLine, down));
+                        visits.add(new Visit(pass.station(), at, at, false, true, down));
                     });
             }
             List<Segment> segments = path(axis, visits).segments;
             if (!segments.isEmpty())
                 ran.add(new RanDuty(duty, segments));
         }
-        return new DiagramModel(axis, day, planned, ran, waits(timetable, axis, paths, cancelled));
+        return ran;
+    }
+
+    /** When {@code duty} came in at the call it made after call {@code call}, or {@link DutyRun#NOT_YET}. */
+    private static long nextArrival(DutyTimes duty, Set<Integer> skipped, int call) {
+        for (int next = call + 1; next < duty.arrivals().size(); next++)
+            if (!skipped.contains(next))
+                return duty.arrivals().get(next);
+        return DutyRun.NOT_YET;
     }
 
     /**
      * The arrows for the waits of the trains on the line, as the editor's {@code waitMarks} draws them:
      * from where the train waited for leaves its station, or runs through it, to where the waiting
      * train leaves; both on the line. Of a train that does either more than once, the last before the
-     * waiting train leaves, as the operation waits for.
+     * waiting train leaves, as the operation waits for. A wait is marked cancelled where either train
+     * is cancelled on the day, or is in no duty and so never runs.
      */
-    private static List<WaitMark> waits(Timetable timetable, LineAxis axis, Map<String, Path> paths, Set<String> cancelled) {
+    private static List<WaitMark> waits(Timetable timetable, LineAxis axis, Map<String, Path> paths, Set<String> cancelled, Set<String> run) {
         List<WaitMark> marks = new ArrayList<>();
         for (Train train : timetable.trains()) {
             if (!train.line().equals(axis.line()))
@@ -197,7 +228,8 @@ public record DiagramModel(LineAxis axis, long day, List<PlannedTrain> planned, 
                     Point from = leavesAt(other, paths.get(other.number()), axis, wait.station(stop.station()), stop.depart());
                     if (from != null)
                         marks.add(new WaitMark(new Segment(from.second(), from.position(), stop.depart(), paths.get(train.number()).departs[k]),
-                            cancelled.contains(train.number()) || cancelled.contains(other.number())));
+                            cancelled.contains(train.number()) || cancelled.contains(other.number())
+                                || !run.contains(train.number()) || !run.contains(other.number())));
                 }
             }
         }

@@ -261,6 +261,39 @@ class DiagramModelTest {
     }
 
     @Test
+    void aStationRunThroughOnlyAfterTheSetCameInAtTheNextCallDoesNotBendTheWay() {
+        // A long train: its front is in at B at 08:10, and its last carriage goes past M three seconds later.
+        DutyTimes done = new DutyTimes("1A", DAY, "Train 1", DutyTimes.Status.FINISHED,
+            List.of(X, at("07:55"), at("08:10"), at("08:25")), List.of(at("07:50"), at("08:00"), at("08:15"), X), List.of(),
+            List.of(new DutyRun.Pass(1, "M", at("08:10:03"))));
+        assertTrue(DiagramModel.of(throughM(), AXIS, DAY, List.of(done), at("09:00")).ran().getFirst().segments()
+            .contains(new Segment(t("08:00"), 20, t("08:10"), 120)), "the way is not straight from A to B");
+    }
+
+    /**
+     * On the loop B, X, A, M, the way from A up to B, through X, is the track's. T runs it on another
+     * line, through M the other way round, and comes in at B to stand there for D2 of this line: that
+     * M is a point of no way drawn here, and does not take the standing at B down to the bottom row.
+     */
+    @Test
+    void aStationRunThroughOnAWayOffTheLineIsLeftOut() {
+        Line loop = new Line("l", "Loop", List.of("B", "X", "A", "M"), true);
+        LineAxis axis = LineAxis.of(loop, List.of(new Leg("B", "X", 30, List.of(), List.of()), new Leg("X", "A", 30, List.of(), List.of()),
+            new Leg("A", "M", 30, List.of(), List.of()), new Leg("M", "B", 40, List.of(), List.of()),
+            new Leg("A", "B", 60, List.of(), List.of("X"))));
+        Timetable timetable = new Timetable("", List.of(loop, new Line("m", "Other", List.of("A", "M", "B"), false)), List.of(
+            new Train("T", "m", "rapid", List.of(Stop.leaving("A", t("08:00")), Stop.arriving("B", t("08:10")))),
+            new Train("D2", "l", "", List.of(Stop.leaving("B", t("08:15")), Stop.arriving("A", t("08:25"))), true)),
+            List.of(new Duty("1A", "A", List.of("T", "D2"))));
+        DutyTimes done = new DutyTimes("1A", DAY, "Train 1", DutyTimes.Status.FINISHED,
+            List.of(X, at("08:10"), at("08:25")), List.of(at("08:00"), at("08:15"), X), List.of(), List.of());
+        DutyTimes passing = new DutyTimes("1A", DAY, "Train 1", DutyTimes.Status.FINISHED, done.arrivals(), done.departures(), List.of(),
+            List.of(new DutyRun.Pass(0, "M", at("08:07"))));
+        assertEquals(DiagramModel.of(timetable, axis, DAY, List.of(done), at("09:00")).ran().getFirst().segments(),
+            DiagramModel.of(timetable, axis, DAY, List.of(passing), at("09:00")).ran().getFirst().segments());
+    }
+
+    @Test
     void aRunningSetIsDrawnAsFarAsTheLastStationItWasSeenToRunThrough() {
         DutyTimes running = new DutyTimes("1A", DAY, "Train 1", DutyTimes.Status.RUNNING,
             List.of(X, at("07:55"), X, X), List.of(at("07:50"), at("08:00"), X, X), List.of(), List.of(new DutyRun.Pass(1, "M", at("08:07"))));
@@ -285,8 +318,8 @@ class DiagramModelTest {
             waiting("S2", "08:03", "08:06", new Wait("3001", "S1", Stop.NONE)), Stop.arriving("B", t("08:15"))));
         Train express = new Train("3001", "l", "", List.of(Stop.leaving("A", t("08:00")), Stop.arriving("B", t("08:10"))));
         Timetable timetable = new Timetable("", List.of(line), List.of(local, express), List.of());
-        assertEquals(List.of(new WaitMark(new Segment(t("08:03"), 30, t("08:06"), 60), false)),
-            DiagramModel.of(timetable, axis, DAY, List.of(), 0).waits());
+        assertEquals(List.of(new Segment(t("08:03"), 30, t("08:06"), 60)),
+            arrows(DiagramModel.of(timetable, axis, DAY, List.of(), 0)));
     }
 
     @Test
@@ -300,8 +333,8 @@ class DiagramModelTest {
         Train local = new Train("1", "loop", "", List.of(Stop.leaving("A", t("10:06")),
             waiting("B", "10:07", "10:10", new Wait("X", "Depot", Stop.NONE)), Stop.arriving("C", t("10:14"))));
         Timetable timetable = new Timetable("", List.of(loop), List.of(express, local), List.of());
-        assertEquals(List.of(new WaitMark(new Segment(t("10:02"), 120, t("10:10"), 60), false)),
-            DiagramModel.of(timetable, axis, DAY, List.of(), 0).waits());
+        assertEquals(List.of(new Segment(t("10:02"), 120, t("10:10"), 60)),
+            arrows(DiagramModel.of(timetable, axis, DAY, List.of(), 0)));
     }
 
     @Test
@@ -315,8 +348,8 @@ class DiagramModelTest {
         Train elsewhere = new Train("9", "m", "", List.of(Stop.leaving("S2", t("08:00")), Stop.arriving("Z", t("08:05"))));
         Timetable timetable = new Timetable("", List.of(line, new Line("m", "m", List.of("S2", "Z"), false)), List.of(local, other, elsewhere),
             List.of());
-        assertEquals(List.of(new WaitMark(new Segment(t("08:04"), 50, t("08:06"), 50), false)),
-            DiagramModel.of(timetable, axis, DAY, List.of(), 0).waits());
+        assertEquals(List.of(new Segment(t("08:04"), 50, t("08:06"), 50)),
+            arrows(DiagramModel.of(timetable, axis, DAY, List.of(), 0)));
     }
 
     @Test
@@ -326,11 +359,22 @@ class DiagramModelTest {
         List<Train> trains = new ArrayList<>(base.trains());
         trains.add(new Train("W", "l", "local", List.of(Stop.leaving("A", t("08:02")),
             waiting("M", "08:05:30", "08:07", new Wait("1")), Stop.arriving("B", t("08:12")))));
-        Timetable timetable = new Timetable("", base.lines(), trains, base.duties());
+        List<Duty> duties = new ArrayList<>(base.duties());
+        duties.add(new Duty("2A", "A", List.of("W")));
+        Timetable timetable = new Timetable("", base.lines(), trains, duties);
         DutyTimes done = held(DutyTimes.Status.FINISHED, at("08:21"), at("08:30"), at("08:35"));
         Segment arrow = new Segment(t("08:06"), 60, t("08:07"), 60);
         assertEquals(List.of(new WaitMark(arrow, true)), DiagramModel.of(timetable, AXIS, DAY, List.of(done), at("09:00")).waits());
         assertEquals(List.of(new WaitMark(arrow, false)),
             DiagramModel.of(timetable, AXIS, DAY + 1, List.of(done), at("09:00") + RealClock.TICKS_PER_DAY).waits(), "the hold was on the day before");
+        // In no duty, W never runs, and nor does its wait.
+        Timetable noDuty = new Timetable("", base.lines(), trains, base.duties());
+        assertEquals(List.of(new WaitMark(arrow, true)),
+            DiagramModel.of(noDuty, AXIS, DAY + 1, List.of(done), at("09:00") + RealClock.TICKS_PER_DAY).waits());
+    }
+
+    /** The arrows of the waits of {@code model}, whether there is a wait on the day or not. */
+    private static List<Segment> arrows(DiagramModel model) {
+        return model.waits().stream().map(WaitMark::arrow).toList();
     }
 }
