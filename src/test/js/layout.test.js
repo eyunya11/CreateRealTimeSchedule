@@ -217,6 +217,14 @@ test('a segment is cut to the time shown', () => {
   assert.equal(v.clip(segment(6 * 3600, 0, 7 * 3600, 200), 200), null);
 });
 
+test('a segment back in time is cut the same way and keeps its ends', () => {
+  const v = view();
+  const cut = v.clip(segment(8 * 3600 + 600, 200, 7 * 3600 + 3000, 0), 200);
+  assert.deepEqual(cut.map(n => Math.round(n * 1e9) / 1e9), [70, 120, 10, 70]);
+  assert.equal(v.clip(segment(7 * 3600, 200, 6 * 3600, 0), 200), null);
+  assert.equal(v.clip(segment(11 * 3600, 200, 10 * 3600, 0), 200), null);
+});
+
 // ------------------------------------------------------------------ the waits (DiagramModelTest)
 
 test('a wait is drawn from where the train waited for runs through the station to where the waiting train leaves', () => {

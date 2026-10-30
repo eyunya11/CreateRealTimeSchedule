@@ -203,17 +203,20 @@
       return STEPS[STEPS.length - 1];
     }
 
-    /** The part of a segment in the time shown, as [x1, y1, x2, y2] on the screen; null if none of it is. */
+    /**
+     * The part of a segment in the time shown, as [x1, y1, x2, y2] on the screen from its from end to
+     * its to end; null if none of it is. A segment may go back in time, as a wait's arrow can.
+     */
     clip(segment, length) {
       let from = segment.fromSecond;
       let to = segment.toSecond;
-      if (to < this.startSecond || from > this.end())
+      if (Math.max(from, to) < this.startSecond || Math.min(from, to) > this.end())
         return null;
       let fromPosition = segment.fromPosition;
       let toPosition = segment.toPosition;
-      if (to > from) {
-        const a = Math.max(from, this.startSecond);
-        const b = Math.min(to, this.end());
+      if (to !== from) {
+        const a = Math.min(Math.max(from, this.startSecond), this.end());
+        const b = Math.min(Math.max(to, this.startSecond), this.end());
         const slope = (toPosition - fromPosition) / (to - from);
         const aPosition = fromPosition + (a - from) * slope;
         const bPosition = fromPosition + (b - from) * slope;

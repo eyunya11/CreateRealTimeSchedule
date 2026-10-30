@@ -50,7 +50,8 @@ public final class DiagramScreen extends Screen {
     private static final double DASH_GAP = 3;
     /** The length of the strokes of a wait's arrow head, in screen units, and their angle to the arrow. */
     private static final double HEAD = 5;
-    private static final double HEAD_ANGLE = Math.toRadians(25);
+    private static final double HEAD_COS = Math.cos(Math.toRadians(25));
+    private static final double HEAD_SIN = Math.sin(Math.toRadians(25));
 
     private static final int PLOT_BACKGROUND = 0xE0101418;
     private static final int GRID = 0xFF2C3238;
@@ -114,13 +115,16 @@ public final class DiagramScreen extends Screen {
     }
 
     private @Nullable DiagramModel model(Timetable timetable, LineAxis axis, long now) {
-        // Made again when a snapshot comes, the line or the day changes, or a second has gone by for a set standing until now.
-        if (model == null || modelVersion != DiagramClient.version() || !modelLine.equals(axis.line()) || modelDay != day
-            || now - modelNow >= RealClock.TICKS_PER_SECOND) {
+        // Made again when a snapshot comes, or the line or the day changes; and its duties that ran, when a second has gone by
+        // for a set standing until now.
+        if (model == null || modelVersion != DiagramClient.version() || !modelLine.equals(axis.line()) || modelDay != day) {
             model = DiagramModel.of(timetable, DiagramClient.calls(), axis, day, DiagramClient.duties(), now);
             modelVersion = DiagramClient.version();
             modelLine = axis.line();
             modelDay = day;
+            modelNow = now;
+        } else if (now - modelNow >= RealClock.TICKS_PER_SECOND) {
+            model = model.at(timetable, DiagramClient.calls(), DiagramClient.duties(), now);
             modelNow = now;
         }
         return model;
@@ -256,20 +260,21 @@ public final class DiagramScreen extends Screen {
         return type.isEmpty() ? UNTYPED : TYPE_COLOURS[Math.floorMod(type.hashCode(), TYPE_COLOURS.length)];
     }
 
-    private void drawSegment(GuiGraphics graphics, Segment segment, double length, double thickness, int colour, boolean dashed) {
+    /** Draws {@code segment}; false if none of it is in the time shown. */
+    private boolean drawSegment(GuiGraphics graphics, Segment segment, double length, double thickness, int colour, boolean dashed) {
         double[] cut = view.clip(segment, length);
         if (cut == null)
-            return;
+            return false;
         if (!dashed) {
             quad(graphics, cut[0], cut[1], cut[2], cut[3], thickness, colour);
-            return;
+            return true;
         }
         double dx = cut[2] - cut[0];
         double dy = cut[3] - cut[1];
         double along = Math.hypot(dx, dy);
         if (along < DASH) {
             quad(graphics, cut[0], cut[1], cut[2], cut[3], thickness, colour);
-            return;
+            return true;
         }
         // Dashes count from the segment's own start, not from where the view cuts it, so that they stay
         // where they are while the view is moved.
@@ -282,19 +287,17 @@ public final class DiagramScreen extends Screen {
             quad(graphics, cut[0] + dx * from / along, cut[1] + dy * from / along, cut[0] + dx * to / along, cut[1] + dy * to / along,
                 thickness, colour);
         }
+        return true;
     }
 
     /** A wait as a dashed arrow, with its head where the waiting train leaves; faded when there is no wait on the day. */
     private void drawWait(GuiGraphics graphics, WaitMark wait, double length) {
         Segment arrow = wait.arrow();
-        // The view cuts a segment by its time, earlier end first: an arrow going back in time is given to it the other way round.
-        Segment line = arrow.toSecond() < arrow.fromSecond()
-            ? new Segment(arrow.toSecond(), arrow.toPosition(), arrow.fromSecond(), arrow.fromPosition())
-            : arrow;
-        if (Double.isNaN(arrow.fromPosition()) || Double.isNaN(arrow.toPosition()) || view.clip(line, length) == null)
+        if (Double.isNaN(arrow.fromPosition()) || Double.isNaN(arrow.toPosition()))
             return;
         int colour = wait.cancelled() ? faded(WAIT) : WAIT;
-        drawSegment(graphics, line, length, 1, colour, true);
+        if (!drawSegment(graphics, arrow, length, 1, colour, true))
+            return;
         double x1 = view.x(arrow.fromSecond());
         double y1 = view.y(arrow.fromPosition(), length);
         double x2 = view.x(arrow.toSecond());
@@ -305,10 +308,9 @@ public final class DiagramScreen extends Screen {
         // The head: two strokes back from the end, turned either way from the arrow. Off the plot, the scissor cuts it.
         double backX = -(x2 - x1) / along;
         double backY = -(y2 - y1) / along;
-        double cos = Math.cos(HEAD_ANGLE);
         for (int side = -1; side <= 1; side += 2) {
-            double sin = side * Math.sin(HEAD_ANGLE);
-            quad(graphics, x2, y2, x2 + (backX * cos - backY * sin) * HEAD, y2 + (backX * sin + backY * cos) * HEAD, 1, colour);
+            double sin = side * HEAD_SIN;
+            quad(graphics, x2, y2, x2 + (backX * HEAD_COS - backY * sin) * HEAD, y2 + (backX * sin + backY * HEAD_COS) * HEAD, 1, colour);
         }
     }
 
