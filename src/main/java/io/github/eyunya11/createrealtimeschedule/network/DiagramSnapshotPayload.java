@@ -8,6 +8,7 @@ import org.jetbrains.annotations.Nullable;
 import io.github.eyunya11.createrealtimeschedule.Createrealtimeschedule;
 import io.github.eyunya11.createrealtimeschedule.diagram.DutyTimes;
 import io.github.eyunya11.createrealtimeschedule.diagram.LineAxis;
+import io.github.eyunya11.createrealtimeschedule.operation.DutyRun;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
@@ -111,11 +112,17 @@ public record DiagramSnapshotPayload(int revision, @Nullable Content content, in
         buf.writeCollection(duty.arrivals(), FriendlyByteBuf::writeLong);
         buf.writeCollection(duty.departures(), FriendlyByteBuf::writeLong);
         buf.writeCollection(duty.skipped(), FriendlyByteBuf::writeVarInt);
+        buf.writeCollection(duty.passes(), (out, pass) -> {
+            out.writeVarInt(pass.way());
+            out.writeUtf(pass.station());
+            out.writeLong(pass.at());
+        });
     }
 
     private static DutyTimes readDuty(FriendlyByteBuf buf) {
         return new DutyTimes(buf.readUtf(), buf.readVarLong(), buf.readUtf(), buf.readEnum(DutyTimes.Status.class),
-            buf.readList(FriendlyByteBuf::readLong), buf.readList(FriendlyByteBuf::readLong), buf.readList(FriendlyByteBuf::readVarInt));
+            buf.readList(FriendlyByteBuf::readLong), buf.readList(FriendlyByteBuf::readLong), buf.readList(FriendlyByteBuf::readVarInt),
+            buf.readList(in -> new DutyRun.Pass(in.readVarInt(), in.readUtf(), in.readLong())));
     }
 
     @Override

@@ -233,6 +233,41 @@ class DiagramModelTest {
             DiagramModel.of(timetable, axis, DAY, List.of(), 0).planned().getFirst().segments());
     }
 
+    /** Out of the depot to A, train T to B through M without stopping, and into the depot: the duty 1A. */
+    private static Timetable throughM() {
+        Timetable timetable = new Timetable("", List.of(LINE), List.of(
+            new Train("D1", "l", "", List.of(Stop.leaving("Depot", t("07:50")), Stop.arriving("A", t("07:55"))), true),
+            new Train("T", "l", "rapid", List.of(Stop.leaving("A", t("08:00")), Stop.arriving("B", t("08:10")))),
+            new Train("D2", "l", "", List.of(Stop.leaving("B", t("08:15")), Stop.arriving("Depot", t("08:25"))), true)),
+            List.of(new Duty("1A", "Depot", List.of("D1", "T", "D2"))));
+        assertEquals(List.of(), timetable.problems());
+        return timetable;
+    }
+
+    @Test
+    void aWayIsBentWhereTheSetWasSeenToRunThroughAStation() {
+        // Slow out of A, through M at 08:07, and fast on to B.
+        DutyTimes done = new DutyTimes("1A", DAY, "Train 1", DutyTimes.Status.FINISHED,
+            List.of(X, at("07:55"), at("08:10"), at("08:25")), List.of(at("07:50"), at("08:00"), at("08:15"), X), List.of(),
+            List.of(new DutyRun.Pass(1, "M", at("08:07")), new DutyRun.Pass(1, "Z", at("08:08"))));
+        assertEquals(List.of(
+            new Segment(t("07:50"), 0, t("07:55"), 20),
+            new Segment(t("07:55"), 20, t("08:00"), 20),
+            new Segment(t("08:00"), 20, t("08:07"), 60),
+            new Segment(t("08:07"), 60, t("08:10"), 120),
+            new Segment(t("08:10"), 120, t("08:15"), 120),
+            new Segment(t("08:15"), 120, t("08:25"), 0)), DiagramModel.of(throughM(), AXIS, DAY, List.of(done), at("09:00")).ran().getFirst().segments(),
+            "Z, which is not on the line, is left out");
+    }
+
+    @Test
+    void aRunningSetIsDrawnAsFarAsTheLastStationItWasSeenToRunThrough() {
+        DutyTimes running = new DutyTimes("1A", DAY, "Train 1", DutyTimes.Status.RUNNING,
+            List.of(X, at("07:55"), X, X), List.of(at("07:50"), at("08:00"), X, X), List.of(), List.of(new DutyRun.Pass(1, "M", at("08:07"))));
+        assertEquals(new Segment(t("08:00"), 20, t("08:07"), 60),
+            DiagramModel.of(throughM(), AXIS, DAY, List.of(running), at("08:08")).ran().getFirst().segments().getLast());
+    }
+
     // ------------------------------------------------------------------ the waits (the cases of the editor's layout.test.js)
 
     /** A stop that waits for trains before it leaves. */

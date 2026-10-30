@@ -114,6 +114,8 @@ public final class OperationService {
                 ways.forEach((each, names) -> {
                     if (names.contains(station) && !run.passedBy(each, station)) {
                         run.passed(each, station, now);
+                        // The diagram draws the run's line through the station at that time.
+                        data.timesChanged();
                         data.setDirty();
                     }
                 });

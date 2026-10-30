@@ -78,7 +78,9 @@ public record DiagramModel(LineAxis axis, long day, List<PlannedTrain> planned, 
     /**
      * The diagram of the line of {@code axis} on service {@code day}, at clock {@code now}. A duty that
      * is not in the timetable, or whose times do not fit its calls, is left out. A set standing at a
-     * station is drawn standing there until now; one on the way, only as far as where it left.
+     * station is drawn standing there until now; one on the way, only as far as where it left, or the
+     * last station it was seen to run through since. A way it ran is bent at each station it was seen
+     * to run through ({@link DutyTimes#passes}): those that a train waits for it to.
      */
     public static DiagramModel of(Timetable timetable, LineAxis axis, long day, List<DutyTimes> times, long now) {
         return of(timetable, calls(timetable), axis, day, times, now);
@@ -153,6 +155,17 @@ public record DiagramModel(LineAxis axis, long day, List<PlannedTrain> planned, 
                     .map(train -> axis.down(train.stops().stream().map(Stop::station).toList())).orElse(true);
                 visits.add(new Visit(call.station(), arrive, depart, leavesOnLine || onLine(timetable, arrivingTrain, axis), leavesOnLine, down));
                 made = i;
+                if (duty.departures().get(i) == DutyRun.NOT_YET)
+                    continue;
+                // The stations of the line it was seen to run through on the way from here, so that the line bends there as the train did.
+                int way = i;
+                duty.passes().stream()
+                    .filter(pass -> pass.way() == way && axis.row(pass.station()) >= 0)
+                    .sorted(Comparator.comparingLong(DutyRun.Pass::at))
+                    .forEach(pass -> {
+                        double at = clockSeconds(pass.at(), day);
+                        visits.add(new Visit(pass.station(), at, at, false, leavesOnLine, down));
+                    });
             }
             List<Segment> segments = path(axis, visits).segments;
             if (!segments.isEmpty())
