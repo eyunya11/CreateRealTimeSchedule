@@ -117,6 +117,32 @@ test('the parts of a planned train say which way or which standing each of its s
   assert.deepEqual(one.parts.map(part => part.segments), [[one.segments[0]], [one.segments[2]], [one.segments[1]]]);
 });
 
+test('a train that changes its type at a stop has the new type standing there and on from there', () => {
+  // Out of the depot as a local, a rapid from A, and a local again from M.
+  const rapidAtA = stop('A', '09:05', '09:06');
+  rapidAtA.type = 'rapid';
+  const localAtM = stop('M', '09:10', '09:11');
+  localAtM.type = 'local';
+  const five = layout.plannedTrain(AXIS, { number: '5', line: 'l', type: 'local', deadhead: false,
+    stops: [stop('Depot', null, '09:00'), rapidAtA, localAtM, stop('B', '09:15')] });
+  assert.deepEqual(five.segments, [
+    segment(t('09:00'), 0, t('09:05'), 20),
+    segment(t('09:05'), 20, t('09:06'), 20),
+    segment(t('09:06'), 20, t('09:10'), 60),
+    segment(t('09:10'), 60, t('09:11'), 60),
+    segment(t('09:11'), 60, t('09:15'), 120)]);
+  assert.deepEqual(five.types, ['local', 'rapid', 'rapid', 'local', 'local']);
+  assert.equal(five.type, 'local');
+  assert.deepEqual(five.parts.map(part => [part.kind, part.stop, part.type]),
+    [['run', 0, 'local'], ['run', 1, 'rapid'], ['run', 2, 'local'], ['stand', 1, 'rapid'], ['stand', 2, 'local']]);
+  // A train with no type of its own that takes one at its first stop has it from the start.
+  const typed = stop('A', null, '10:00');
+  typed.type = 'rapid';
+  const six = layout.plannedTrain(AXIS, { number: '6', line: 'l', type: '', deadhead: false, stops: [typed, stop('B', '10:10')] });
+  assert.equal(six.type, 'rapid');
+  assert.deepEqual(six.types, ['rapid']);
+});
+
 test('a stop with only a departure is passed through at that time', () => {
   const three = layout.plannedTrain(AXIS, { number: '3', line: 'l', type: '', deadhead: false,
     stops: [stop('A', null, '09:00'), stop('M', null, '09:04'), stop('B', '09:10')] });

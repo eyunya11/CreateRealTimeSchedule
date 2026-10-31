@@ -41,14 +41,21 @@ public record DiagramModel(LineAxis axis, long day, List<PlannedTrain> planned, 
     /**
      * A train of the timetable.
      *
+     * @param type          the type it has at its first stop, which its number is drawn in
+     * @param types         the type it has along each of {@code segments}, in the same order: on its way
+     *                      from a stop, and standing at it, the one it has at that stop
+     *                      ({@link Train#typeAt})
      * @param labelSecond   where its number goes: at its first departure
      * @param labelPosition and the position of its first station
      * @param cancelled     whether it does not run on the day, cancelled to get a late set back on time
      */
-    public record PlannedTrain(String number, String type, boolean deadhead, List<Segment> segments, double labelSecond,
-                               double labelPosition, boolean cancelled) {
+    public record PlannedTrain(String number, String type, boolean deadhead, List<Segment> segments, List<String> types,
+                               double labelSecond, double labelPosition, boolean cancelled) {
         public PlannedTrain {
             segments = List.copyOf(segments);
+            types = List.copyOf(types);
+            if (types.size() != segments.size())
+                throw new IllegalArgumentException(types.size() + " types for " + segments.size() + " segments");
         }
     }
 
@@ -129,7 +136,8 @@ public record DiagramModel(LineAxis axis, long day, List<PlannedTrain> planned, 
             }
             Path path = path(axis, visits);
             paths.put(train.number(), path);
-            planned.add(new PlannedTrain(train.number(), train.type(), train.deadhead(), path.segments,
+            List<String> types = path.visits.stream().map(train::typeAt).toList();
+            planned.add(new PlannedTrain(train.number(), train.typeAt(0), train.deadhead(), path.segments, types,
                 train.stops().getFirst().depart(), path.firstPosition, cancelled.contains(train.number())));
         }
         return new DiagramModel(axis, day, planned, ran(timetable, calls, axis, day, times, now), waits(timetable, axis, paths, cancelled, run));
@@ -315,10 +323,15 @@ public record DiagramModel(LineAxis axis, long day, List<PlannedTrain> planned, 
     private record Visit(String station, double arrive, double depart, boolean stay, boolean moveOn, boolean down) {}
 
     /**
+     * @param visits  the visit each of {@code segments} is of, in the same order: the one it goes from,
+     *                or stands at
      * @param departs the position each visit leaves from: the row it goes out from, or else the row it
      *                came in at; NaN if neither is known
      */
-    private record Path(List<Segment> segments, double firstPosition, double[] departs) {}
+    private record Path(List<Segment> segments, List<Integer> visits, double firstPosition, double[] departs) {}
+
+    /** A segment of a way, and the visit it is of. */
+    private record Piece(Segment segment, int visit) {}
 
     /**
      * The segments of a train's way through {@code visits}. The way between two stations is that of
@@ -332,7 +345,7 @@ public record DiagramModel(LineAxis axis, long day, List<PlannedTrain> planned, 
         int[] rowOut = new int[n];
         Arrays.fill(rowIn, -1);
         Arrays.fill(rowOut, -1);
-        List<Segment> segments = new ArrayList<>();
+        List<Piece> pieces = new ArrayList<>();
         for (int k = 0; k + 1 < n; k++) {
             Visit from = visits.get(k);
             Visit to = visits.get(k + 1);
@@ -347,7 +360,7 @@ public record DiagramModel(LineAxis axis, long day, List<PlannedTrain> planned, 
             double at = from.depart();
             for (LineAxis.Hop hop : hops) {
                 double until = hop == hops.getLast() ? to.arrive() : at + (to.arrive() - from.depart()) * hop.share();
-                segments.add(new Segment(at, axis.position(hop.fromRow()), until, axis.position(hop.toRow())));
+                pieces.add(new Piece(new Segment(at, axis.position(hop.fromRow()), until, axis.position(hop.toRow())), k));
                 at = until;
             }
         }
@@ -358,11 +371,11 @@ public record DiagramModel(LineAxis axis, long day, List<PlannedTrain> planned, 
             int in = rowIn[k] >= 0 ? rowIn[k] : rowOut[k] >= 0 ? rowOut[k] : axis.row(visit.station());
             if (in < 0)
                 continue;
-            segments.add(new Segment(visit.arrive(), axis.position(in), visit.depart(), axis.position(in)));
+            pieces.add(new Piece(new Segment(visit.arrive(), axis.position(in), visit.depart(), axis.position(in)), k));
             if (rowOut[k] >= 0 && rowOut[k] != in)
-                segments.add(new Segment(visit.arrive(), axis.position(rowOut[k]), visit.depart(), axis.position(rowOut[k])));
+                pieces.add(new Piece(new Segment(visit.arrive(), axis.position(rowOut[k]), visit.depart(), axis.position(rowOut[k])), k));
         }
-        segments.sort(Comparator.comparingDouble(Segment::fromSecond));
+        pieces.sort(Comparator.comparingDouble(piece -> piece.segment().fromSecond()));
         int first = rowOut[0] >= 0 ? rowOut[0] : visits.isEmpty() ? -1 : axis.row(visits.getFirst().station());
         double[] departs = new double[n];
         for (int k = 0; k < n; k++) {
@@ -370,6 +383,7 @@ public record DiagramModel(LineAxis axis, long day, List<PlannedTrain> planned, 
             int out = rowOut[k] >= 0 ? rowOut[k] : in;
             departs[k] = out >= 0 ? axis.position(out) : Double.NaN;
         }
-        return new Path(segments, first >= 0 ? axis.position(first) : 0, departs);
+        return new Path(pieces.stream().map(Piece::segment).toList(), pieces.stream().map(Piece::visit).toList(),
+            first >= 0 ? axis.position(first) : 0, departs);
     }
 }
