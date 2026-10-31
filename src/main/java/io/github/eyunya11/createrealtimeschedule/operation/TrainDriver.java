@@ -9,6 +9,8 @@ import com.simibubi.create.content.trains.graph.DiscoveredPath;
 import com.simibubi.create.content.trains.graph.EdgePointType;
 import com.simibubi.create.content.trains.station.GlobalStation;
 
+import io.github.eyunya11.createrealtimeschedule.railway.CreateRoutes;
+
 /**
  * Takes a Create train through a {@link DutyRun}, by Create's own path finding and driving and not by
  * a schedule: when the run says the set is to leave, the train is sent to the next station; when it
@@ -16,8 +18,10 @@ import com.simibubi.create.content.trains.station.GlobalStation;
  * told it has arrived.
  *
  * <p>A train is sent the way Create's destination instruction sends one: to whichever station of the
- * name it finds the best path to ({@code Navigation.findPathTo} over all of them, which keeps away from
- * platforms with a train at them), by {@code Navigation.startNavigation}. Create then drives it, and
+ * name it finds the best path to, weighed as {@code Navigation.findPathTo} weighs it over all of them
+ * (which keeps away from platforms with a train at them), by {@code Navigation.startNavigation}. The
+ * path is found by this mod's own search ({@link CreateRoutes}), the one the running times are worked
+ * out along, so that the train goes the way they were worked out for. Create then drives it, and
  * leaves the station itself once the train moves, which is on a later tick, and later still when the
  * signal ahead is not yet green: that is when the run records the departure. Create cancels a journey
  * when the train loses its driver or overshoots; the train is then sent again.
@@ -110,7 +114,7 @@ public final class TrainDriver {
                 stations.add(candidate);
         if (stations.isEmpty())
             return null;
-        DiscoveredPath path = train.navigation.findPathTo(stations, Double.MAX_VALUE);
+        DiscoveredPath path = CreateRoutes.pathTo(train, stations);
         if (path == null || path.destination == train.getCurrentStation())
             return null;
         return path;

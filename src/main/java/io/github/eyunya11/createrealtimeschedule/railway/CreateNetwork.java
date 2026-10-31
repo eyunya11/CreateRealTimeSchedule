@@ -19,10 +19,12 @@ import com.simibubi.create.content.trains.graph.TrackEdge;
 import com.simibubi.create.content.trains.graph.TrackGraph;
 import com.simibubi.create.content.trains.graph.TrackNode;
 import com.simibubi.create.content.trains.graph.TrackNodeLocation;
+import com.simibubi.create.content.trains.signal.SignalBoundary;
 import com.simibubi.create.content.trains.signal.TrackEdgePoint;
 import com.simibubi.create.content.trains.station.GlobalStation;
 
 import io.github.eyunya11.createrealtimeschedule.railway.RailNetwork.Edge;
+import io.github.eyunya11.createrealtimeschedule.railway.RailNetwork.Point;
 import io.github.eyunya11.createrealtimeschedule.railway.RailNetwork.Station;
 import io.github.eyunya11.createrealtimeschedule.travel.SpeedSign;
 import net.createmod.catnip.data.Couple;
@@ -39,9 +41,10 @@ import net.minecraft.world.phys.Vec3;
  * does not let it through that way ({@code canNavigateVia}: a signal for trains running the other
  * way). These points are the edge's barriers, and {@link RailNetwork} keeps to them as Create does: a
  * train reaches the stations before such a point, and nothing after it. A station can be stopped at
- * from one direction only, the one {@code canApproachFrom} allows. What a train does not know until
- * it is on the road is left out: signals that are red, other trains, and the kinds of track a
- * particular train cannot use.
+ * from one direction only, the one {@code canApproachFrom} allows. The other points that weigh a way
+ * are read as well (station markers a train passes, and signals), but what they weigh with depends on
+ * the game at the time a train is sent, which {@link CreateRoutes} reads then: signals that are red,
+ * other trains, and the kinds of track a particular train cannot use.
  *
  * <p>The speed-limit signs of Create Train Next are read too, where that mod is there, without
  * depending on it: the kind of edge point is looked up by name, and the limit is read by reflection.
@@ -77,17 +80,61 @@ public final class CreateNetwork {
 
     /** The network of all the track graphs of the game, which a train cannot get from one to another of. */
     public static RailNetwork read(Collection<TrackGraph> graphs) {
-        List<Edge> edges = new ArrayList<>();
-        List<Station> stations = new ArrayList<>();
-        Unreadable unreadable = new Unreadable();
+        Reading reading = new Reading();
         for (TrackGraph graph : graphs)
-            addGraph(graph, edges, stations, unreadable);
-        if (unreadable.count > 0)
-            LOGGER.warn("Could not read {} speed-limit signs of Create Train Next; they are left out of the network",
-                unreadable.count, unreadable.first);
-        // The graphs are held in a hash map; sorted by name, the export comes out the same every time.
-        stations.sort(Comparator.comparing(Station::name).thenComparingInt(Station::edge).thenComparingDouble(Station::offset));
-        return new RailNetwork(edges, stations);
+            addGraph(graph, reading);
+        return reading.network();
+    }
+
+    /**
+     * One track graph read, and how its network stands for the graph's own things: the edge of each
+     * of its numbers, the station marker of each platform number, and the signal and the side of it of
+     * each signal number. It holds the graph's objects, so it is good only until the graph changes.
+     *
+     * @param fingerprint the graph's {@link #fingerprint} when it was read
+     */
+    public record Mapped(RailNetwork network, List<TrackEdge> edges, Map<TrackEdge, Integer> index, List<GlobalStation> platforms,
+                         List<SignalSide> signals, long fingerprint) {}
+
+    /** A signal, and the node a train running past it is heading for: the side of it that train meets. */
+    public record SignalSide(SignalBoundary signal, TrackNode toward) {}
+
+    /** {@code graph} read, with the way back from the network to it. */
+    public static Mapped readMapped(TrackGraph graph) {
+        Reading reading = new Reading();
+        addGraph(graph, reading);
+        return new Mapped(reading.network(), List.copyOf(reading.graphEdges), reading.index, List.copyOf(reading.platforms),
+            List.copyOf(reading.signals), fingerprint(List.of(graph)));
+    }
+
+    /** What has been read so far. */
+    private static final class Reading {
+        final List<Edge> edges = new ArrayList<>();
+        final List<Station> stations = new ArrayList<>();
+        final List<TrackEdge> graphEdges = new ArrayList<>();
+        final Map<TrackEdge, Integer> index = new IdentityHashMap<>();
+        final Map<TrackEdgePoint, Integer> platformOf = new IdentityHashMap<>();
+        final List<GlobalStation> platforms = new ArrayList<>();
+        final List<SignalSide> signals = new ArrayList<>();
+        final Unreadable unreadable = new Unreadable();
+        int nodes;
+
+        RailNetwork network() {
+            if (unreadable.count > 0)
+                LOGGER.warn("Could not read {} speed-limit signs of Create Train Next; they are left out of the network",
+                    unreadable.count, unreadable.first);
+            // The graphs are held in a hash map; sorted by name, the export comes out the same every time.
+            List<Station> sorted = new ArrayList<>(stations);
+            sorted.sort(Comparator.comparing(Station::name).thenComparingInt(Station::edge).thenComparingDouble(Station::offset));
+            return new RailNetwork(edges, sorted);
+        }
+
+        int platform(GlobalStation station) {
+            return platformOf.computeIfAbsent(station, unused -> {
+                platforms.add(station);
+                return platforms.size() - 1;
+            });
+        }
     }
 
     /**
@@ -147,7 +194,7 @@ public final class CreateNetwork {
         return node.getLocation().getLocation();
     }
 
-    private static void addGraph(TrackGraph graph, List<Edge> edges, List<Station> stations, Unreadable unreadable) {
+    private static void addGraph(TrackGraph graph, Reading reading) {
         List<TrackNode> nodes = new ArrayList<>();
         for (TrackNodeLocation location : graph.getNodes()) {
             TrackNode node = graph.locateNode(location);
@@ -155,21 +202,25 @@ public final class CreateNetwork {
                 nodes.add(node);
         }
         nodes.sort(NODE_ORDER);
+        Map<TrackNode, Integer> nodeNumber = new IdentityHashMap<>();
+        for (TrackNode node : nodes)
+            nodeNumber.put(node, reading.nodes++);
 
         // The edges, numbered in the order of the nodes they start at and the nodes they lead to.
-        int base = edges.size();
+        List<Edge> edges = reading.edges;
+        Map<TrackEdge, Integer> index = reading.index;
         List<TrackEdge> graphEdges = new ArrayList<>();
-        Map<TrackEdge, Integer> index = new IdentityHashMap<>();
         for (TrackNode node : nodes) {
             List<Map.Entry<TrackNode, TrackEdge>> leaving = new ArrayList<>(graph.getConnectionsFrom(node).entrySet());
             leaving.sort(Map.Entry.comparingByKey(NODE_ORDER));
             for (Map.Entry<TrackNode, TrackEdge> connection : leaving) {
-                index.put(connection.getValue(), base + graphEdges.size());
+                index.put(connection.getValue(), edges.size() + graphEdges.size());
                 graphEdges.add(connection.getValue());
             }
         }
+        reading.graphEdges.addAll(graphEdges);
 
-        Map<TrackEdge, List<SpeedSign>> signs = signs(graph, unreadable);
+        Map<TrackEdge, List<SpeedSign>> signs = signs(graph, reading.unreadable);
         for (TrackEdge edge : graphEdges) {
             List<Integer> next = new ArrayList<>();
             // What TravellingPoint.travel offers a train at the end of the edge, in the graph's order;
@@ -185,23 +236,36 @@ public final class CreateNetwork {
             }
             next.sort(Integer::compare);
             edges.add(new Edge(edge.getLength(), edge.isTurn(), next, signs.getOrDefault(edge, List.of()), barriers(edge),
-                unsteered));
+                unsteered, points(edge, index.get(edge), reading), nodeNumber.getOrDefault(edge.node1, -1)));
         }
+    }
 
-        for (GlobalStation station : graph.getPoints(EdgePointType.STATION)) {
-            if (station.name == null || station.name.isBlank() || station.edgeLocation == null)
-                continue;
-            TrackNode first = graph.locateNode(station.edgeLocation.getFirst());
-            TrackNode second = graph.locateNode(station.edgeLocation.getSecond());
-            if (first == null || second == null)
-                continue;
-            TrackEdge edge = graph.getConnection(Couple.create(first, second));
-            Integer edgeIndex = edge == null ? null : index.get(edge);
-            if (edgeIndex == null || !station.canApproachFrom(second))
-                continue;
-            double offset = Math.max(0, Math.min(edge.getLength(), station.getLocationOn(edge)));
-            stations.add(new Station(station.name, edgeIndex, offset));
+    /**
+     * The points of {@code edge} as a train running along it meets them, past those that do not let it
+     * through (the barriers): a station marker it can stop at goes to the stations, and the others that
+     * weigh its way are returned, a station marker it only passes and a signal.
+     */
+    private static List<Point> points(TrackEdge edge, int edgeIndex, Reading reading) {
+        List<Point> points = new ArrayList<>();
+        EdgeData data = edge.getEdgeData();
+        if (!data.hasPoints())
+            return points;
+        for (TrackEdgePoint point : data.getPoints()) {
+            if (!point.canNavigateVia(edge.node2))
+                continue; // a barrier
+            double offset = Math.max(0, Math.min(edge.getLength(), point.getLocationOn(edge)));
+            if (point instanceof GlobalStation station) {
+                int platform = reading.platform(station);
+                if (station.name != null && !station.name.isBlank() && station.canApproachFrom(edge.node2))
+                    reading.stations.add(new Station(station.name, edgeIndex, offset, platform));
+                else
+                    points.add(new Point(offset, Point.Kind.STATION, platform));
+            } else if (point instanceof SignalBoundary signal) {
+                reading.signals.add(new SignalSide(signal, edge.node2));
+                points.add(new Point(offset, Point.Kind.SIGNAL, reading.signals.size() - 1));
+            }
         }
+        return points;
     }
 
     /**

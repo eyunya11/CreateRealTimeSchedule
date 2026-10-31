@@ -494,7 +494,7 @@ public class OperationTests {
      * one track of a double line that runs east, as a local and an express share it, with a siding at
      * the station A where the local stands aside.
      */
-    private static TrackLine sidingLine(GameTestHelper helper) {
+    static TrackLine sidingLine(GameTestHelper helper) {
         return new TrackLine(helper, 115, SIDING,
             new BlockPos[] {onTheMainLine(8), onTheMainLine(24), onTheMainLine(72), new BlockPos(72, TrackLine.TRACK_Y, SIDING.z()),
                 onTheMainLine(110)},
