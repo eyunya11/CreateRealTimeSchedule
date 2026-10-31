@@ -1,7 +1,9 @@
 package io.github.eyunya11.createrealtimeschedule.client;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 import org.jetbrains.annotations.Nullable;
 import org.joml.Matrix4f;
@@ -20,6 +22,7 @@ import io.github.eyunya11.createrealtimeschedule.diagram.DutyTimes;
 import io.github.eyunya11.createrealtimeschedule.diagram.LineAxis;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Line;
+import io.github.eyunya11.createrealtimeschedule.timetable.TypeColours;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.renderer.RenderType;
@@ -65,7 +68,6 @@ public final class DiagramScreen extends Screen {
     private static final int WAIT = 0xFF6EA2FF;
     private static final int DEADHEAD = 0xFF8A8A8A;
     private static final int UNTYPED = 0xFFB8C4D0;
-    private static final int[] TYPE_COLOURS = {0xFF6FA8DC, 0xFF93C47D, 0xFFF6B26B, 0xFFE06666, 0xFF76A5AF, 0xFFFFD966, 0xFFC27BA0};
 
     private final DiagramView view = new DiagramView(0, FIRST_SPAN);
     private String line;
@@ -77,6 +79,9 @@ public final class DiagramScreen extends Screen {
     private String modelLine = "";
     private long modelDay;
     private long modelNow;
+    /** The colours of the types, as ARGB, worked out once for the timetable they are of. */
+    private final Map<String, Integer> colours = new HashMap<>();
+    private @Nullable Timetable coloured;
 
     DiagramScreen(String line) {
         super(Component.translatableWithFallback(KEY + "title", "Diagram"));
@@ -179,8 +184,9 @@ public final class DiagramScreen extends Screen {
         graphics.enableScissor(left, top, right, bottom);
         double length = axis.length();
         for (PlannedTrain train : diagram.planned())
-            for (Segment segment : train.segments())
-                drawSegment(graphics, segment, length, 1, plannedColour(train), train.deadhead());
+            for (int s = 0; s < train.segments().size(); s++)
+                drawSegment(graphics, train.segments().get(s), length, 1, plannedColour(timetable, train, train.types().get(s)),
+                    train.deadhead());
         for (RanDuty duty : diagram.ran())
             for (Segment segment : duty.segments())
                 drawSegment(graphics, segment, length, 2, duty.times().status() == DutyTimes.Status.GIVEN_UP ? GIVEN_UP : RAN, false);
@@ -193,7 +199,7 @@ public final class DiagramScreen extends Screen {
             double x = view.x(train.labelSecond());
             if (x >= left && x < right)
                 graphics.drawString(font, train.number(), (int) x + 2, (int) view.y(train.labelPosition(), length) - font.lineHeight,
-                    plannedColour(train));
+                    plannedColour(timetable, train, train.type()));
         }
         // Draw what is batched while the scissor still cuts it to the plot.
         graphics.flush();
@@ -239,9 +245,12 @@ public final class DiagramScreen extends Screen {
         return String.format(Locale.ROOT, "%02d:%02d", hour, Math.floorMod(minutes, 60));
     }
 
-    /** A planned train's colour: its type's, grey for a deadhead, and either faded into the plot when it is cancelled. */
-    private static int plannedColour(PlannedTrain train) {
-        int colour = train.deadhead() ? DEADHEAD : typeColour(train.type());
+    /**
+     * A planned train's colour where it has {@code type}: the type's, grey for a deadhead, and either
+     * faded into the plot when it is cancelled.
+     */
+    private int plannedColour(Timetable timetable, PlannedTrain train, String type) {
+        int colour = train.deadhead() ? DEADHEAD : typeColour(timetable, type);
         return train.cancelled() ? faded(colour) : colour;
     }
 
@@ -256,8 +265,20 @@ public final class DiagramScreen extends Screen {
         return faded;
     }
 
-    private static int typeColour(String type) {
-        return type.isEmpty() ? UNTYPED : TYPE_COLOURS[Math.floorMod(type.hashCode(), TYPE_COLOURS.length)];
+    /**
+     * The colour of {@code type}: the timetable's for it, or else the one picked from its name
+     * ({@link Timetable#colour}). Worked out once for each type of a timetable, not for every segment
+     * every frame.
+     */
+    private int typeColour(Timetable timetable, String type) {
+        if (coloured != timetable) {
+            colours.clear();
+            coloured = timetable;
+        }
+        return colours.computeIfAbsent(type, unused -> {
+            String colour = timetable.colour(type);
+            return colour == null ? UNTYPED : TypeColours.argb(colour);
+        });
     }
 
     /** Draws {@code segment}; false if none of it is in the time shown. */

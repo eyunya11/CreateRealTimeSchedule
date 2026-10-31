@@ -1,0 +1,37 @@
+{
+  "about": "The shape of types (version 6): a name that is not a string, a colour that is missing, a member a type does not have, and a stop's type that is not a string.",
+  "timetable": {
+    "format": "createrealtimeschedule.timetable",
+    "version": 6,
+    "name": "",
+    "lines": [
+      {
+        "id": "l",
+        "name": "L",
+        "stations": ["A", "B"]
+      }
+    ],
+    "types": [
+      {"name": 1, "color": "#000000"},
+      {"name": "x"},
+      {"name": "y", "color": "#000000", "colour": "#111111"}
+    ],
+    "trains": [
+      {
+        "number": "1",
+        "line": "l",
+        "stops": [
+          {"station": "A", "depart": "08:00", "type": 2},
+          {"station": "B", "arrive": "08:10"}
+        ]
+      }
+    ],
+    "duties": []
+  },
+  "problems": [
+    "types[0].name: must be a string",
+    "types[1].color: is missing",
+    "types[2].colour: is not a member of this format",
+    "trains[0].stops[0].type: must be a string"
+  ]
+}

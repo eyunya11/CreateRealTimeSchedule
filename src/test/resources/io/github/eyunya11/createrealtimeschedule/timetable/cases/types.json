@@ -1,0 +1,53 @@
+{
+  "about": "Types (version 6): a name given a colour twice, names that are no names, colours that are not #rrggbb, a stop that changes to a type with a space at the end, and a change of type at the last stop.",
+  "timetable": {
+    "format": "createrealtimeschedule.timetable",
+    "version": 6,
+    "name": "",
+    "lines": [
+      {
+        "id": "l",
+        "name": "L",
+        "stations": ["A", "S", "B"]
+      }
+    ],
+    "types": [
+      {"name": "rapid", "color": "#d9822b"},
+      {"name": "rapid", "color": "#ABCDEF"},
+      {"name": " local", "color": "#3a9d5d"},
+      {"name": "local", "color": "3a9d5d"},
+      {"name": "", "color": "#12345"}
+    ],
+    "trains": [
+      {
+        "number": "1",
+        "line": "l",
+        "type": "local",
+        "stops": [
+          {"station": "A", "depart": "08:00"},
+          {"station": "S", "arrive": "08:04", "depart": "08:05", "type": "rapid "},
+          {"station": "B", "arrive": "08:10", "type": "rapid"}
+        ]
+      },
+      {
+        "number": "2",
+        "line": "l",
+        "stops": [
+          {"station": "A", "depart": "09:00", "type": "local"},
+          {"station": "S", "arrive": "09:04", "depart": "09:05", "type": "rapid"},
+          {"station": "B", "arrive": "09:10"}
+        ]
+      }
+    ],
+    "duties": []
+  },
+  "problems": [
+    "type \"rapid\": another type has the same name",
+    "type \" local\": the name must not be empty, start or end with a space, or contain a control character",
+    "type \"local\": the color must be # and six hexadecimal digits, such as #d9822b",
+    "types[4]: the name must not be empty, start or end with a space, or contain a control character",
+    "types[4]: the color must be # and six hexadecimal digits, such as #d9822b",
+    "train \"1\", stop 2 \"S\": the type must not start or end with a space or contain a control character",
+    "train \"1\", stop 3 \"B\": is the last stop, which the train does not leave, so it changes no type"
+  ]
+}

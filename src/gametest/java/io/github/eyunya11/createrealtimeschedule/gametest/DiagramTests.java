@@ -12,6 +12,7 @@ import com.simibubi.create.content.trains.entity.Train;
 import io.github.eyunya11.createrealtimeschedule.Createrealtimeschedule;
 import io.github.eyunya11.createrealtimeschedule.clock.ClockService;
 import io.github.eyunya11.createrealtimeschedule.clock.RealClock;
+import io.github.eyunya11.createrealtimeschedule.diagram.DiagramModel;
 import io.github.eyunya11.createrealtimeschedule.diagram.DiagramService;
 import io.github.eyunya11.createrealtimeschedule.diagram.DutyTimes;
 import io.github.eyunya11.createrealtimeschedule.diagram.LineAxis;
@@ -166,7 +167,8 @@ public class DiagramTests {
 
     /**
      * A client with no timetable is sent it, with the times of the duty running and of the one that has
-     * finished; one that has the timetable is sent the times only. What is sent reads back the same.
+     * finished; one that has the timetable is sent the times only. What is sent reads back the same,
+     * and the client draws the train in its type's colour, which a stop changes to.
      */
     @GameTest(template = EMPTY, batch = "realtimediagram_snapshot")
     public static void theSnapshotHasTheTimesAndLeavesOutWhatTheClientHas(GameTestHelper helper) {
@@ -174,7 +176,10 @@ public class DiagramTests {
         OperationData data = OperationData.get(server);
         try {
             long now = ClockService.now(server);
-            String json = TimetableCommandTests.TIMETABLE;
+            String json = TimetableCommandTests.TIMETABLE.replace("\"version\": 2,", "\"version\": 6,")
+                .replace("\"trains\": [\n", "\"types\": [{\"name\": \"rapid\", \"color\": \"#d9822b\"}],\n  \"trains\": [\n")
+                .replace("{\"station\": \"A\", \"depart\": \"12:00:20\"}", "{\"station\": \"A\", \"depart\": \"12:00:20\", \"type\": \"rapid\"}");
+            helper.assertTrue(json.contains("\"types\"") && json.contains("\"type\": \"rapid\""), "the timetable has no types: " + json);
             data.loadTimetable(json, TimetableJson.parse(json).timetable(), now);
             DutyRun running = DutyRun.start("1A", RealClock.day(now), data.calls("1A"), now);
             running.left(running.departure());
@@ -200,6 +205,13 @@ public class DiagramTests {
             DiagramSnapshotPayload.STREAM_CODEC.encode(buf, first);
             DiagramSnapshotPayload read = DiagramSnapshotPayload.STREAM_CODEC.decode(buf);
             helper.assertTrue(read.equals(first) && buf.readableBytes() == 0, "the snapshot does not read back the same: " + read);
+            // What the client does with it: read the timetable, and draw the line on the axis sent.
+            Timetable sent = TimetableJson.parse(read.content().json()).timetable();
+            helper.assertTrue(sent != null && "#d9822b".equals(sent.colour("rapid")), "the client does not read the type's colour: " + sent);
+            DiagramModel model = DiagramModel.of(sent, read.content().axes().getFirst(), RealClock.day(now), read.duties(), now);
+            helper.assertTrue(model.planned().stream().anyMatch(train -> train.number().equals("1") && train.type().equals("rapid")
+                    && !train.types().isEmpty() && train.types().stream().allMatch("rapid"::equals)),
+                "the client does not draw train 1 as a rapid: " + model.planned());
 
             DiagramSnapshotPayload again = DiagramService.snapshot(server, data.revision(), -1);
             helper.assertTrue(again.content() == null && first.duties().equals(again.duties()),

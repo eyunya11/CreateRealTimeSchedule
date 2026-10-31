@@ -87,6 +87,31 @@ class DiagramModelTest {
     }
 
     @Test
+    void aTrainThatChangesItsTypeAtAStopHasTheNewTypeStandingThereAndOnFromThere() {
+        // Out of the depot as a local, a rapid from A, and a local again from M.
+        Train five = new Train("5", "l", "local", List.of(Stop.leaving("Depot", t("09:00")),
+            new Stop("A", t("09:05"), t("09:06"), Stop.NONE, "rapid", List.of()),
+            new Stop("M", t("09:10"), t("09:11"), Stop.NONE, "local", List.of()), Stop.arriving("B", t("09:15"))));
+        // One with no type of its own that takes one at its first stop has it from the start.
+        Train six = new Train("6", "l", "", List.of(new Stop("A", Stop.NONE, t("10:00"), Stop.NONE, "rapid", List.of()),
+            Stop.arriving("B", t("10:10"))));
+        Timetable timetable = new Timetable("", List.of(LINE), List.of(five, six), List.of());
+        assertEquals(List.of(), timetable.problems());
+        DiagramModel model = DiagramModel.of(timetable, AXIS, DAY, List.of(), 0);
+        PlannedTrain planned = planned(model, "5");
+        assertEquals(List.of(
+            new Segment(t("09:00"), 0, t("09:05"), 20),
+            new Segment(t("09:05"), 20, t("09:06"), 20),
+            new Segment(t("09:06"), 20, t("09:10"), 60),
+            new Segment(t("09:10"), 60, t("09:11"), 60),
+            new Segment(t("09:11"), 60, t("09:15"), 120)), planned.segments());
+        assertEquals(List.of("local", "rapid", "rapid", "local", "local"), planned.types());
+        assertEquals("local", planned.type());
+        assertEquals("rapid", planned(model, "6").type());
+        assertEquals(List.of("rapid"), planned(model, "6").types());
+    }
+
+    @Test
     void aStopWithOnlyADepartureIsPassedThroughAtThatTime() {
         Train through = new Train("3", "l", "", List.of(Stop.leaving("A", t("09:00")), Stop.leaving("M", t("09:04")), Stop.arriving("B", t("09:10"))));
         Timetable timetable = new Timetable("", List.of(LINE), List.of(through), List.of());

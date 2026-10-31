@@ -31,15 +31,22 @@ import org.jetbrains.annotations.Nullable;
  * for it when a stop does not say: the dwell a train drawn in the editor gets there, and the minimum
  * stop a late train still makes there.
  *
+ * <p>A train's <em>type</em> is the kind of service it is, such as local or rapid, which the diagram
+ * draws it in the colour of. A type entry gives a type its colour and its place in the list of types;
+ * a type that has none is drawn in a colour picked from its name ({@link TypeColours}). A stop may
+ * change the train's type from there on, such as a local that runs on as a rapid.
+ *
  * <p>The records hold whatever they are given. {@link #problems()} says what is wrong with them.
  *
  * @param name     what to call the timetable; may be empty
  * @param lines    the lines
  * @param stations the stations that have times of their own, each at most once; the others have none
+ * @param types    the types that have a colour of their own, in the order they are listed in
  * @param trains   the trains, on any of the lines
  * @param duties   the duties, each made of trains from {@code trains}
  */
-public record Timetable(String name, List<Line> lines, List<Station> stations, List<Train> trains, List<Duty> duties) {
+public record Timetable(String name, List<Line> lines, List<Station> stations, List<TrainType> types, List<Train> trains,
+                        List<Duty> duties) {
 
     /** The {@code format} member of a timetable in JSON. */
     public static final String FORMAT = "createrealtimeschedule.timetable";
@@ -47,11 +54,12 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
     /**
      * The newest version of the JSON this mod reads. Version 2 added deadhead trains, version 3 the
      * stations' times and the stops' minimum stops, version 4 the trains that are never cancelled to
-     * get a late set back on time, and version 5 the trains a stop waits for. A timetable is written in
-     * the oldest version that holds it ({@link #version()}), so that a mod that reads only version 2
-     * still takes one that has none of what the later versions added.
+     * get a late set back on time, version 5 the trains a stop waits for, and version 6 the types'
+     * colours and the stops that change a train's type. A timetable is written in the oldest version
+     * that holds it ({@link #version()}), so that a mod that reads only version 2 still takes one that
+     * has none of what the later versions added.
      */
-    public static final int VERSION = 5;
+    public static final int VERSION = 6;
 
     /** The longest line id, train number or duty id. */
     public static final int MAX_ID_LENGTH = 32;
@@ -66,11 +74,17 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
         Objects.requireNonNull(name, "name");
         lines = List.copyOf(lines);
         stations = List.copyOf(stations);
+        types = List.copyOf(types);
         trains = List.copyOf(trains);
         duties = List.copyOf(duties);
     }
 
-    /** A timetable whose stations have no times of their own. */
+    /** A timetable whose types have no colours of their own. */
+    public Timetable(String name, List<Line> lines, List<Station> stations, List<Train> trains, List<Duty> duties) {
+        this(name, lines, stations, List.of(), trains, duties);
+    }
+
+    /** A timetable whose stations have no times of their own, and whose types no colours. */
     public Timetable(String name, List<Line> lines, List<Train> trains, List<Duty> duties) {
         this(name, lines, List.of(), trains, duties);
     }
@@ -107,9 +121,23 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
     }
 
     /**
+     * A type that has a colour of its own.
+     *
+     * @param name  the type, as a train or a stop names it; no other type has it
+     * @param color its colour, as {@code #rrggbb}
+     */
+    public record TrainType(String name, String color) {
+        public TrainType {
+            Objects.requireNonNull(name, "name");
+            Objects.requireNonNull(color, "color");
+        }
+    }
+
+    /**
      * @param number the train number, such as {@code 101} or {@code 12A}; no other train has it
      * @param line   the id of the line it runs on
-     * @param type   the kind of service, such as {@code local} or {@code rapid}, for display; may be empty
+     * @param type   the kind of service, such as {@code local} or {@code rapid}, for display; may be empty.
+     *               It is the type the train has from its first stop, until a stop changes it
      * @param stops    the stops in the order the train makes them, at least two
      * @param deadhead whether it runs empty, such as from the depot to where the duty starts
      * @param keep     whether it must run even when its set is late: it is never cancelled to get the
@@ -131,6 +159,17 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
         /** A train that carries passengers. */
         public Train(String number, String line, String type, List<Stop> stops) {
             this(number, line, type, stops, false);
+        }
+
+        /**
+         * The type the train has at stop {@code k}, standing there and on its way from there to the next:
+         * that of the last stop up to {@code k} that changes it, or else the train's own.
+         */
+        public String typeAt(int k) {
+            for (int s = Math.min(k, stops.size() - 1); s >= 0; s--)
+                if (stops.get(s).changesType())
+                    return stops.get(s).type();
+            return type;
         }
     }
 
@@ -159,16 +198,24 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
      * @param depart      when the train leaves, or {@link #NONE}
      * @param minimumStop how many seconds the train stands here at the least when it comes in late, or
      *                    {@link #NONE} for the station's (see {@link Timetable#minimumStop})
+     * @param type        the type the train has from here on (see {@link Train#typeAt}), or empty for
+     *                    the one it has already
      * @param waits       the trains it waits for here before it leaves, in order
      */
-    public record Stop(String station, int arrive, int depart, int minimumStop, List<Wait> waits) {
+    public record Stop(String station, int arrive, int depart, int minimumStop, String type, List<Wait> waits) {
 
         /** The time of a stop that has no such time. */
         public static final int NONE = -1;
 
         public Stop {
             Objects.requireNonNull(station, "station");
+            Objects.requireNonNull(type, "type");
             waits = List.copyOf(waits);
+        }
+
+        /** A stop that leaves the train's type as it is. */
+        public Stop(String station, int arrive, int depart, int minimumStop, List<Wait> waits) {
+            this(station, arrive, depart, minimumStop, "", waits);
         }
 
         /** A stop that waits for no train. */
@@ -183,6 +230,11 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
 
         public boolean hasMinimumStop() {
             return minimumStop != NONE;
+        }
+
+        /** Whether the train has another type from here on. */
+        public boolean changesType() {
+            return !type.isEmpty();
         }
 
         /** The first stop of a train, or a stop it passes through without a time of arrival. */
@@ -268,6 +320,20 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
         return stations.stream().filter(station -> station.name().equals(name)).findFirst();
     }
 
+    public Optional<TrainType> type(String name) {
+        return types.stream().filter(type -> type.name().equals(name)).findFirst();
+    }
+
+    /**
+     * The colour {@code type} is drawn in, as {@code #rrggbb}: its own, or else the one picked from its
+     * name; null for no type.
+     */
+    public @Nullable String colour(String type) {
+        if (type.isEmpty())
+            return null;
+        return type(type).map(TrainType::color).orElseGet(() -> TypeColours.byName(type));
+    }
+
     /**
      * The minimum stop a late train makes at {@code stop}, in seconds: the stop's own, or else the
      * station's, or {@link Stop#NONE} when neither says, for the server's config.
@@ -279,10 +345,13 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
     }
 
     /**
-     * The oldest version of the JSON that holds this timetable: 5 if a stop waits for a train, else 4 if
-     * it has a train that is never cancelled, else 3 if it has anything version 3 added, else 2.
+     * The oldest version of the JSON that holds this timetable: 6 if it gives a type a colour or a stop
+     * changes a train's type, else 5 if a stop waits for a train, else 4 if it has a train that is never
+     * cancelled, else 3 if it has anything version 3 added, else 2.
      */
     public int version() {
+        if (!types.isEmpty() || trains.stream().anyMatch(train -> train.stops().stream().anyMatch(Stop::changesType)))
+            return 6;
         if (trains.stream().anyMatch(train -> train.stops().stream().anyMatch(stop -> !stop.waits().isEmpty())))
             return 5;
         if (trains.stream().anyMatch(Train::keep))
@@ -300,7 +369,8 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
      * that is not on its line; stops that are not in order along a line, or the same station twice in a
      * row; times that are missing where they are needed, out of range, or not in order; dwells and
      * minimum stops out of range, a station given times twice or that no line has, and a minimum stop
-     * at a train's last stop, which it does not leave; and duties that name a train that is not there,
+     * or a change of type at a train's last stop, which it does not leave; a type given a colour twice,
+     * or a colour that is not {@code #rrggbb}; and duties that name a train that is not there,
      * use a train twice, string trains together that do not meet (the next starts somewhere else, or
      * before the one before has arrived), or do not start and end at their depot. A train waited for at
      * a stop has to be another train of the timetable, which leaves the station (or runs through it)
@@ -312,6 +382,7 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
             problems.add("the name must not start or end with a space or contain a control character");
         Map<String, Line> lineById = checkLines(problems);
         checkStations(problems);
+        checkTypes(problems);
         Map<String, Train> trainByNumber = checkTrains(lineById, problems);
         checkWaits(lineById, trainByNumber, problems);
         checkDuties(trainByNumber, problems);
@@ -364,6 +435,22 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
                 problems.add(label + ": the dwell " + STOP_RULE);
             if (station.minimumStop() != Stop.NONE && !isStopSeconds(station.minimumStop()))
                 problems.add(label + ": the minimum stop " + STOP_RULE);
+        }
+    }
+
+    // ------------------------------------------------------------------ types
+
+    private void checkTypes(List<String> problems) {
+        Set<String> seen = new HashSet<>();
+        for (int i = 0; i < types.size(); i++) {
+            TrainType type = types.get(i);
+            String label = label("type", "types", i, type.name());
+            if (!isText(type.name()))
+                problems.add(label + ": the name " + TEXT_RULE);
+            else if (!seen.add(type.name()))
+                problems.add(label + ": another type has the same name");
+            if (!TypeColours.isColour(type.color()))
+                problems.add(label + ": the color must be # and six hexadecimal digits, such as #d9822b");
         }
     }
 
@@ -429,6 +516,10 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
                 problems.add(where + ": is the last stop, which the train does not leave, so it has no minimum stop");
             else if (stop.hasMinimumStop() && !isStopSeconds(stop.minimumStop()))
                 problems.add(where + ": the minimum stop " + STOP_RULE);
+            if (stop.changesType() && k == lastIndex)
+                problems.add(where + ": is the last stop, which the train does not leave, so it changes no type");
+            else if (stop.changesType() && !isText(stop.type()))
+                problems.add(where + ": the type must not start or end with a space or contain a control character");
 
             // the times in order
             if (stop.hasArrive() && previousDeparture != Stop.NONE && stop.arrive() <= previousDeparture)

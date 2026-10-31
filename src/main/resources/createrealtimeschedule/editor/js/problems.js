@@ -3,11 +3,13 @@
  * for word, so that the editor finds the mistakes the mod would refuse the timetable for. Shared test
  * cases hold the two to the same results (src/test/resources/.../timetable/cases).
  *
- * A timetable here is plain data, as timetable.js reads it: {name, lines, stations, trains, duties},
- * a line {id, name, stations, loop}, a station {name, dwell, minimumStop} with seconds or NONE, a
- * train {number, line, type, stops, deadhead} with keep true if it is never cancelled, a stop {station, arrive, depart, waits?} with the times in
- * seconds or NONE and a minimumStop if it has one of its own, and a duty {id, depot, trains}. A
- * timetable without stations (one made before version 3) has none with times of their own.
+ * A timetable here is plain data, as timetable.js reads it: {name, lines, stations, types, trains,
+ * duties}, a line {id, name, stations, loop}, a station {name, dwell, minimumStop} with seconds or
+ * NONE, a type {name, color}, a train {number, line, type, stops, deadhead} with keep true if it is
+ * never cancelled, a stop {station, arrive, depart, type?, waits?} with the times in seconds or NONE
+ * and a minimumStop if it has one of its own, and a duty {id, depot, trains}. A timetable without
+ * stations (one made before version 3) has none with times of their own, and one without types (one
+ * made before version 6) no types with colours.
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports)
@@ -40,9 +42,16 @@
   const ALL_SPACE = new RegExp('^' + SPACE + '*$');
   // What Java's Character.isISOControl takes for a control character.
   const CONTROL = /[\u0000-\u001F\u007F-\u009F]/;
+  // A colour as a type has it: TypeColours.isColour of the mod.
+  const COLOUR = /^#[0-9a-fA-F]{6}$/;
 
   function isText(text) {
     return text !== '' && !SPACE_AT_AN_END.test(text) && !CONTROL.test(text);
+  }
+
+  /** Whether text is a colour as a type has it: # and six hexadecimal digits (TypeColours.isColour of the mod). */
+  function isColour(text) {
+    return COLOUR.test(text);
   }
 
   function isIdentifier(text) {
@@ -63,6 +72,10 @@
 
   function hasMinimumStop(stop) {
     return stop.minimumStop !== undefined && stop.minimumStop !== NONE;
+  }
+
+  function changesType(stop) {
+    return stop.type !== undefined && stop.type !== '';
   }
 
   /** line "central", or lines[2] for one that has no usable id to name it by. */
@@ -127,6 +140,21 @@
     });
   }
 
+  function checkTypes(timetable, problems) {
+    const seen = new Set();
+    (timetable.types || []).forEach((type, i) => {
+      const where = label('type', 'types', i, type.name);
+      if (!isText(type.name))
+        problems.push(where + ': the name ' + TEXT_RULE);
+      else if (seen.has(type.name))
+        problems.push(where + ': another type has the same name');
+      else
+        seen.add(type.name);
+      if (!isColour(type.color))
+        problems.push(where + ': the color must be # and six hexadecimal digits, such as #d9822b');
+    });
+  }
+
   function checkTrains(timetable, lineById, problems) {
     const byNumber = new Map();
     timetable.trains.forEach((train, i) => {
@@ -188,6 +216,10 @@
         problems.push(where + ': is the last stop, which the train does not leave, so it has no minimum stop');
       else if (hasMinimumStop(stop) && !isStopSeconds(stop.minimumStop))
         problems.push(where + ': the minimum stop ' + STOP_RULE);
+      if (changesType(stop) && k === lastIndex)
+        problems.push(where + ': is the last stop, which the train does not leave, so it changes no type');
+      else if (changesType(stop) && !isText(stop.type))
+        problems.push(where + ': the type must not start or end with a space or contain a control character');
 
       // the times in order
       if (hasArrive(stop) && previousDeparture !== NONE && stop.arrive <= previousDeparture)
@@ -382,11 +414,12 @@
       found.push('the name must not start or end with a space or contain a control character');
     const lineById = checkLines(timetable, found);
     checkStations(timetable, found);
+    checkTypes(timetable, found);
     const trainByNumber = checkTrains(timetable, lineById, found);
     checkWaits(timetable, lineById, trainByNumber, found);
     checkDuties(timetable, trainByNumber, found);
     return found;
   }
 
-  return { NONE, MAX_ID_LENGTH, MAX_STOP_SECONDS, MAX_WAIT_SECONDS, problems, isText, isIdentifier, runsThrough, leavesOrRunsThrough, waitStation };
+  return { NONE, MAX_ID_LENGTH, MAX_STOP_SECONDS, MAX_WAIT_SECONDS, problems, isText, isIdentifier, isColour, runsThrough, leavesOrRunsThrough, waitStation };
 });

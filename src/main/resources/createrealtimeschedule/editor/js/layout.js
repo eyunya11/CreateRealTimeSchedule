@@ -6,14 +6,15 @@
  *
  * Besides the segments the mod draws, each train has the points of its stops, for the editor to take
  * hold of: where the train arrives at each stop and where it leaves; and its parts, the same segments
- * by what they draw: the way from one stop to the next, or the standing at a stop.
+ * by what they draw: the way from one stop to the next, or the standing at a stop, each with the type
+ * the train has there.
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports)
-    module.exports = factory(require('./problems.js'));
+    module.exports = factory(require('./problems.js'), require('./timetable.js'));
   else
-    (root.rt = root.rt || {}).layout = factory(root.rt.problems);
-})(typeof globalThis !== 'undefined' ? globalThis : this, function (check) {
+    (root.rt = root.rt || {}).layout = factory(root.rt.problems, root.rt.timetable);
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (check, timetables) {
   'use strict';
 
   const NONE = check.NONE;
@@ -78,9 +79,12 @@
 
   /**
    * A train of the timetable as the diagram of the axis's line draws it:
-   * {number, type, deadhead, segments, parts, labelSecond, labelPosition, points}. A point is
-   * {stop, arriveSecond, arrivePosition, departSecond, departPosition}, NaN for what the stop does not
-   * have; a part is a run or a standing of path(), with the segments it draws.
+   * {number, type, deadhead, segments, types, parts, labelSecond, labelPosition, points}, as
+   * PlannedTrain of the mod: type is the one the train has at its first stop, which its number is drawn
+   * in, and types the one it has along each of the segments (timetable.typeAt at the stop the segment
+   * goes from, or stands at). A point is {stop, arriveSecond, arrivePosition, departSecond,
+   * departPosition}, NaN for what the stop does not have; a part is a run or a standing of path(), with
+   * the segments it draws and the type the train has there.
    */
   function plannedTrain(axis, train) {
     const down = axis.down(train.stops.map(stop => stop.station));
@@ -92,6 +96,12 @@
       down,
     }));
     const { segments, rowIn, rowOut, parts } = path(axis, visits);
+    const typeOf = new Map();
+    for (const part of parts) {
+      part.type = timetables.typeAt(train, part.stop);
+      for (const segment of part.segments)
+        typeOf.set(segment, part.type);
+    }
     const first = rowOut.length > 0 && rowOut[0] >= 0 ? rowOut[0] : visits.length === 0 ? -1 : axis.row(visits[0].station);
     const points = visits.map((visit, k) => {
       const inRow = rowIn[k] >= 0 ? rowIn[k] : rowOut[k] >= 0 ? rowOut[k] : axis.row(visit.station);
@@ -106,9 +116,10 @@
     });
     return {
       number: train.number,
-      type: train.type,
+      type: timetables.typeAt(train, 0),
       deadhead: train.deadhead,
       segments,
+      types: segments.map(segment => typeOf.get(segment)),
       parts,
       labelSecond: train.stops.length > 0 ? train.stops[0].depart : NaN,
       labelPosition: first >= 0 ? axis.position(first) : 0,
