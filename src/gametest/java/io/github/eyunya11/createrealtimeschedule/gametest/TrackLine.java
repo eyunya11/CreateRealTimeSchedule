@@ -442,9 +442,16 @@ final class TrackLine {
         return (bend == null || x <= bend.fromX() || x >= bend.toX()) && (loop == null || x >= loop.firstRowX());
     }
 
-    /** A tag in the world's list, named {@code name}, which is taken out again when the test ends. */
+    /**
+     * A tag in the world's list, named {@code name}, which is taken out again when the test ends. Where
+     * the name is taken, as by a run of the same test that is still going on a client, or that was left
+     * off before it could clean up, a number is put after it.
+     */
     int makeTag(String name) {
-        TrackTags.Created created = TrackTagData.get(server).tags().create(name);
+        TrackTags tags = TrackTagData.get(server).tags();
+        TrackTags.Created created = tags.create(name);
+        for (int n = 2; created.refusal() == TrackTags.Refusal.TAKEN && n < 100; n++)
+            created = tags.create(name + " " + n);
         if (created.refusal() != null)
             helper.fail("could not make the tag " + name + ": " + created.refusal());
         tagsMade.add(created.id());

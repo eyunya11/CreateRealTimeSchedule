@@ -18,6 +18,8 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
@@ -99,7 +101,7 @@ public class TrackTagTests {
             TrackTagEdgePoint read = new TrackTagEdgePoint();
             read.read(saved, helper.getLevel().registryAccess(), false, palette);
             helper.assertTrue(read.tag() == tags[1], "the point read again has the tag " + read.tag() + ", not " + tags[1]);
-            looked[0] = 0;
+            startLooking(helper, looked, blocks);
         });
     }
 
@@ -130,8 +132,23 @@ public class TrackTagTests {
             helper.assertTrue(node != null && Math.abs(node.x() - junctionX) <= 1.5,
                 "the junction is where the branch turns off, at x = " + junctionX + ", not " + node);
             assertLength(helper, sections, network, 0, 2 * (BRANCH.fromX() - 30), "the section up to the junction");
-            looked[0] = 0;
+            startLooking(helper, looked, block);
         });
+    }
+
+    /**
+     * Starts the time the track is left up, telling the players in the level (on a client, the one who
+     * ran the test) where the tag blocks are.
+     */
+    private static void startLooking(GameTestHelper helper, int[] looked, TrackTagBlockEntity... blocks) {
+        looked[0] = 0;
+        StringBuilder where = new StringBuilder();
+        for (TrackTagBlockEntity block : blocks)
+            where.append(where.isEmpty() ? "" : "; ").append(block.getBlockPos().toShortString());
+        Component message = Component.literal(helper.testInfo.getTestName() + ": the tag blocks are at " + where
+            + ", and stay for " + LOOK_TICKS / 20 + " seconds");
+        for (ServerPlayer player : helper.getLevel().players())
+            player.sendSystemMessage(message);
     }
 
     /**
