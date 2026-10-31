@@ -98,6 +98,17 @@ public final class RailNetwork {
     }
 
     /**
+     * A track tag block's point on the track (see {@link TagSections}).
+     *
+     * @param edge   the index of the edge it faces along: its section runs on the way this edge runs
+     * @param offset its distance from the start of that edge
+     * @param tag    the id of its tag, or 0 for none
+     * @param block  where the block is, to tell the player which one is meant
+     */
+    public record Marker(int edge, double offset, int tag, Place block) {
+    }
+
+    /**
      * A point on an edge that weighs a way through it (see {@link RouteSearch}).
      *
      * @param position its distance from the start of the edge
@@ -145,6 +156,7 @@ public final class RailNetwork {
     private final List<Station> stations;
     /** Where each node is, by its number; empty if not known. */
     private final List<Place> places;
+    private final List<Marker> markers;
     /** For every edge, the indexes of its stations by offset. */
     private final List<List<Integer>> stationsOn = new ArrayList<>();
     /** For every edge, the points on it that the search looks at, in order. */
@@ -163,9 +175,15 @@ public final class RailNetwork {
      * that a search can estimate the way left as Create's does.
      */
     public RailNetwork(List<Edge> edges, List<Station> stations, List<Place> places) {
+        this(edges, stations, places, List.of());
+    }
+
+    /** A network with track tag blocks on it. */
+    public RailNetwork(List<Edge> edges, List<Station> stations, List<Place> places, List<Marker> markers) {
         this.edges = List.copyOf(edges);
         this.stations = List.copyOf(stations);
         this.places = List.copyOf(places);
+        this.markers = List.copyOf(markers);
         for (int i = 0; i < this.edges.size(); i++) {
             Edge edge = this.edges.get(i);
             if (!(edge.length() >= 0))
@@ -194,6 +212,13 @@ public final class RailNetwork {
                 throw new IllegalArgumentException("station " + i + " is at " + station.offset() + ", outside its edge");
             stationsOn.get(station.edge()).add(i);
         }
+        for (int i = 0; i < this.markers.size(); i++) {
+            Marker marker = this.markers.get(i);
+            if (marker.edge() < 0 || marker.edge() >= this.edges.size())
+                throw new IllegalArgumentException("tag block " + i + " is on edge " + marker.edge() + ", which is not there");
+            if (!(marker.offset() >= 0 && marker.offset() <= this.edges.get(marker.edge()).length()))
+                throw new IllegalArgumentException("tag block " + i + " is at " + marker.offset() + ", outside its edge");
+        }
         for (List<Integer> onEdge : stationsOn)
             onEdge.sort(Comparator.comparingDouble((Integer i) -> this.stations.get(i).offset()).thenComparingInt(i -> i));
         for (int i = 0; i < this.edges.size(); i++)
@@ -206,6 +231,11 @@ public final class RailNetwork {
 
     public List<Station> stations() {
         return stations;
+    }
+
+    /** The track tag blocks on the network. */
+    public List<Marker> markers() {
+        return markers;
     }
 
     /** Where the node numbered {@code node} is, or null if that is not known. */
