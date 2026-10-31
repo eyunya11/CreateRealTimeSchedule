@@ -67,10 +67,45 @@ test('a timetable not of the right shape is not read', () => {
 });
 
 test('a newer version is not read, and says the editor needs updating', () => {
-  const result = timetable.read('{"format": "createrealtimeschedule.timetable", "version": 6, "whatever": 1}');
+  const result = timetable.read('{"format": "createrealtimeschedule.timetable", "version": 7, "whatever": 1}');
   assert.equal(result.timetable, null);
   assert.deepEqual(result.problems,
-    ['version: is 6, but this editor reads timetables up to version 5; the editor needs updating to read this one']);
+    ['version: is 7, but this editor reads timetables up to version 6; the editor needs updating to read this one']);
+});
+
+test('the types\' colours and the stops that change a train\'s type are read and written back as the mod writes them, as version 6', () => {
+  const text = readText(path.join(RESOURCES, 'timetable', 'example-types.json'));
+  const result = timetable.read(text);
+  assert.deepEqual(result.problems, []);
+  assert.deepEqual(result.timetable.types, [{ name: 'local', color: '#3a9d5d' }, { name: 'rapid', color: '#d9822b' }]);
+  assert.equal(result.timetable.trains[0].stops[1].type, 'rapid');
+  assert.equal('type' in result.timetable.trains[0].stops[0], false, 'a stop that does not change the type has none');
+  assert.equal(timetable.version(result.timetable), 6);
+  assert.equal(timetable.write(result.timetable), text);
+  const waits = timetable.read(readText(path.join(RESOURCES, 'timetable', 'example-waits.json'))).timetable;
+  assert.equal(timetable.version(waits), 5, 'a timetable with no types of its own is no version 6');
+  waits.trains[0].stops[1].type = 'rapid';
+  assert.equal(timetable.version(waits), 6, 'a stop that changes the type is version 6');
+});
+
+test('a train has its own type until a stop changes it, and on from there', () => {
+  const example = timetable.read(readText(path.join(RESOURCES, 'timetable', 'example-types.json'))).timetable;
+  const train = example.trains[0];
+  assert.deepEqual([0, 1, 2].map(k => timetable.typeAt(train, k)), ['local', 'rapid', 'rapid']);
+  assert.equal(timetable.typeAt(example.trains[1], 1), 'special');
+  assert.equal(timetable.colour(example, 'special'), '#b59a1c', 'a type not in the list gets the colour picked from its name');
+  assert.equal(timetable.colour(example, 'rapid'), '#d9822b', 'a type of the list has its own colour');
+  assert.equal(timetable.colour(example, ''), null, 'no type has no colour');
+});
+
+test('a type with no colour of its own gets the one the mod picks from its name', () => {
+  // The same as TypeColoursTest of the mod: Java's String.hashCode, floorMod.
+  assert.equal(timetable.colourByName('local'), '#3a9d5d');
+  assert.equal(timetable.colourByName('rapid'), '#2f9e9e');
+  assert.equal(timetable.colourByName('快速'), '#d9822b');
+  assert.equal(timetable.colourByName('special'), '#b59a1c');
+  assert.equal(timetable.colourByName(''), '#3b7dd8');
+  assert.equal(timetable.colour(timetable.empty(), 'rapid'), '#2f9e9e');
 });
 
 test('the trains a stop waits for are read and written back as the mod writes them, as version 5', () => {

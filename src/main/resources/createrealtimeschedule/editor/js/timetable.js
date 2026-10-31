@@ -1,5 +1,5 @@
 /*
- * Reads and writes a timetable as JSON (up to version 5 of the format), as TimetableJson does in the mod.
+ * Reads and writes a timetable as JSON (up to version 6 of the format), as TimetableJson does in the mod.
  *
  * Writing gives the same text as the mod, member for member and line for line. Reading checks the
  * same things in the same order and says them in the same words, with one difference: the browser's
@@ -25,11 +25,17 @@
   /**
    * The newest version of the JSON the editor reads. Version 3 added the stations' times and the
    * stops' minimum stops, version 4 the trains that are never cancelled to get a late set back on time
-   * (keep), and version 5 the trains a stop waits for (waits); a timetable is written in the oldest
-   * version that holds it (version()), so that a mod that reads only version 2 still takes one that
-   * has none of them.
+   * (keep), version 5 the trains a stop waits for (waits), and version 6 the types' colours (types) and
+   * the stops that change a train's type; a timetable is written in the oldest version that holds it
+   * (version()), so that a mod that reads only version 2 still takes one that has none of them.
    */
-  const VERSION = 5;
+  const VERSION = 6;
+
+  /**
+   * The colours of the types of train, in the order they are offered: TypeColours.TEMPLATE of the mod.
+   * A type that has no colour of its own is drawn in the one picked from its name (colourByName).
+   */
+  const TYPE_COLOURS = ['#3b7dd8', '#3a9d5d', '#d9822b', '#c94c4c', '#2f9e9e', '#b59a1c', '#a65fb0'];
 
   /** The most problems reported at once; the rest are counted. */
   const MAX_PROBLEMS = 50;
@@ -237,20 +243,33 @@
     return { name, dwell, minimumStop };
   }
 
-  /** A stop; it has a minimumStop only when it has one of its own, and waits only when it waits for a train. */
+  /**
+   * A stop; it has a minimumStop only when it has one of its own, a type only when it changes the
+   * train's, and waits only when it waits for a train.
+   */
   function readStop(f) {
     const station = orEmpty(f.string('station', true));
     const arrive = readTime(f, 'arrive');
     const depart = readTime(f, 'depart');
     const minimumStop = f.seconds('minimum_stop', check.MAX_STOP_SECONDS);
+    const type = orEmpty(f.string('type', false));
     const waits = f.objects('wait_for', false).map(readWait);
     f.finish();
     const stop = { station, arrive, depart };
     if (minimumStop !== NONE)
       stop.minimumStop = minimumStop;
+    if (type !== '')
+      stop.type = type;
     if (waits.length > 0)
       stop.waits = waits;
     return stop;
+  }
+
+  function readType(f) {
+    const name = orEmpty(f.string('name', true));
+    const color = orEmpty(f.string('color', true));
+    f.finish();
+    return { name, color };
   }
 
   /** A train a stop waits for: at is '' for the stop's own station, maxWait NONE for the server's. */
@@ -298,10 +317,11 @@
     const name = top.string('name', false);
     const lines = top.objects('lines', false).map(readLine);
     const stations = top.objects('stations', false).map(readStation);
+    const types = top.objects('types', false).map(readType);
     const trains = top.objects('trains', false).map(readTrain);
     const duties = top.objects('duties', false).map(readDuty);
     top.finish();
-    return { name: name === null ? '' : name, lines, stations, trains, duties };
+    return { name: name === null ? '' : name, lines, stations, types, trains, duties };
   }
 
   /**
@@ -336,11 +356,50 @@
     return stop.minimumStop !== undefined && stop.minimumStop !== NONE;
   }
 
+  function typesOf(timetable) {
+    return timetable.types === undefined ? [] : timetable.types;
+  }
+
+  /** Whether the train has another type from stop on. */
+  function changesType(stop) {
+    return stop.type !== undefined && stop.type !== '';
+  }
+
   /**
-   * The oldest version of the JSON that holds the timetable: 5 if a stop waits for a train, else 4 if
-   * it has a train that is never cancelled, else 3 if it has anything version 3 added, else 2.
+   * The type train has at stop k, standing there and on its way from there to the next: that of the
+   * last stop up to k that changes it, or else the train's own (Train.typeAt of the mod).
+   */
+  function typeAt(train, k) {
+    for (let s = Math.min(k, train.stops.length - 1); s >= 0; s--)
+      if (changesType(train.stops[s]))
+        return train.stops[s].type;
+    return train.type;
+  }
+
+  /** The colour of TYPE_COLOURS picked from type's name, the same for the same name: Java's String.hashCode, floorMod. */
+  function colourByName(type) {
+    let hash = 0;
+    for (let i = 0; i < type.length; i++)
+      hash = (hash * 31 + type.charCodeAt(i)) | 0;
+    return TYPE_COLOURS[((hash % TYPE_COLOURS.length) + TYPE_COLOURS.length) % TYPE_COLOURS.length];
+  }
+
+  /** The colour type is drawn in, as #rrggbb: its own, or else the one picked from its name; null for no type. */
+  function colour(timetable, type) {
+    if (type === '')
+      return null;
+    const own = typesOf(timetable).find(entry => entry.name === type);
+    return own !== undefined ? own.color : colourByName(type);
+  }
+
+  /**
+   * The oldest version of the JSON that holds the timetable: 6 if it gives a type a colour or a stop
+   * changes a train's type, else 5 if a stop waits for a train, else 4 if it has a train that is never
+   * cancelled, else 3 if it has anything version 3 added, else 2.
    */
   function version(timetable) {
+    if (typesOf(timetable).length > 0 || timetable.trains.some(train => train.stops.some(changesType)))
+      return 6;
     if (timetable.trains.some(train => train.stops.some(stop => stop.waits !== undefined && stop.waits.length > 0)))
       return 5;
     if (timetable.trains.some(train => train.keep === true))
@@ -352,7 +411,7 @@
   /**
    * The timetable as JSON, laid out as the mod lays it out, in the oldest version that holds it:
    * members with their default value (loop, deadhead and keep false, type empty, a time or a minimum
-   * stop a stop does not have, no stations with times of their own) are left out.
+   * stop a stop does not have, no stations with times of their own, no types with colours) are left out.
    */
   function write(timetable) {
     const lines = timetable.lines.map(line => {
@@ -385,6 +444,8 @@
           stopEntries.push(['depart', out.text(time.show(stop.depart))]);
         if (hasMinimumStop(stop))
           stopEntries.push(['minimum_stop', out.raw(String(stop.minimumStop))]);
+        if (changesType(stop))
+          stopEntries.push(['type', out.text(stop.type)]);
         if (stop.waits !== undefined && stop.waits.length > 0)
           stopEntries.push(['wait_for', out.list(stop.waits.map(wait => {
             const waitEntries = [['train', out.text(wait.train)]];
@@ -409,14 +470,17 @@
     ];
     if (stations.length > 0)
       top.push(['stations', out.list(stations)]);
+    const types = typesOf(timetable).map(type => out.map([['name', out.text(type.name)], ['color', out.text(type.color)]]));
+    if (types.length > 0)
+      top.push(['types', out.list(types)]);
     top.push(['trains', out.list(trains)], ['duties', out.list(duties)]);
     return out.render(out.map(top));
   }
 
   /** A timetable with nothing in it. */
   function empty() {
-    return { name: '', lines: [], stations: [], trains: [], duties: [] };
+    return { name: '', lines: [], stations: [], types: [], trains: [], duties: [] };
   }
 
-  return { FORMAT, VERSION, NONE, read, write, empty, version };
+  return { FORMAT, VERSION, NONE, TYPE_COLOURS, read, write, empty, version, typeAt, colourByName, colour };
 });

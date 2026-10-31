@@ -162,6 +162,9 @@ public final class TimetableJson {
         List<Timetable.Station> stations = new ArrayList<>();
         for (Fields station : top.objects("stations", false))
             stations.add(readStation(station));
+        List<Timetable.TrainType> types = new ArrayList<>();
+        for (Fields type : top.objects("types", false))
+            types.add(readType(type));
         List<Timetable.Train> trains = new ArrayList<>();
         for (Fields train : top.objects("trains", false))
             trains.add(readTrain(train));
@@ -169,7 +172,7 @@ public final class TimetableJson {
         for (Fields duty : top.objects("duties", false))
             duties.add(readDuty(duty));
         top.finish();
-        return new Timetable(name == null ? "" : name, lines, stations, trains, duties);
+        return new Timetable(name == null ? "" : name, lines, stations, types, trains, duties);
     }
 
     /** False if the text is of a newer version: nothing else in it can be read, and that is all there is to say. */
@@ -211,6 +214,13 @@ public final class TimetableJson {
         return new Timetable.Station(name, dwell, minimumStop);
     }
 
+    private static Timetable.TrainType readType(Fields f) {
+        String name = orEmpty(f.string("name", true));
+        String color = orEmpty(f.string("color", true));
+        f.finish();
+        return new Timetable.TrainType(name, color);
+    }
+
     private static Timetable.Train readTrain(Fields f) {
         String number = orEmpty(f.string("number", true));
         String line = orEmpty(f.string("line", true));
@@ -229,11 +239,12 @@ public final class TimetableJson {
         int arrive = readTime(f, "arrive");
         int depart = readTime(f, "depart");
         int minimumStop = f.seconds("minimum_stop", Timetable.MAX_STOP_SECONDS);
+        String type = orEmpty(f.string("type", false));
         List<Timetable.Wait> waits = new ArrayList<>();
         for (Fields wait : f.objects("wait_for", false))
             waits.add(readWait(wait));
         f.finish();
-        return new Timetable.Stop(station, arrive, depart, minimumStop, waits);
+        return new Timetable.Stop(station, arrive, depart, minimumStop, type, waits);
     }
 
     private static Timetable.Wait readWait(Fields f) {
@@ -424,7 +435,7 @@ public final class TimetableJson {
      * fixed order, and a stop or a list of names on one line, in the oldest version that holds it
      * ({@link Timetable#version()}). Members that have their default value ({@code loop},
      * {@code deadhead} and {@code keep} false, {@code type} empty, a time or a minimum stop a stop does not have, no
-     * stations with times of their own) are left out. A timetable that
+     * stations with times of their own, no types with colours) are left out. A timetable that
      * {@link Timetable#problems()} finds fault with is written as it is, and is refused when read back;
      * a time outside the service day is written as {@link ServiceTime#show} has it, which is no time.
      */
@@ -460,6 +471,17 @@ public final class TimetableJson {
             root.put("stations", stations);
         }
 
+        if (!timetable.types().isEmpty()) {
+            ListNode types = new ListNode();
+            for (Timetable.TrainType type : timetable.types()) {
+                MapNode node = new MapNode();
+                node.put("name", text(type.name()));
+                node.put("color", text(type.color()));
+                types.add(node);
+            }
+            root.put("types", types);
+        }
+
         ListNode trains = new ListNode();
         for (Timetable.Train train : timetable.trains()) {
             MapNode node = new MapNode();
@@ -481,6 +503,8 @@ public final class TimetableJson {
                     stopNode.put("depart", text(ServiceTime.show(stop.depart())));
                 if (stop.hasMinimumStop())
                     stopNode.put("minimum_stop", raw(Integer.toString(stop.minimumStop())));
+                if (stop.changesType())
+                    stopNode.put("type", text(stop.type()));
                 if (!stop.waits().isEmpty()) {
                     ListNode waits = new ListNode();
                     for (Timetable.Wait wait : stop.waits()) {

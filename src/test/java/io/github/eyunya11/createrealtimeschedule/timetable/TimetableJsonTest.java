@@ -2,6 +2,7 @@ package io.github.eyunya11.createrealtimeschedule.timetable;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -257,6 +258,33 @@ class TimetableJsonTest {
             "trains[0].stops[1].wait_for[0].train: is missing");
     }
 
+    /** The types' colours and the stops that change a train's type, which version 6 added; the example the editor's tests read too. */
+    @Test
+    void readsAndWritesTheTypesAndTheStopsThatChangeThemAsVersionSix() {
+        String text = resource("example-types.json");
+        Timetable timetable = accepted(text);
+        assertEquals(List.of(new Timetable.TrainType("local", "#3a9d5d"), new Timetable.TrainType("rapid", "#d9822b")), timetable.types());
+        Train train = timetable.train("1").orElseThrow();
+        assertEquals("rapid", train.stops().get(1).type());
+        assertEquals(List.of("local", "rapid", "rapid"), List.of(train.typeAt(0), train.typeAt(1), train.typeAt(2)));
+        assertEquals("special", timetable.train("2").orElseThrow().typeAt(1));
+        assertEquals("#d9822b", timetable.colour("rapid"));
+        assertEquals("#b59a1c", timetable.colour("special"), "a type not in the list gets the colour picked from its name");
+        assertNull(timetable.colour(""), "no type has no colour");
+        assertEquals(6, timetable.version());
+        assertEquals(text, TimetableJson.write(timetable));
+        Timetable waits = accepted(resource("example-waits.json"));
+        assertEquals(5, waits.version(), "a timetable with no types of its own is no version 6");
+        Train local = waits.trains().getFirst();
+        List<Stop> stops = new ArrayList<>(local.stops());
+        Stop stop = stops.get(1);
+        stops.set(1, new Stop(stop.station(), stop.arrive(), stop.depart(), stop.minimumStop(), "rapid", stop.waits()));
+        List<Train> trains = new ArrayList<>(waits.trains());
+        trains.set(0, new Train(local.number(), local.line(), local.type(), stops));
+        assertEquals(6, new Timetable(waits.name(), waits.lines(), waits.stations(), trains, waits.duties()).version(),
+            "a stop that changes the type is version 6");
+    }
+
     /** The example the editor's tests read too (src/test/js), which both have to write back as it is. */
     @Test
     void writesTheKeepExampleBackIdenticallyToTheCharacter() {
@@ -455,8 +483,8 @@ class TimetableJsonTest {
         for (String version : List.of("0", "-1"))
             assertOnlyProblem("{\"format\": \"createrealtimeschedule.timetable\", \"version\": " + version + "}", "version: must be 1 or more");
         // A newer version may have members this one has never heard of; they are not worth listing.
-        assertOnlyProblem("{\"format\": \"createrealtimeschedule.timetable\", \"version\": 6, \"colours\": [1, 2]}",
-            "version: is 6, but this mod reads timetables up to version 5");
+        assertOnlyProblem("{\"format\": \"createrealtimeschedule.timetable\", \"version\": 7, \"colours\": [1, 2]}",
+            "version: is 7, but this mod reads timetables up to version 6");
     }
 
     @Test
