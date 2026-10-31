@@ -7,10 +7,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.PriorityQueue;
 import java.util.Set;
-
-import org.jetbrains.annotations.Nullable;
 
 import io.github.eyunya11.createrealtimeschedule.travel.SpeedSign;
 import io.github.eyunya11.createrealtimeschedule.travel.SpeedSigns;
@@ -24,7 +21,8 @@ import io.github.eyunya11.createrealtimeschedule.travel.SpeedSigns;
  * one direction, with a length, whether it is a curve, and the edges a train can go on to at its far
  * end. A track that runs both ways is two edges. A <em>station</em> is a stop marker on one edge, a
  * distance from its start, and a train can stop there only when it runs along that edge. The route
- * from one station to another is the shortest way a train can run from the one marker to the other.
+ * from one station to another is the way a train sent there takes ({@link RouteSearch}): the way of
+ * least length and weight, as Create's own search weighs it.
  */
 public final class RailNetwork {
 
@@ -42,13 +40,24 @@ public final class RailNetwork {
      *                 -1 where the track ends. A train looking ahead past the end of its path, for
      *                 signs, goes this way: Create takes the first of the ways the track goes on, in the
      *                 order of its graph, whatever the signals say.
+     * @param points   the points on the edge that weigh a way through it and that a train does not stop
+     *                 at running this way: the station markers that face the other way, or have no name,
+     *                 and the signals that let the train through (kept sorted by position)
+     * @param start    a number for the node the edge starts at, the same for every edge that starts
+     *                 there, or -1 if it is not known
      */
     public record Edge(double length, boolean curved, List<Integer> next, List<SpeedSign> signs, List<Double> barriers,
-        int onward) {
+        int onward, List<Point> points, int start) {
         public Edge {
             next = List.copyOf(next);
             signs = signs.stream().sorted(Comparator.comparingDouble(SpeedSign::position)).toList();
             barriers = barriers.stream().sorted().toList();
+            points = points.stream().sorted(Comparator.comparingDouble(Point::position)).toList();
+        }
+
+        /** An edge with no points that weigh a way, of a node that is not known. */
+        public Edge(double length, boolean curved, List<Integer> next, List<SpeedSign> signs, List<Double> barriers, int onward) {
+            this(length, curved, next, signs, barriers, onward, List.of(), -1);
         }
 
         /**
@@ -60,26 +69,59 @@ public final class RailNetwork {
         }
 
         public Edge withSigns(List<SpeedSign> signs) {
-            return new Edge(length, curved, next, signs, barriers, onward);
+            return new Edge(length, curved, next, signs, barriers, onward, points, start);
         }
 
         public Edge withBarriers(List<Double> barriers) {
-            return new Edge(length, curved, next, signs, barriers, onward);
+            return new Edge(length, curved, next, signs, barriers, onward, points, start);
         }
 
         public Edge withOnward(int onward) {
-            return new Edge(length, curved, next, signs, barriers, onward);
+            return new Edge(length, curved, next, signs, barriers, onward, points, start);
+        }
+
+        public Edge withPoints(List<Point> points) {
+            return new Edge(length, curved, next, signs, barriers, onward, points, start);
+        }
+
+        public Edge withStart(int start) {
+            return new Edge(length, curved, next, signs, barriers, onward, points, start);
         }
     }
 
     /**
-     * @param name   what a schedule calls it; stations may share a name (platforms of one stop)
-     * @param edge   the index of the edge it is on
-     * @param offset the distance of its marker from the start of that edge
+     * A point on an edge that weighs a way through it (see {@link RouteSearch}).
+     *
+     * @param position its distance from the start of the edge
+     * @param kind     what it is
+     * @param ref      for a station marker, the number of its platform ({@link Station#platform}); for a
+     *                 signal, a number for the signal and the side of it a train running this way meets
      */
-    public record Station(String name, int edge, double offset) {}
+    public record Point(double position, Kind kind, int ref) {
+        public enum Kind {
+            /** A station marker a train passes, which Create weighs whether or not the train can stop at it. */
+            STATION,
+            /** A signal that lets the train through, which Create weighs when it is red. */
+            SIGNAL
+        }
+    }
 
-    private static final double EPSILON = 1e-9;
+    /**
+     * @param name     what a schedule calls it; stations may share a name (platforms of one stop)
+     * @param edge     the index of the edge it is on
+     * @param offset   the distance of its marker from the start of that edge
+     * @param platform a number for the station marker, which {@link Point}s of it on the edge the other
+     *                 way have too, or -1 if it has none
+     */
+    public record Station(String name, int edge, double offset, int platform) {
+
+        /** A station with no number of its own. */
+        public Station(String name, int edge, double offset) {
+            this(name, edge, offset, -1);
+        }
+    }
+
+    static final double EPSILON = 1e-9;
 
     /**
      * How far past the end of a leg its signs are looked for. A train brakes for the signs ahead of it
@@ -95,6 +137,8 @@ public final class RailNetwork {
     private final List<Station> stations;
     /** For every edge, the indexes of its stations by offset. */
     private final List<List<Integer>> stationsOn = new ArrayList<>();
+    /** For every edge, the points on it that the search looks at, in order. */
+    private final List<List<RouteSearch.Item>> items = new ArrayList<>();
 
     /**
      * @throws IllegalArgumentException if an index is out of range, a length is negative, or a station
@@ -118,6 +162,9 @@ public final class RailNetwork {
             for (double barrier : edge.barriers())
                 if (!(barrier >= 0 && barrier <= edge.length()))
                     throw new IllegalArgumentException("edge " + i + " has a barrier at " + barrier + ", outside it");
+            for (Point point : edge.points())
+                if (!(point.position() >= 0 && point.position() <= edge.length()))
+                    throw new IllegalArgumentException("edge " + i + " has a point at " + point.position() + ", outside it");
             stationsOn.add(new ArrayList<>());
         }
         for (int i = 0; i < this.stations.size(); i++) {
@@ -130,6 +177,31 @@ public final class RailNetwork {
         }
         for (List<Integer> onEdge : stationsOn)
             onEdge.sort(Comparator.comparingDouble((Integer i) -> this.stations.get(i).offset()).thenComparingInt(i -> i));
+        for (int i = 0; i < this.edges.size(); i++)
+            items.add(RouteSearch.Item.of(this, i));
+    }
+
+    public List<Edge> edges() {
+        return edges;
+    }
+
+    public List<Station> stations() {
+        return stations;
+    }
+
+    /** The indexes of the stations a train running along {@code edge} can stop at, by their offset on it. */
+    List<Integer> stationsOn(int edge) {
+        return stationsOn.get(edge);
+    }
+
+    List<RouteSearch.Item> items(int edge) {
+        return items.get(edge);
+    }
+
+    /** The number a train standing at {@code station} has for it: its platform's, or one of its own that no platform has. */
+    int platformOf(int station) {
+        int platform = stations.get(station).platform();
+        return platform >= 0 ? platform : -1 - station;
     }
 
     /** The names of the stations, each once, in the order they first come in the list of stations. */
@@ -152,112 +224,60 @@ public final class RailNetwork {
     /**
      * The legs of {@link #legs()} from and to stations of the given names only, for which only those
      * stations are searched from: much less work on a large network when a few stations are wanted.
+     *
+     * <p>From each station, the way to a station of another name is the one a train standing there
+     * would be sent on ({@link RouteSearch}), weighing only what the track says: the stations passed,
+     * with no train at any. Where stations share the name of the start, the shortest of their ways is
+     * the leg.
      */
     public List<Leg> legs(Collection<String> among) {
         Set<String> wanted = Set.copyOf(among);
         Map<List<String>, Leg> best = new LinkedHashMap<>();
-        for (int source = 0; source < stations.size(); source++)
-            if (wanted.contains(stations.get(source).name()))
-                searchFrom(source, best);
-        best.values().removeIf(leg -> !wanted.contains(leg.to()));
+        for (int i = 0; i < stations.size(); i++) {
+            int source = i;
+            Station start = stations.get(source);
+            if (!wanted.contains(start.name()))
+                continue;
+            int own = platformOf(source);
+            RouteSearch.Weights weights = new RouteSearch.Weights() {
+                @Override
+                public RouteSearch.Presence presence(int platform) {
+                    return platform == own ? RouteSearch.Presence.OWN : RouteSearch.Presence.NONE;
+                }
+            };
+            Map<String, RouteSearch.Route> routes = RouteSearch.toEveryName(this, new RouteSearch.Start(start.edge(), start.offset()),
+                station -> station != source && wanted.contains(stations.get(station).name())
+                    && !stations.get(station).name().equals(start.name()),
+                weights);
+            for (RouteSearch.Route route : routes.values()) {
+                List<String> key = List.of(start.name(), stations.get(route.station()).name());
+                Leg known = best.get(key);
+                if (known == null || route.distance() < known.distance())
+                    best.put(key, leg(source, route));
+            }
+        }
         List<String> names = names();
         List<Leg> legs = new ArrayList<>(best.values());
         legs.sort(Comparator.<Leg>comparingInt(leg -> names.indexOf(leg.from())).thenComparingInt(leg -> names.indexOf(leg.to())));
         return legs;
     }
 
-    /** One way of running along the edges so far: where it is, and the way it came. */
-    private record Path(int edge, double endDistance, @Nullable Path parent) implements Comparable<Path> {
-        @Override
-        public int compareTo(Path other) {
-            return Double.compare(endDistance, other.endDistance);
-        }
-    }
-
-    private void searchFrom(int source, Map<List<String>, Leg> best) {
+    /** The leg of {@code route}, from station {@code source}: its curves, the stations it passes and the signs it meets. */
+    private Leg leg(int source, RouteSearch.Route route) {
         Station start = stations.get(source);
-        Edge first = edges.get(start.edge());
-        // The root stands for the rest of the first edge; its end is first.length - start.offset away.
-        Path root = new Path(start.edge(), first.length() - start.offset(), null);
-        boolean[] done = new boolean[edges.size()];
-        // Create's search counts the edge a train starts on as visited from the start. Coming round to
-        // it again, it looks only at what lies ahead of where the train stood, which it has looked at
-        // already, so a station behind the train on its own edge is not reached by going round.
-        done[start.edge()] = true;
-        PriorityQueue<Path> frontier = new PriorityQueue<>();
-
-        if (!considerStationsOn(root, source, best))
-            return;
-        for (int next : first.next())
-            if (!done[next])
-                frontier.add(new Path(next, root.endDistance() + edges.get(next).length(), root));
-
-        while (!frontier.isEmpty()) {
-            Path path = frontier.poll();
-            if (done[path.edge()])
-                continue;
-            done[path.edge()] = true;
-            if (!considerStationsOn(path, source, best))
-                continue;
-            for (int next : edges.get(path.edge()).next())
-                if (!done[next])
-                    frontier.add(new Path(next, path.endDistance() + edges.get(next).length(), path));
-        }
-    }
-
-    /**
-     * Every station on the last edge of the path that a train running the path stops at, as a
-     * candidate, and whether the way goes on past the edge.
-     *
-     * <p>Create's search goes along the points of an edge in order, from where the train comes onto it
-     * (or, on the first edge, from where it stands), and gives up at the first one that does not let
-     * the train through: the stations before that barrier can be reached, and nothing after it on the
-     * edge or beyond it (Navigation.search). This holds on every edge, not only the first.
-     *
-     * @return false if a barrier on the edge ends the way there
-     */
-    private boolean considerStationsOn(Path path, int source, Map<List<String>, Leg> best) {
-        Station start = stations.get(source);
-        boolean onFirstEdge = path.parent() == null;
-        double from = onFirstEdge ? start.offset() : 0;
-        double blockedAt = Double.POSITIVE_INFINITY;
-        for (double barrier : edges.get(path.edge()).barriers())
-            if (barrier >= from) {
-                blockedAt = barrier;
-                break;
-            }
-        for (int target : stationsOn.get(path.edge())) {
-            Station station = stations.get(target);
-            // On the first edge only what lies ahead of the marker counts.
-            boolean beforeStart = onFirstEdge && station.offset() <= start.offset() + EPSILON;
-            if (target == source || beforeStart || station.offset() >= blockedAt || station.name().equals(start.name()))
-                continue;
-            double distance = path.endDistance() - edges.get(path.edge()).length() + station.offset();
-            List<String> key = List.of(start.name(), station.name());
-            Leg known = best.get(key);
-            if (known != null && known.distance() <= distance)
-                continue;
-            best.put(key, leg(source, target, path, distance));
-        }
-        return blockedAt == Double.POSITIVE_INFINITY;
-    }
-
-    private Leg leg(int source, int target, Path last, double distance) {
-        Station start = stations.get(source);
-        Station end = stations.get(target);
-
-        List<Path> chain = new ArrayList<>();
-        for (Path p = last; p != null; p = p.parent())
-            chain.add(0, p);
+        Station end = stations.get(route.station());
+        double distance = route.distance();
+        List<Integer> chain = route.edges();
 
         List<Leg.Curve> curves = new ArrayList<>();
         Set<String> via = new LinkedHashSet<>();
         List<SpeedSign> signs = new ArrayList<>();
         double position = 0;
-        for (Path step : chain) {
-            Edge edge = edges.get(step.edge());
-            boolean first = step.parent() == null;
-            boolean lastStep = step == last;
+        for (int step = 0; step < chain.size(); step++) {
+            int edgeIndex = chain.get(step);
+            Edge edge = edges.get(edgeIndex);
+            boolean first = step == 0;
+            boolean lastStep = step == chain.size() - 1;
             double from = first ? start.offset() : 0;
             double to = lastStep ? end.offset() : edge.length();
             // A sign at the start marker is behind the train; one at the end marker is passed on arrival.
@@ -275,7 +295,7 @@ public final class RailNetwork {
             }
             position += to - from;
 
-            for (int passed : stationsOn.get(step.edge())) {
+            for (int passed : stationsOn.get(edgeIndex)) {
                 Station station = stations.get(passed);
                 boolean after = !first || station.offset() > start.offset() + EPSILON;
                 boolean before = !lastStep || station.offset() < end.offset() - EPSILON;
@@ -284,7 +304,7 @@ public final class RailNetwork {
                     via.add(station.name());
             }
         }
-        signs.addAll(signsPastTheEnd(last.edge(), end.offset(), distance));
+        signs.addAll(signsPastTheEnd(chain.getLast(), end.offset(), distance));
         return new Leg(start.name(), end.name(), distance, curves, new ArrayList<>(via), signs);
     }
 
