@@ -85,6 +85,52 @@ test('a train is marked never to be cancelled, and keeps the mark through other 
   assert.equal('keep' in unmarked.trains[0], false, 'a train that may be cancelled has no keep');
 });
 
+/** The timetable with train 1 a local that runs on from Y as a rapid, and train 2 a special; only the local has a colour. */
+function typed() {
+  const before = edit.setTrain(edit.setTrain(timetable(), '1', { type: 'local' }), '2', { type: 'special' });
+  const three = edit.addTrain(before, { number: '3', line: 'a', type: 'local', deadhead: false, stops: [
+    { station: 'X', arrive: NONE, depart: t('09:00') }, { station: 'Y', arrive: t('09:05'), depart: t('09:06'), type: 'rapid' },
+    { station: 'X', arrive: t('09:10'), depart: NONE }] });
+  return edit.setTypes(three, [{ name: 'local', color: '#3a9d5d' }], {});
+}
+
+test('the types shown are those given a colour, then those the trains have, with the colour picked from the name', () => {
+  assert.deepEqual(edit.typeList(timetable()), []);
+  assert.deepEqual(edit.typeList(typed()), [
+    { name: 'local', color: '#3a9d5d', listed: true },
+    { name: 'special', color: '#b59a1c', listed: false },
+    { name: 'rapid', color: '#2f9e9e', listed: false }]);
+  assert.equal(edit.trainsOfType(typed(), ['local']), 2);
+  assert.equal(edit.trainsOfType(typed(), ['rapid']), 1, 'a train that changes to the type at a stop has it');
+});
+
+test('a stop\'s type and the types survive every change, and the last stop loses its change of type', () => {
+  const before = typed();
+  assert.deepEqual(edit.copy(before).types, [{ name: 'local', color: '#3a9d5d' }]);
+  assert.equal(edit.copy(before).trains[2].stops[1].type, 'rapid');
+  assert.equal(edit.shiftTrain(before, '3', 60).trains[2].stops[1].type, 'rapid');
+  assert.equal(edit.setStopType(before, '3', 1, '').trains[2].stops[1].type, undefined, 'no type is no change of type');
+  assert.equal(edit.setStopType(before, '3', 0, 'rapid').trains[2].stops[0].type, 'rapid');
+  const cut = edit.removeStop(before, '3', 2);
+  assert.equal(cut.trains[2].stops.length, 2);
+  assert.equal('type' in cut.trains[2].stops[1], false, 'the new last stop, which the train does not leave, changes no type');
+  assert.deepEqual(problems.problems(cut).filter(problem => problem.includes('type')), []);
+});
+
+test('the trains and stops follow a type renamed, and lose one taken out', () => {
+  const renamed = edit.setTypes(typed(), [{ name: 'semi', color: '#d9822b' }, { name: 'fast', color: '#c94c4c' }],
+    { local: 'semi', rapid: 'fast' });
+  assert.deepEqual(renamed.types, [{ name: 'semi', color: '#d9822b' }, { name: 'fast', color: '#c94c4c' }]);
+  assert.deepEqual(renamed.trains.map(train => train.type), ['semi', 'special', 'semi']);
+  assert.equal(renamed.trains[2].stops[1].type, 'fast');
+  const swapped = edit.setTypes(typed(), [], { local: 'rapid', rapid: 'local' });
+  assert.deepEqual(swapped.trains.map(train => [train.type, train.stops[1].type]), [['rapid', undefined], ['special', undefined], ['rapid', 'local']]);
+  const removed = edit.setTypes(typed(), [], { local: '', rapid: '' });
+  assert.deepEqual(removed.types, []);
+  assert.deepEqual(removed.trains.map(train => train.type), ['', 'special', '']);
+  assert.equal('type' in removed.trains[2].stops[1], false, 'a stop changes to no type that is taken out');
+});
+
 test('a stop moves with its dwell kept, and a train moves as a whole', () => {
   const three = edit.addTrain(timetable(), { number: '3', line: 'a', type: '', deadhead: false, stops: [
     { station: 'X', arrive: NONE, depart: t('09:00') }, { station: 'Y', arrive: t('09:05'), depart: t('09:06') }, { station: 'X', arrive: t('09:10'), depart: NONE }] });

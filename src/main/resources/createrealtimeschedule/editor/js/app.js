@@ -17,9 +17,6 @@
   /** How far apart, in pixels, the two points of a stop are drawn at the least, so that both can be taken. */
   const STRETCH_GAP = 10;
 
-  /** Colours of the types of train, as the game's diagram picks them, for a light and a dark page alike. */
-  const TYPE_COLOURS = ['#3b7dd8', '#3a9d5d', '#d9822b', '#c94c4c', '#2f9e9e', '#b59a1c', '#a65fb0'];
-
   const state = {
     timetable: rt.timetable.empty(),
     networkText: null,
@@ -72,13 +69,10 @@
     return element;
   }
 
+  /** The colour a type is drawn in, as the game's diagram draws it: the timetable's for it, or the one picked from its name. */
   function typeColour(type) {
-    if (type === '')
-      return 'var(--train)';
-    let hash = 0;
-    for (let i = 0; i < type.length; i++)
-      hash = (hash * 31 + type.charCodeAt(i)) | 0;
-    return TYPE_COLOURS[((hash % TYPE_COLOURS.length) + TYPE_COLOURS.length) % TYPE_COLOURS.length];
+    const colour = rt.timetable.colour(state.timetable, type);
+    return colour === null ? 'var(--train)' : colour;
   }
 
   /** A label of the time scale. */
@@ -244,6 +238,7 @@
 
   function render() {
     renderBar();
+    renderTypeNames();
     renderLines();
     renderTrains();
     renderDuties();
@@ -294,6 +289,11 @@
       }, line.name || line.id, ' ', h('span', { class: 'sub' }, (line.loop ? '↻ ' : '') + line.stations.length)));
   }
 
+  /** The names the boxes for a type offer: the types of the list. */
+  function renderTypeNames() {
+    $('type-names').replaceChildren(...rt.edit.typeList(state.timetable).map(type => h('option', { value: type.name })));
+  }
+
   function firstDeparture(train) {
     return train.stops.length > 0 ? train.stops[0].depart : Infinity;
   }
@@ -340,6 +340,8 @@
   function problemTarget(problem) {
     if (/^stations?[ []/.test(problem))
       return { kind: 'station' };
+    if (/^types?[ []/.test(problem))
+      return { kind: 'types' };
     const match = /^(line|train|duty) "((?:[^"\\]|\\.)*)"/.exec(problem);
     if (match === null)
       return null;
@@ -367,6 +369,8 @@
             return;
           if (target.kind === 'station') {
             stationTimesDialog();
+          } else if (target.kind === 'types') {
+            typesDialog();
           } else if (target.kind === 'line') {
             state.lineId = target.id;
             render();
@@ -529,11 +533,21 @@
     for (const planned of rt.layout.plannedTrains(shownTimetable(), axisOfLine)) {
       const d = pathOf(planned.segments, length);
       const isSelected = selected !== null && selected.number === planned.number;
-      const colour = planned.deadhead ? 'var(--deadhead)' : typeColour(planned.type);
+      const colourOf = type => (planned.deadhead ? 'var(--deadhead)' : typeColour(type));
+      const colour = colourOf(planned.type);
       const marks = (planned.deadhead ? ' deadhead' : '') + (isSelected ? ' selected' : '')
         + (duty === null ? '' : inDuty.has(planned.number) ? ' in-duty' : ' dim');
       const group = s('g', { class: 'train' + marks, 'data-number': planned.number });
-      group.append(s('path', { class: 'shown', d, stroke: colour }));
+      // A line for each colour: a train that changes its type at a stop changes its colour there.
+      const byColour = new Map();
+      planned.segments.forEach((segment, i) => {
+        const each = colourOf(planned.types[i]);
+        if (!byColour.has(each))
+          byColour.set(each, []);
+        byColour.get(each).push(segment);
+      });
+      for (const [each, segments] of byColour)
+        group.append(s('path', { class: 'shown', d: segments.length === planned.segments.length ? d : pathOf(segments, length), stroke: each }));
       // Each part of the line takes hold of its own: a press on it chooses the train, and dragging it
       // on moves the way between two stops alone, or the whole train from where it stands; a press
       // that does not move is only the choosing.
@@ -565,7 +579,8 @@
       }
       plot.append(group);
       if (isSelected && drawing === null) {
-        const stops = shownTimetable().trains.find(each => each.number === planned.number).stops;
+        const train = shownTimetable().trains.find(each => each.number === planned.number);
+        const stops = train.stops;
         for (const point of planned.points) {
           // Of a stop both arrived at and left, by the timetable, the point it comes in at moves the
           // arrival alone and the one it leaves at stretches the stop: either way it stands longer or
@@ -582,7 +597,8 @@
               // it is left at goes beside the other, so that either can be taken.
               if (part === 'stretch' && x - view.x(point.arriveSecond) < STRETCH_GAP)
                 x = view.x(point.arriveSecond) + STRETCH_GAP;
-              const handle = s('circle', { class: both ? 'point stretch' : 'point', cx: x, cy: view.y(position, length), r: 5, fill: colour });
+              const handle = s('circle', { class: both ? 'point stretch' : 'point', cx: x, cy: view.y(position, length), r: 5,
+                fill: colourOf(rt.timetable.typeAt(train, point.stop)) });
               handle.addEventListener('pointerdown', event => {
                 if (event.button === 0)
                   startDrag(planned.number, point.stop, event, part);
@@ -921,7 +937,7 @@
     panel.append(h('h2', null, t('drawing')));
     panel.append(h('p', { class: 'note' }, t('drawHelp')));
     panel.append(field(t('type'), h('input', {
-      type: 'text', value: drawing.type, spellcheck: 'false',
+      type: 'text', value: drawing.type, spellcheck: 'false', list: 'type-names',
       onchange: event => {
         drawing.type = event.target.value.trim();
         renderPreview();
@@ -1011,7 +1027,10 @@
     });
   }
 
-  /** The row under a stop's times: how long it stands there, and the least it stands when late. */
+  /**
+   * The row under a stop's times: how long it stands there, the least it stands when late, the type
+   * the train has from there on, and the trains it waits for.
+   */
   function stopTimesRow(train, i) {
     const stop = train.stops[i];
     const number = train.number;
@@ -1037,6 +1056,10 @@
       secondsInput(own, station.minimumStop !== NONE ? String(station.minimumStop) : t('serverDefault'), rt.problems.MAX_STOP_SECONDS,
         t('badSeconds'), seconds => change(rt.edit.setStopMinimum(state.timetable, number, i, seconds))),
       ' ', t('seconds')));
+    cells.push(h('label', null, t('typeFrom'), ' ', h('input', {
+      type: 'text', class: 'type-from', value: stop.type || '', placeholder: t('typeUnchanged'), spellcheck: 'false', list: 'type-names',
+      onchange: event => change(rt.edit.setStopType(state.timetable, number, i, event.target.value.trim())),
+    })));
     cells.push(waitsCell(train, i));
     return h('tr', { class: 'stop-times' }, h('td', { colspan: '4' }, cells));
   }
@@ -1116,7 +1139,7 @@
       },
     })));
     panel.append(field(t('type'), h('input', {
-      type: 'text', value: train.type, spellcheck: 'false',
+      type: 'text', value: train.type, spellcheck: 'false', list: 'type-names',
       onchange: event => change(rt.edit.setTrain(state.timetable, number, { type: event.target.value.trim() })),
     })));
     panel.append(field(t('deadhead'), h('span', null, h('input', {
@@ -1597,6 +1620,119 @@
     ]);
   }
 
+  /**
+   * The dialog of the types: each with its name and colour, picked from the samples or the palette or
+   * written out, in the order they are listed. Until it is changed here, the timetable gives no type a
+   * colour, and a type the trains have is drawn in the one picked from its name.
+   */
+  function typesDialog() {
+    const before = rt.edit.typeList(state.timetable);
+    const rows = before.map(type => ({ from: type.name, name: type.name, color: type.color, listed: type.listed }));
+    let table = null;
+    let error = null;
+
+    function colourCell(row) {
+      const picker = h('input', { type: 'color', value: row.color.toLowerCase(), title: t('typeColour') });
+      const written = h('input', { type: 'text', class: 'colour', value: row.color, spellcheck: 'false' });
+      const take = colour => {
+        row.color = colour;
+        row.listed = true;
+        picker.value = colour;
+        written.value = colour;
+        written.classList.remove('bad');
+      };
+      picker.addEventListener('input', () => take(picker.value));
+      written.addEventListener('input', () => {
+        const colour = written.value.trim();
+        if (/^#[0-9a-fA-F]{6}$/.test(colour)) {
+          row.color = colour.toLowerCase();
+          row.listed = true;
+          picker.value = row.color;
+        } else {
+          row.color = colour;
+        }
+      });
+      const samples = h('span', { class: 'samples' }, rt.timetable.TYPE_COLOURS.map(colour =>
+        h('button', { type: 'button', class: 'sample', title: colour, style: 'background: ' + colour, onclick: () => take(colour) })));
+      return h('td', { class: 'colours' }, samples, picker, written);
+    }
+
+    function fill() {
+      table.replaceChildren();
+      if (rows.length === 0) {
+        table.append(h('tr', null, h('td', { class: 'note' }, t('noTypesYet'))));
+        return;
+      }
+      table.append(h('tr', null, h('th', null, t('typeName')), h('th', null, t('typeColour')), h('th')));
+      rows.forEach((row, i) => {
+        const name = h('input', { type: 'text', value: row.name, spellcheck: 'false', oninput: event => { row.name = event.target.value; } });
+        table.append(h('tr', { title: row.listed ? null : t('notListed') },
+          h('td', null, name),
+          colourCell(row),
+          h('td', { class: 'order' },
+            h('button', { type: 'button', title: t('up'), disabled: i === 0, onclick: () => { [rows[i - 1], rows[i]] = [rows[i], rows[i - 1]]; fill(); } }, '↑'),
+            h('button', { type: 'button', title: t('down'), disabled: i === rows.length - 1, onclick: () => { [rows[i + 1], rows[i]] = [rows[i], rows[i + 1]]; fill(); } }, '↓'),
+            h('button', { type: 'button', title: t('remove'), onclick: () => { rows.splice(i, 1); fill(); } }, '×'))));
+      });
+    }
+
+    dialog(t('types'), body => {
+      body.append(h('p', { class: 'help' }, t('typesHelp')));
+      table = h('table', { class: 'types' });
+      body.append(h('div', { class: 'scroll' }, table));
+      body.append(h('div', { class: 'buttons' }, h('button', {
+        type: 'button',
+        onclick: () => {
+          const colours = rt.timetable.TYPE_COLOURS;
+          rows.push({ from: null, name: '', color: colours[rows.length % colours.length], listed: true });
+          fill();
+        },
+      }, t('addType'))));
+      error = h('p', { class: 'error' });
+      body.append(error);
+      fill();
+    }, [
+      {
+        label: t('ok'),
+        primary: true,
+        action: () => {
+          const list = rows.map(row => ({ name: row.name.trim(), color: row.color.trim() }));
+          if (list.some(type => type.name === '')) {
+            error.textContent = t('typeNameEmpty');
+            return false;
+          }
+          if (new Set(list.map(type => type.name)).size !== list.length) {
+            error.textContent = t('typeNameTaken');
+            return false;
+          }
+          if (list.some(type => !/^#[0-9a-fA-F]{6}$/.test(type.color))) {
+            error.textContent = t('badColour');
+            return false;
+          }
+          const unchanged = list.length === before.length && rows.every((row, i) => row.from === before[i].name
+            && list[i].name === before[i].name && list[i].color === before[i].color && row.listed === before[i].listed);
+          if (unchanged)
+            return true;
+          const renames = {};
+          rows.forEach((row, i) => {
+            if (row.from !== null && row.from !== list[i].name)
+              renames[row.from] = list[i].name;
+          });
+          const kept = new Set(rows.map(row => row.from));
+          const removed = before.map(type => type.name).filter(name => !kept.has(name));
+          for (const name of removed)
+            renames[name] = '';
+          const used = removed.filter(name => rt.edit.trainsOfType(state.timetable, [name]) > 0);
+          if (used.length > 0 && !confirm(t('confirmRemoveTypes', used.join(', '), rt.edit.trainsOfType(state.timetable, used))))
+            return false;
+          change(rt.edit.setTypes(state.timetable, list, renames));
+          return true;
+        },
+      },
+      { label: t('cancel') },
+    ]);
+  }
+
   // ------------------------------------------------------------------ starting
 
   function bind() {
@@ -1615,6 +1751,7 @@
     $('redo').addEventListener('click', redo);
     $('add-line').addEventListener('click', () => lineDialog(null));
     $('station-times').addEventListener('click', stationTimesDialog);
+    $('train-types').addEventListener('click', typesDialog);
     $('draw-train').addEventListener('click', () => (drawing === null ? startDrawing() : cancelDrawing()));
     $('add-duty').addEventListener('click', () => {
       const id = rt.duties.nextDutyId(state.timetable);

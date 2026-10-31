@@ -4,19 +4,24 @@
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports)
-    module.exports = factory(require('./problems.js'));
+    module.exports = factory(require('./problems.js'), require('./timetable.js'));
   else
-    (root.rt = root.rt || {}).edit = factory(root.rt.problems);
-})(typeof globalThis !== 'undefined' ? globalThis : this, function (check) {
+    (root.rt = root.rt || {}).edit = factory(root.rt.problems, root.rt.timetable);
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (check, timetables) {
   'use strict';
 
   const NONE = check.NONE;
 
-  /** A stop as it is, with a minimumStop only if it has one of its own, and waits only if it waits for a train. */
+  /**
+   * A stop as it is, with a minimumStop only if it has one of its own, a type only if it changes the
+   * train's, and waits only if it waits for a train.
+   */
   function copyStop(stop) {
     const made = { station: stop.station, arrive: stop.arrive, depart: stop.depart };
     if (stop.minimumStop !== undefined && stop.minimumStop !== NONE)
       made.minimumStop = stop.minimumStop;
+    if (stop.type !== undefined && stop.type !== '')
+      made.type = stop.type;
     if (stop.waits !== undefined && stop.waits.length > 0)
       made.waits = stop.waits.map(wait => ({ train: wait.train, at: wait.at, maxWait: wait.maxWait }));
     return made;
@@ -36,12 +41,13 @@
     return made;
   }
 
-  /** A copy to change; a timetable from before version 3 gets its (empty) stations. */
+  /** A copy to change; a timetable from before version 3 gets its (empty) stations, and one from before version 6 its types. */
   function copy(timetable) {
     return {
       name: timetable.name,
       lines: timetable.lines.map(line => ({ id: line.id, name: line.name, stations: line.stations.slice(), loop: line.loop })),
       stations: (timetable.stations || []).map(station => ({ name: station.name, dwell: station.dwell, minimumStop: station.minimumStop })),
+      types: (timetable.types || []).map(type => ({ name: type.name, color: type.color })),
       trains: timetable.trains.map(copyTrain),
       duties: timetable.duties.map(duty => ({ id: duty.id, depot: duty.depot, trains: duty.trains.slice() })),
     };
@@ -120,6 +126,51 @@
     next.stations = list.filter(station => station.dwell !== NONE || station.minimumStop !== NONE)
       .map(station => ({ name: station.name, dwell: station.dwell, minimumStop: station.minimumStop }));
     return next;
+  }
+
+  // ------------------------------------------------------------------ the types
+
+  /**
+   * The types to show: those given a colour, in their order, and after them those the trains and their
+   * stops have that are not, in the order they first come, with the colour picked from the name.
+   * Each is {name, color, listed}, listed false for one of the latter.
+   */
+  function typeList(timetable) {
+    const list = (timetable.types || []).map(type => ({ name: type.name, color: type.color, listed: true }));
+    const seen = new Set(list.map(type => type.name));
+    for (const train of timetable.trains)
+      for (const name of [train.type].concat(train.stops.map(stop => stop.type || '')))
+        if (name !== '' && !seen.has(name)) {
+          seen.add(name);
+          list.push({ name, color: timetables.colourByName(name), listed: false });
+        }
+    return list;
+  }
+
+  /**
+   * Gives the types the colours of list ({name, color}), in its order. The trains and stops follow
+   * renames, from the old name to the new one, or to '' for a type taken out, which they then lose:
+   * a train has no type of its own, and a stop does not change it.
+   */
+  function setTypes(timetable, list, renames) {
+    const next = copy(timetable);
+    next.types = list.map(type => ({ name: type.name, color: type.color }));
+    const renamed = name => (name !== '' && Object.prototype.hasOwnProperty.call(renames, name) ? renames[name] : name);
+    for (const train of next.trains) {
+      train.type = renamed(train.type);
+      for (const stop of train.stops)
+        if (stop.type !== undefined) {
+          stop.type = renamed(stop.type);
+          if (stop.type === '')
+            delete stop.type;
+        }
+    }
+    return next;
+  }
+
+  /** How many trains have any of types, of their own or from a stop on. */
+  function trainsOfType(timetable, types) {
+    return timetable.trains.filter(train => types.includes(train.type) || train.stops.some(stop => types.includes(stop.type))).length;
   }
 
   // ------------------------------------------------------------------ trains
@@ -457,6 +508,17 @@
     return next;
   }
 
+  /** Sets the type a train has from one of its stops on; '' leaves it as it is there. */
+  function setStopType(timetable, number, index, type) {
+    const next = copy(timetable);
+    const stop = trainAt(next, number).stops[index];
+    if (type === '')
+      delete stop.type;
+    else
+      stop.type = type;
+    return next;
+  }
+
   /**
    * Sets the trains a train waits for at a stop: {train, at, maxWait} each, at '' for the stop's own
    * station and maxWait NONE for the server's; none takes the waits away.
@@ -477,7 +539,10 @@
     return next;
   }
 
-  /** Takes a stop out of a train; the stops at the ends lose the time an end does not have, and the last its minimum stop. */
+  /**
+   * Takes a stop out of a train; the stops at the ends lose the time an end does not have, and the
+   * last what a stop the train does not leave cannot have: a minimum stop, a type and waits.
+   */
   function removeStop(timetable, number, index) {
     const next = copy(timetable);
     const stops = trainAt(next, number).stops;
@@ -486,6 +551,7 @@
       stops[0].arrive = NONE;
       stops[stops.length - 1].depart = NONE;
       delete stops[stops.length - 1].minimumStop;
+      delete stops[stops.length - 1].type;
       delete stops[stops.length - 1].waits;
     }
     return next;
@@ -575,8 +641,8 @@
   }
 
   return {
-    NONE, copy, setName, putLine, removeLine, stationTimes, dwellAt, setStations,
-    nextNumber, addTrain, removeTrain, setTrain, stopLimits, moveStop, moveRun, moveArrival, stretchStop, draggedTime, drag, sameStops, shiftTrain, setStopTime, setDwell, setStopMinimum, setStopWaits, setStopStation,
+    NONE, copy, setName, putLine, removeLine, stationTimes, dwellAt, setStations, typeList, setTypes, trainsOfType,
+    nextNumber, addTrain, removeTrain, setTrain, stopLimits, moveStop, moveRun, moveArrival, stretchStop, draggedTime, drag, sameStops, shiftTrain, setStopTime, setDwell, setStopMinimum, setStopType, setStopWaits, setStopStation,
     removeStop, tooFast,
     snap, snapUp, snapDown, drawStop, drawClick, setDrawnDwell, finishDrawing,
   };

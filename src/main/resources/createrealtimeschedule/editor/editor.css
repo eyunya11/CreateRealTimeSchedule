@@ -457,6 +457,10 @@ footer h2 {
   width: 52px;
 }
 
+#inspector tr.stop-times input.type-from {
+  width: 80px;
+}
+
 #inspector tr.stop-times .waits {
   display: flex;
   flex-wrap: wrap;
@@ -590,4 +594,61 @@ dialog table.station-times td {
 dialog table.station-times th {
   color: var(--muted);
   font-size: 12px;
+}
+
+/* The types and their colours: the samples, the palette and the colour written out. */
+dialog table.types {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+dialog table.types th,
+dialog table.types td {
+  padding: 3px 6px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  font-weight: normal;
+}
+
+dialog table.types th {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+dialog table.types td.colours {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+dialog table.types .samples {
+  display: inline-flex;
+  gap: 3px;
+}
+
+dialog table.types button.sample {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+}
+
+dialog table.types input[type="color"] {
+  width: 32px;
+  height: 22px;
+  padding: 0 2px;
+}
+
+dialog table.types input.colour {
+  width: 72px;
+  font-family: ui-monospace, monospace;
+}
+
+dialog table.types td.order {
+  white-space: nowrap;
+}
+
+dialog table.types td.order button {
+  padding: 0 6px;
 }
