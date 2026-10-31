@@ -93,11 +93,18 @@ public final class TrackTagService {
                 yield new Outcome(Component.translatableWithFallback(KEY + "deleted", "Deleted the tag %1$s", before), true);
             }
         };
-        if (outcome.listChanged()) {
-            data.setDirty();
-            PacketDistributor.sendToAllPlayers(list(player.server));
-        }
+        if (outcome.listChanged())
+            listChanged(player.server);
         open(player, pos, outcome.message());
+    }
+
+    /**
+     * Saves the world's list after a change to it and sends it to every player, whose screens and the
+     * names over the blocks show it.
+     */
+    public static void listChanged(MinecraftServer server) {
+        TrackTagData.get(server).setDirty();
+        PacketDistributor.sendToAllPlayers(list(server));
     }
 
     /** What a change did: what to tell the player, and whether the list is not as it was. */

@@ -40,6 +40,7 @@ import io.github.eyunya11.createrealtimeschedule.clock.RealClock;
 import io.github.eyunya11.createrealtimeschedule.schedule.TrainSlotMemory;
 import io.github.eyunya11.createrealtimeschedule.tag.TrackTagBlockEntity;
 import io.github.eyunya11.createrealtimeschedule.tag.TrackTagData;
+import io.github.eyunya11.createrealtimeschedule.tag.TrackTagService;
 import io.github.eyunya11.createrealtimeschedule.tag.TrackTags;
 import net.createmod.catnip.data.Couple;
 import net.createmod.catnip.platform.CatnipServices;
@@ -455,6 +456,7 @@ final class TrackLine {
         if (created.refusal() != null)
             helper.fail("could not make the tag " + name + ": " + created.refusal());
         tagsMade.add(created.id());
+        TrackTagService.listChanged(server);
         return created.id();
     }
 
@@ -800,7 +802,7 @@ final class TrackLine {
                 TrackTagData tagData = TrackTagData.get(server);
                 for (int id : tagsMade)
                     tagData.tags().delete(id, false);
-                tagData.setDirty();
+                TrackTagService.listChanged(server);
             }
             List<Integer> assembledAt = new ArrayList<>(parkedAt);
             assembledAt.add(0);
