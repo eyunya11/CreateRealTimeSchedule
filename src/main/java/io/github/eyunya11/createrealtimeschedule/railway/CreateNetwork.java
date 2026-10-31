@@ -99,12 +99,12 @@ public final class CreateNetwork {
     /** A signal, and the node a train running past it is heading for: the side of it that train meets. */
     public record SignalSide(SignalBoundary signal, TrackNode toward) {}
 
-    /** {@code graph} read, with the way back from the network to it. */
-    public static Mapped readMapped(TrackGraph graph) {
+    /** {@code graph} read, with the way back from the network to it; {@code fingerprint} is its {@link #fingerprint} now. */
+    public static Mapped readMapped(TrackGraph graph, long fingerprint) {
         Reading reading = new Reading();
         addGraph(graph, reading);
         return new Mapped(reading.network(), List.copyOf(reading.graphEdges), reading.index, List.copyOf(reading.platforms),
-            List.copyOf(reading.signals), fingerprint(List.of(graph)));
+            List.copyOf(reading.signals), fingerprint);
     }
 
     /** What has been read so far. */
@@ -117,7 +117,7 @@ public final class CreateNetwork {
         final List<GlobalStation> platforms = new ArrayList<>();
         final List<SignalSide> signals = new ArrayList<>();
         final Unreadable unreadable = new Unreadable();
-        int nodes;
+        final List<RailNetwork.Place> places = new ArrayList<>();
 
         RailNetwork network() {
             if (unreadable.count > 0)
@@ -126,7 +126,7 @@ public final class CreateNetwork {
             // The graphs are held in a hash map; sorted by name, the export comes out the same every time.
             List<Station> sorted = new ArrayList<>(stations);
             sorted.sort(Comparator.comparing(Station::name).thenComparingInt(Station::edge).thenComparingDouble(Station::offset));
-            return new RailNetwork(edges, sorted);
+            return new RailNetwork(edges, sorted, places);
         }
 
         int platform(GlobalStation station) {
@@ -139,7 +139,9 @@ public final class CreateNetwork {
 
     /**
      * A number that changes when the track changes in a way {@link #read} sees: a node, an edge or a
-     * point on one (a station and its name, a signal, a sign and its limit) put in, taken out or moved.
+     * point on one (a station and its name, a signal, a sign and its limit) put in, taken out or moved;
+     * an edge laid again or of another kind of track; or a point that lets trains through one way
+     * where it did not (a station being assembled, a signal given another side).
      * The same track gives the same number whatever order the game holds it in, and working it out
      * reads much less than {@link #read} does, so that it can be taken often to see whether the track
      * has changed. It is for comparing while the server runs, not for keeping: it is made of hash codes.
@@ -158,13 +160,17 @@ public final class CreateNetwork {
                     long hash = 31L * location.hashCode() + connection.getKey().getLocation().hashCode();
                     hash = 31 * hash + Double.hashCode(edge.getLength());
                     hash = 31 * hash + Boolean.hashCode(edge.isTurn());
+                    // A track laid again is a new edge of the same shape, which a reading holds the old one of.
+                    hash = 31 * hash + System.identityHashCode(edge);
+                    hash = 31 * hash + edge.getTrackMaterial().id.hashCode();
                     EdgeData data = edge.getEdgeData();
                     if (data.hasPoints())
                         for (TrackEdgePoint point : data.getPoints()) {
                             hash = 31 * hash + point.getId().hashCode();
                             hash = 31 * hash + Double.hashCode(point.getLocationOn(edge));
+                            hash = 31 * hash + Boolean.hashCode(point.canNavigateVia(edge.node2));
                             if (point instanceof GlobalStation station)
-                                hash = 31 * hash + Objects.hashCode(station.name);
+                                hash = 31 * hash + Objects.hashCode(station.name) + Boolean.hashCode(station.canApproachFrom(edge.node2));
                             else if (signType != null && point.getType() == signType)
                                 hash = 31 * hash + Objects.hashCode(sign(point, 0, unreadable));
                         }
@@ -203,8 +209,11 @@ public final class CreateNetwork {
         }
         nodes.sort(NODE_ORDER);
         Map<TrackNode, Integer> nodeNumber = new IdentityHashMap<>();
-        for (TrackNode node : nodes)
-            nodeNumber.put(node, reading.nodes++);
+        for (TrackNode node : nodes) {
+            nodeNumber.put(node, reading.places.size());
+            Vec3 at = position(node);
+            reading.places.add(new RailNetwork.Place(at.x, at.y, at.z));
+        }
 
         // The edges, numbered in the order of the nodes they start at and the nodes they lead to.
         List<Edge> edges = reading.edges;
@@ -234,9 +243,9 @@ public final class CreateNetwork {
                     unsteered = index.get(onward);
                 next.add(index.get(onward));
             }
-            next.sort(Integer::compare);
             edges.add(new Edge(edge.getLength(), edge.isTurn(), next, signs.getOrDefault(edge, List.of()), barriers(edge),
-                unsteered, points(edge, index.get(edge), reading), nodeNumber.getOrDefault(edge.node1, -1)));
+                unsteered, points(edge, index.get(edge), reading), nodeNumber.getOrDefault(edge.node1, -1),
+                nodeNumber.getOrDefault(edge.node2, -1)));
         }
     }
 

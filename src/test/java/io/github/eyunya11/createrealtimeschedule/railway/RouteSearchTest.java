@@ -146,6 +146,33 @@ class RouteSearchTest {
         assertEquals(50 + 400, red.cost(), DELTA);
     }
 
+    /**
+     * Platforms of one name on two ways from a junction: straight on, an edge 100 long ending 100
+     * blocks away with A 80 in; and round a long curve, an edge 105 long ending only 50 blocks from
+     * the junction, with A 100 in. Create's estimate of the way left, which takes off twice the length
+     * of the edge a station is on, puts the curve first.
+     */
+    private static RailNetwork twoPlatformsWhereTheNodesAre(boolean placed) {
+        List<Edge> edges = List.of(straight(10, 1, 2).withNodes(0, 1), straight(100).withNodes(1, 2), straight(105).withNodes(1, 3));
+        List<Station> stations = List.of(new Station("Depot", 0, 0, 0), new Station("A", 1, 80, 1), new Station("A", 2, 100, 2));
+        List<RailNetwork.Place> places = List.of(new RailNetwork.Place(0, 0, 0), new RailNetwork.Place(10, 0, 0),
+            new RailNetwork.Place(110, 0, 0), new RailNetwork.Place(10, 0, 50));
+        return new RailNetwork(edges, stations, placed ? places : List.of());
+    }
+
+    @Test
+    void ofTwoPlatformsTheOneCreatesEstimateOfTheWayLeftPutsFirstIsTaken() {
+        RailNetwork placed = twoPlatformsWhereTheNodesAre(true);
+        Route route = RouteSearch.first(placed, new Start(0, 0), named(placed, "A"), EMPTY);
+        assertNotNull(route);
+        assertEquals(2, route.station(), "Create orders the straight at 110 - 20 = 90 and the curve at 115 - 80 = 35");
+        // Not knowing where the nodes are, the search goes by the length to the ends of the edges: 110 before 115.
+        RailNetwork unplaced = twoPlatformsWhereTheNodesAre(false);
+        Route plain = RouteSearch.first(unplaced, new Start(0, 0), named(unplaced, "A"), EMPTY);
+        assertNotNull(plain);
+        assertEquals(1, plain.station());
+    }
+
     @Test
     void anEdgeTheTrainCannotRunOnOrAnotherTrainIsOnIsWeighedOrLeftOut() {
         RailNetwork network = twoPlatforms();

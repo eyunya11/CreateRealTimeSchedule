@@ -9,6 +9,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.jetbrains.annotations.Nullable;
+
 import io.github.eyunya11.createrealtimeschedule.travel.SpeedSign;
 import io.github.eyunya11.createrealtimeschedule.travel.SpeedSigns;
 
@@ -45,9 +47,10 @@ public final class RailNetwork {
      *                 and the signals that let the train through (kept sorted by position)
      * @param start    a number for the node the edge starts at, the same for every edge that starts
      *                 there, or -1 if it is not known
+     * @param end      a number for the node the edge ends at, or -1 if it is not known
      */
     public record Edge(double length, boolean curved, List<Integer> next, List<SpeedSign> signs, List<Double> barriers,
-        int onward, List<Point> points, int start) {
+        int onward, List<Point> points, int start, int end) {
         public Edge {
             next = List.copyOf(next);
             signs = signs.stream().sorted(Comparator.comparingDouble(SpeedSign::position)).toList();
@@ -57,7 +60,7 @@ public final class RailNetwork {
 
         /** An edge with no points that weigh a way, of a node that is not known. */
         public Edge(double length, boolean curved, List<Integer> next, List<SpeedSign> signs, List<Double> barriers, int onward) {
-            this(length, curved, next, signs, barriers, onward, List.of(), -1);
+            this(length, curved, next, signs, barriers, onward, List.of(), -1, -1);
         }
 
         /**
@@ -69,24 +72,29 @@ public final class RailNetwork {
         }
 
         public Edge withSigns(List<SpeedSign> signs) {
-            return new Edge(length, curved, next, signs, barriers, onward, points, start);
+            return new Edge(length, curved, next, signs, barriers, onward, points, start, end);
         }
 
         public Edge withBarriers(List<Double> barriers) {
-            return new Edge(length, curved, next, signs, barriers, onward, points, start);
+            return new Edge(length, curved, next, signs, barriers, onward, points, start, end);
         }
 
         public Edge withOnward(int onward) {
-            return new Edge(length, curved, next, signs, barriers, onward, points, start);
+            return new Edge(length, curved, next, signs, barriers, onward, points, start, end);
         }
 
         public Edge withPoints(List<Point> points) {
-            return new Edge(length, curved, next, signs, barriers, onward, points, start);
+            return new Edge(length, curved, next, signs, barriers, onward, points, start, end);
         }
 
-        public Edge withStart(int start) {
-            return new Edge(length, curved, next, signs, barriers, onward, points, start);
+        /** The edge between the nodes numbered {@code start} and {@code end}. */
+        public Edge withNodes(int start, int end) {
+            return new Edge(length, curved, next, signs, barriers, onward, points, start, end);
         }
+    }
+
+    /** Where a node is in the world, which Create's search uses to estimate the way left to a station. */
+    public record Place(double x, double y, double z) {
     }
 
     /**
@@ -121,7 +129,7 @@ public final class RailNetwork {
         }
     }
 
-    static final double EPSILON = 1e-9;
+    private static final double EPSILON = 1e-9;
 
     /**
      * How far past the end of a leg its signs are looked for. A train brakes for the signs ahead of it
@@ -135,6 +143,8 @@ public final class RailNetwork {
 
     private final List<Edge> edges;
     private final List<Station> stations;
+    /** Where each node is, by its number; empty if not known. */
+    private final List<Place> places;
     /** For every edge, the indexes of its stations by offset. */
     private final List<List<Integer>> stationsOn = new ArrayList<>();
     /** For every edge, the points on it that the search looks at, in order. */
@@ -145,8 +155,17 @@ public final class RailNetwork {
      *                                  or a sign is not on its edge
      */
     public RailNetwork(List<Edge> edges, List<Station> stations) {
+        this(edges, stations, List.of());
+    }
+
+    /**
+     * A network whose nodes are where {@code places} says, by their numbers ({@link Edge#start}), so
+     * that a search can estimate the way left as Create's does.
+     */
+    public RailNetwork(List<Edge> edges, List<Station> stations, List<Place> places) {
         this.edges = List.copyOf(edges);
         this.stations = List.copyOf(stations);
+        this.places = List.copyOf(places);
         for (int i = 0; i < this.edges.size(); i++) {
             Edge edge = this.edges.get(i);
             if (!(edge.length() >= 0))
@@ -187,6 +206,11 @@ public final class RailNetwork {
 
     public List<Station> stations() {
         return stations;
+    }
+
+    /** Where the node numbered {@code node} is, or null if that is not known. */
+    @Nullable Place place(int node) {
+        return node >= 0 && node < places.size() ? places.get(node) : null;
     }
 
     /** The indexes of the stations a train running along {@code edge} can stop at, by their offset on it. */

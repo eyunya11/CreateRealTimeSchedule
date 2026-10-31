@@ -9,7 +9,7 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.WeakHashMap;
+import java.util.UUID;
 
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
@@ -36,7 +36,8 @@ import io.github.eyunya11.createrealtimeschedule.railway.RouteSearch.Route;
 import io.github.eyunya11.createrealtimeschedule.railway.RouteSearch.SignalState;
 import io.github.eyunya11.createrealtimeschedule.railway.RouteSearch.Start;
 import net.createmod.catnip.data.Couple;
-import net.minecraft.util.Mth;
+import net.minecraft.server.MinecraftServer;
+import net.neoforged.neoforge.server.ServerLifecycleHooks;
 
 /**
  * Finds a train's way with {@link RouteSearch}, on its track graph as it is now, and gives it as the
@@ -44,14 +45,31 @@ import net.minecraft.util.Mth;
  * way Create's own {@code Navigation.findPathTo} finds, weighed with what the game is like at the time
  * (the trains on the track and at the stations, and the signals).
  *
- * <p>A graph is read once and used again until its fingerprint changes. This keeps to the server's
+ * <p>A graph is read once and used again until its fingerprint changes, which is taken at most once a
+ * second: a train with no way is sent again every tick. Should the track have changed within that
+ * second under the train or its way, the graph is read again at once. This keeps to the server's
  * thread, as the operation does.
  */
 public final class CreateRoutes {
 
     private static final Logger LOGGER = LogUtils.getLogger();
 
-    private static final Map<TrackGraph, Mapped> READ = new WeakHashMap<>();
+    /** How long a reading is used before the graph's fingerprint is taken again, in server ticks. */
+    private static final int CHECK_TICKS = 20;
+
+    /** A graph's reading, and the server tick its fingerprint was last taken at. */
+    private static final class Reading {
+        Mapped mapped;
+        int checkedAt;
+
+        Reading(Mapped mapped, int checkedAt) {
+            this.mapped = mapped;
+            this.checkedAt = checkedAt;
+        }
+    }
+
+    /** The readings, by the graph's id; those of graphs that are gone are let go of. */
+    private static final Map<UUID, Reading> READ = new HashMap<>();
 
     /**
      * {@code CarriageBogey.type}, which Create does not make public: the kind of bogey, which says what
@@ -84,15 +102,25 @@ public final class CreateRoutes {
         }
     }
 
-    /** {@code graph} as it is now: read again if it has changed since it was last read. */
-    static Mapped mapped(TrackGraph graph) {
+    /**
+     * {@code graph} as it is now: read again if its fingerprint has changed since it was read. The
+     * fingerprint is taken at most once a second, unless {@code check} says to take it now.
+     */
+    static Mapped mapped(TrackGraph graph, boolean check) {
+        MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
+        int tick = server == null ? 0 : server.getTickCount();
+        Reading reading = READ.get(graph.id);
+        if (reading != null && reading.mapped != null && !check && tick - reading.checkedAt < CHECK_TICKS && tick >= reading.checkedAt)
+            return reading.mapped;
         long print = CreateNetwork.fingerprint(List.of(graph));
-        Mapped mapped = READ.get(graph);
-        if (mapped == null || mapped.fingerprint() != print) {
-            mapped = CreateNetwork.readMapped(graph);
-            READ.put(graph, mapped);
+        if (reading == null || reading.mapped.fingerprint() != print) {
+            if (READ.size() >= Create.RAILWAYS.trackNetworks.size())
+                READ.keySet().retainAll(Create.RAILWAYS.trackNetworks.keySet());
+            reading = new Reading(CreateNetwork.readMapped(graph, print), tick);
+            READ.put(graph.id, reading);
         }
-        return mapped;
+        reading.checkedAt = tick;
+        return reading.mapped;
     }
 
     /**
@@ -103,10 +131,27 @@ public final class CreateRoutes {
         TrackGraph graph = train.graph;
         if (graph == null || stations.isEmpty())
             return null;
-        Mapped mapped = mapped(graph);
+        Found found = find(train, stations, mapped(graph, false));
+        if (found.stale())
+            found = find(train, stations, mapped(graph, true));
+        return found.path();
+    }
+
+    /**
+     * What a search on one reading of the graph found.
+     *
+     * @param stale whether the reading turned out to be of track that has changed: the edge the train
+     *              is on, or one of the way, is not the graph's any more
+     */
+    private record Found(@Nullable DiscoveredPath path, boolean stale) {}
+
+    private static Found find(Train train, List<GlobalStation> stations, Mapped mapped) {
+        TrackGraph graph = train.graph;
+        if (!knows(train, mapped, true) || !knows(train, mapped, false))
+            return new Found(null, true);
         Live live = new Live(train, graph, mapped);
         if (live.runsOnNoTrack())
-            return null; // no kind of track every bogey runs on: Create finds no way
+            return new Found(null, false); // no kind of track every bogey runs on: Create finds no way
         Set<GlobalStation> wanted = Collections.newSetFromMap(new IdentityHashMap<>());
         wanted.addAll(stations);
         RailNetwork network = mapped.network();
@@ -120,18 +165,35 @@ public final class CreateRoutes {
         Route route = RouteSearch.find(network, front, back, canDriveForward, canDriveBackward,
             station -> wanted.contains(platform(mapped, network.stations().get(station).platform())), live);
         if (route == null)
-            return null;
+            return new Found(null, false);
+        for (int edge : route.edges())
+            if (graph.getConnection(Couple.create(mapped.edges().get(edge).node1, mapped.edges().get(edge).node2)) != mapped.edges().get(edge))
+                return new Found(null, true);
         List<Couple<TrackNode>> path = new ArrayList<>();
         for (int edge : route.junctions()) {
             TrackEdge trackEdge = mapped.edges().get(edge);
             path.add(Couple.create(trackEdge.node1, trackEdge.node2));
         }
         GlobalStation destination = platform(mapped, network.stations().get(route.station()).platform());
-        return new DiscoveredPath(route.signedDistance(), route.cost(), path, destination);
+        return new Found(new DiscoveredPath(route.signedDistance(), route.cost(), path, destination), false);
     }
 
     private static @Nullable GlobalStation platform(Mapped mapped, int platform) {
         return platform >= 0 && platform < mapped.platforms().size() ? mapped.platforms().get(platform) : null;
+    }
+
+    /** Whether the reading has the edge the train's front (or back, backing up) is on, where it is on one at all. */
+    private static boolean knows(Train train, Mapped mapped, boolean forward) {
+        TrackEdge edge = edgeUnder(train, forward);
+        return edge == null || mapped.index().containsKey(edge);
+    }
+
+    private static @Nullable TrackEdge edgeUnder(Train train, boolean forward) {
+        TravellingPoint point = forward ? train.carriages.getFirst().getLeadingPoint() : train.carriages.getLast().getTrailingPoint();
+        if (point.node1 == null || point.node2 == null)
+            return null;
+        return forward ? train.graph.getConnectionsFrom(point.node1).get(point.node2)
+            : train.graph.getConnectionsFrom(point.node2).get(point.node1);
     }
 
     /**
@@ -140,11 +202,7 @@ public final class CreateRoutes {
      */
     private static @Nullable Start start(Train train, Mapped mapped, boolean forward) {
         TravellingPoint point = forward ? train.carriages.getFirst().getLeadingPoint() : train.carriages.getLast().getTrailingPoint();
-        if (point.node1 == null || point.node2 == null)
-            return null;
-        TrackNode from = forward ? point.node1 : point.node2;
-        TrackNode to = forward ? point.node2 : point.node1;
-        TrackEdge edge = train.graph.getConnectionsFrom(from).get(to);
+        TrackEdge edge = edgeUnder(train, forward);
         Integer index = edge == null ? null : mapped.index().get(edge);
         if (index == null)
             return null;
@@ -235,7 +293,7 @@ public final class CreateRoutes {
 
         @Override
         public int firstSignalWeight() {
-            return Mth.clamp(train.navigation.ticksWaitingForSignal * 2, RouteSearch.RED_SIGNAL, 200);
+            return train.navigation.ticksWaitingForSignal * 2;
         }
     }
 }

@@ -31,8 +31,11 @@ import io.github.eyunya11.createrealtimeschedule.railway.RailNetwork.Station;
  * once; that edge is not come back to. A station further on is taken when the search comes to the
  * edge it is on, by the length to the end of that edge and the weight so far, as Create's does.
  *
- * <p>Create's search orders its way by an estimate of what is left as well (A*), which can make it
- * take another way where two are close; this takes the way of least length and weight.
+ * <p>Looking for one station, the search goes in Create's order to the letter, so that where ways
+ * come out even it takes the one Create takes: by the length and weight so far and Create's estimate
+ * of the way left to the stations looked for (where the network knows where its nodes are), the
+ * ways of a junction in the order of the track graph, and among ways of the same worth the one
+ * Create's queue gives first.
  */
 public final class RouteSearch {
 
@@ -44,6 +47,8 @@ public final class RouteSearch {
     static final int SIGNAL_HELD_RED = 400;
     /** The least it adds for a signal block with a train in it ({@code RED_SIGNAL}). */
     static final int RED_SIGNAL = 25;
+    /** The most it adds for the first signal block with a train in it. */
+    static final int MOST_SIGNAL_WEIGHT = 200;
 
     private RouteSearch() {}
 
@@ -91,8 +96,9 @@ public final class RouteSearch {
         }
 
         /**
-         * What the first signal block with a train in it adds; each one after adds half of what the one
-         * before did. Create starts at twice the ticks the train has waited at a signal, from 25 to 200.
+         * What the first signal block with a train in it adds, before it is held to 25 to 200; each one
+         * after adds half of what the one before did. Create starts at twice the ticks the train has
+         * waited at a signal.
          */
         default int firstSignalWeight() {
             return RED_SIGNAL;
@@ -177,12 +183,21 @@ public final class RouteSearch {
     /** One search from a place. */
     private static final class Search {
 
-        /** What is still to be looked at: an edge to go on from, or a station that can be stopped at. */
-        private record Entry(double distance, int penalty, int edge, int station, double stationDistance, long order) {
+        /**
+         * What is still to be looked at: an edge to go on from, or a station that can be stopped at.
+         *
+         * @param remaining Create's estimate of the way left from the end of the edge
+         */
+        private record Entry(double distance, int penalty, double remaining, int edge, int station, double stationDistance,
+                             long order) {
+            /** What Create's {@code FrontierEntry} orders by, added up as it adds it. */
             double key() {
-                return distance + penalty;
+                return distance + penalty + remaining;
             }
         }
+
+        /** A station looked for, as Create's estimate aims at it: the node its edge starts at, and how far along it is. */
+        private record Aim(int node, double position) {}
 
         private interface Finder {
             /** True to stop. */
@@ -198,8 +213,8 @@ public final class RouteSearch {
         private final int[] reachedVia;
         private final boolean[] atJunction;
         private final boolean[] visited;
-        private final PriorityQueue<Entry> frontier = new PriorityQueue<>(
-            Comparator.comparingDouble(Entry::key).thenComparingLong(Entry::order));
+        private final PriorityQueue<Entry> frontier;
+        private final List<Aim> aims = new ArrayList<>();
         private long order;
         private int signalWeight;
 
@@ -214,7 +229,17 @@ public final class RouteSearch {
             Arrays.fill(reachedVia, -1);
             atJunction = new boolean[count];
             visited = new boolean[count];
-            signalWeight = Math.max(RED_SIGNAL, Math.min(200, weights.firstSignalWeight()));
+            signalWeight = Math.max(RED_SIGNAL, Math.min(MOST_SIGNAL_WEIGHT, weights.firstSignalWeight()));
+            // Looking for one station, ways of the same worth come out of the queue as they do of Create's,
+            // which orders by worth alone; looking for every name, they come out in the order they were found.
+            Comparator<Entry> byKey = Comparator.comparingDouble(Entry::key);
+            frontier = new PriorityQueue<>(once ? byKey : byKey.thenComparingLong(Entry::order));
+            if (once)
+                for (int station = 0; station < network.stations().size(); station++)
+                    if (destination.test(station)) {
+                        Station s = network.stations().get(station);
+                        aims.add(new Aim(network.edges().get(s.edge()).start(), s.offset()));
+                    }
         }
 
         void run(Finder finder) {
@@ -243,7 +268,7 @@ public final class RouteSearch {
                 if (presence != Presence.OWN)
                     penalty += STATION;
             }
-            push(new Entry(toEnd, penalty, start.edge(), -1, 0, order++));
+            frontier.add(new Entry(toEnd, penalty, 0, start.edge(), -1, 0, order++));
 
             while (!frontier.isEmpty()) {
                 Entry entry = frontier.poll();
@@ -281,6 +306,7 @@ public final class RouteSearch {
             double skipBefore = own.start() >= 0 && edge.start() == own.start()
                 ? edge.length() - (own.length() - start.offset())
                 : Double.NEGATIVE_INFINITY;
+            double remaining = remaining(edge);
             List<Entry> stations = new ArrayList<>();
             boolean blocked = false;
             for (Item item : items(target)) {
@@ -298,7 +324,8 @@ public final class RouteSearch {
                 if (presence == Presence.OTHER)
                     penalty += STATION_WITH_TRAIN;
                 if (item.station() >= 0 && destination.test(item.station())) {
-                    stations.add(new Entry(distance, penalty, target, item.station(), distance - edge.length() + item.position(), order++));
+                    stations.add(new Entry(distance, penalty, remaining, target, item.station(), distance - edge.length() + item.position(),
+                        order++));
                     if (once)
                         break; // Create's search takes this edge as the way to the station, and looks no further along it
                 }
@@ -311,9 +338,36 @@ public final class RouteSearch {
                 reachedVia[target] = from.edge();
                 atJunction[target] = junction;
             }
-            stations.forEach(this::push);
+            frontier.addAll(stations);
             if (!blocked && !(once && !stations.isEmpty()))
-                push(new Entry(distance, penalty, target, -1, 0, order++));
+                frontier.add(new Entry(distance, penalty, remaining, target, -1, 0, order++));
+        }
+
+        /**
+         * Create's estimate of the way left from the end of {@code edge} to the nearest station looked
+         * for: a distance through space between the nodes, and how far along its edge the station is,
+         * less twice the edge's length where the edge starts at that station's node. Nothing where it
+         * looks for more than one station, or the network does not know where the nodes are.
+         */
+        private double remaining(Edge edge) {
+            if (aims.isEmpty())
+                return 0;
+            RailNetwork.Place from = network.place(edge.end());
+            if (from == null)
+                return 0;
+            double least = Double.MAX_VALUE;
+            for (Aim aim : aims) {
+                RailNetwork.Place to = network.place(aim.node());
+                if (to == null)
+                    return 0;
+                double[] d = {Math.abs(from.x() - to.x()), Math.abs(from.y() - to.y()), Math.abs(from.z() - to.z())};
+                Arrays.sort(d);
+                double estimate = 0.317837245195782 * d[0] + 0.414213562373095 * d[1] + d[2] + aim.position();
+                if (edge.start() >= 0 && edge.start() == aim.node())
+                    estimate -= edge.length() * 2;
+                least = Math.min(least, estimate);
+            }
+            return least;
         }
 
         /** What a signal adds; one with a train in its block adds less each time, as Create's search counts them. */
@@ -327,10 +381,6 @@ public final class RouteSearch {
                 }
                 case CLEAR -> 0;
             };
-        }
-
-        private void push(Entry entry) {
-            frontier.add(entry);
         }
 
         private Route route(Entry entry) {
