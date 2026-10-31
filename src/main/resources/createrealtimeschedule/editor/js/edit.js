@@ -168,6 +168,25 @@
     return next;
   }
 
+  /**
+   * What the types dialog did to the names of the types: from the names it began with, before, and
+   * its rows ({from, name}, from null for a row added), the renames for setTypes and the names taken
+   * out. A name is taken out only if no row came from it and none has it now: a type put back, or
+   * another renamed to it, keeps its trains.
+   */
+  function typeChanges(before, rows) {
+    const renames = {};
+    for (const row of rows)
+      if (row.from !== null && row.from !== row.name)
+        renames[row.from] = row.name;
+    const kept = new Set(rows.map(row => row.from));
+    const named = new Set(rows.map(row => row.name));
+    const removed = before.filter(name => !kept.has(name) && !named.has(name));
+    for (const name of removed)
+      renames[name] = '';
+    return { renames, removed };
+  }
+
   /** How many trains have any of types, of their own or from a stop on. */
   function trainsOfType(timetable, types) {
     return timetable.trains.filter(train => types.includes(train.type) || train.stops.some(stop => types.includes(stop.type))).length;
@@ -541,12 +560,16 @@
 
   /**
    * Takes a stop out of a train; the stops at the ends lose the time an end does not have, and the
-   * last what a stop the train does not leave cannot have: a minimum stop, a type and waits.
+   * last what a stop the train does not leave cannot have: a minimum stop, a type and waits. A change
+   * of type at the stop taken out moves on to the stop after it, unless that one has its own, so that
+   * the rest of the train keeps its type.
    */
   function removeStop(timetable, number, index) {
     const next = copy(timetable);
     const stops = trainAt(next, number).stops;
-    stops.splice(index, 1);
+    const [removed] = stops.splice(index, 1);
+    if (removed !== undefined && removed.type !== undefined && index < stops.length && stops[index].type === undefined)
+      stops[index].type = removed.type;
     if (stops.length > 0) {
       stops[0].arrive = NONE;
       stops[stops.length - 1].depart = NONE;
@@ -641,7 +664,7 @@
   }
 
   return {
-    NONE, copy, setName, putLine, removeLine, stationTimes, dwellAt, setStations, typeList, setTypes, trainsOfType,
+    NONE, copy, setName, putLine, removeLine, stationTimes, dwellAt, setStations, typeList, setTypes, typeChanges, trainsOfType,
     nextNumber, addTrain, removeTrain, setTrain, stopLimits, moveStop, moveRun, moveArrival, stretchStop, draggedTime, drag, sameStops, shiftTrain, setStopTime, setDwell, setStopMinimum, setStopType, setStopWaits, setStopStation,
     removeStop, tooFast,
     snap, snapUp, snapDown, drawStop, drawClick, setDrawnDwell, finishDrawing,

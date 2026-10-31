@@ -1,7 +1,9 @@
 package io.github.eyunya11.createrealtimeschedule.client;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 import org.jetbrains.annotations.Nullable;
 import org.joml.Matrix4f;
@@ -77,6 +79,9 @@ public final class DiagramScreen extends Screen {
     private String modelLine = "";
     private long modelDay;
     private long modelNow;
+    /** The colours of the types, as ARGB, worked out once for the timetable they are of. */
+    private final Map<String, Integer> colours = new HashMap<>();
+    private @Nullable Timetable coloured;
 
     DiagramScreen(String line) {
         super(Component.translatableWithFallback(KEY + "title", "Diagram"));
@@ -244,7 +249,7 @@ public final class DiagramScreen extends Screen {
      * A planned train's colour where it has {@code type}: the type's, grey for a deadhead, and either
      * faded into the plot when it is cancelled.
      */
-    private static int plannedColour(Timetable timetable, PlannedTrain train, String type) {
+    private int plannedColour(Timetable timetable, PlannedTrain train, String type) {
         int colour = train.deadhead() ? DEADHEAD : typeColour(timetable, type);
         return train.cancelled() ? faded(colour) : colour;
     }
@@ -260,10 +265,20 @@ public final class DiagramScreen extends Screen {
         return faded;
     }
 
-    /** The colour of {@code type}: the timetable's for it, or else the one picked from its name ({@link Timetable#colour}). */
-    private static int typeColour(Timetable timetable, String type) {
-        String colour = timetable.colour(type);
-        return colour == null ? UNTYPED : TypeColours.argb(colour);
+    /**
+     * The colour of {@code type}: the timetable's for it, or else the one picked from its name
+     * ({@link Timetable#colour}). Worked out once for each type of a timetable, not for every segment
+     * every frame.
+     */
+    private int typeColour(Timetable timetable, String type) {
+        if (coloured != timetable) {
+            colours.clear();
+            coloured = timetable;
+        }
+        return colours.computeIfAbsent(type, unused -> {
+            String colour = timetable.colour(type);
+            return colour == null ? UNTYPED : TypeColours.argb(colour);
+        });
     }
 
     /** Draws {@code segment}; false if none of it is in the time shown. */

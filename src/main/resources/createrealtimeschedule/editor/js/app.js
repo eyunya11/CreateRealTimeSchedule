@@ -1644,7 +1644,7 @@
       picker.addEventListener('input', () => take(picker.value));
       written.addEventListener('input', () => {
         const colour = written.value.trim();
-        if (/^#[0-9a-fA-F]{6}$/.test(colour)) {
+        if (rt.problems.isColour(colour)) {
           row.color = colour.toLowerCase();
           row.listed = true;
           picker.value = row.color;
@@ -1705,7 +1705,7 @@
             error.textContent = t('typeNameTaken');
             return false;
           }
-          if (list.some(type => !/^#[0-9a-fA-F]{6}$/.test(type.color))) {
+          if (list.some(type => !rt.problems.isColour(type.color))) {
             error.textContent = t('badColour');
             return false;
           }
@@ -1713,15 +1713,8 @@
             && list[i].name === before[i].name && list[i].color === before[i].color && row.listed === before[i].listed);
           if (unchanged)
             return true;
-          const renames = {};
-          rows.forEach((row, i) => {
-            if (row.from !== null && row.from !== list[i].name)
-              renames[row.from] = list[i].name;
-          });
-          const kept = new Set(rows.map(row => row.from));
-          const removed = before.map(type => type.name).filter(name => !kept.has(name));
-          for (const name of removed)
-            renames[name] = '';
+          const { renames, removed } = rt.edit.typeChanges(before.map(type => type.name),
+            rows.map((row, i) => ({ from: row.from, name: list[i].name })));
           const used = removed.filter(name => rt.edit.trainsOfType(state.timetable, [name]) > 0);
           if (used.length > 0 && !confirm(t('confirmRemoveTypes', used.join(', '), rt.edit.trainsOfType(state.timetable, used))))
             return false;
