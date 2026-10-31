@@ -31,7 +31,12 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 public class TrackTagTests {
 
     private static final String TURN = "track_turn";
-    private static final int TIMEOUT_TICKS = 400;
+    /**
+     * How long a test leaves its track and blocks once it has seen what it is for, so that a player
+     * who runs it on a client can look at them and use their screens.
+     */
+    private static final int LOOK_TICKS = 3 * 60 * 20;
+    private static final int TIMEOUT_TICKS = 400 + LOOK_TICKS;
     private static final Turn BRANCH = new Turn(60, 72, 14, 55);
     /** How far a section's length may be from the blocks' x apart: the nodes at the ends of the line are not on a block's centre. */
     private static final double SLACK = 1;
@@ -48,8 +53,9 @@ public class TrackTagTests {
         line.cleanUpWhenTheTestEnds();
         TrackTagBlockEntity[] blocks = new TrackTagBlockEntity[3];
         int[] tags = new int[2];
+        int[] looked = {-1};
         helper.onEachTick(() -> {
-            if (!line.setUp())
+            if (!line.setUp() || lookingOn(helper, looked))
                 return;
             if (blocks[0] == null) {
                 tags[0] = line.makeTag("Local (test)");
@@ -93,7 +99,7 @@ public class TrackTagTests {
             TrackTagEdgePoint read = new TrackTagEdgePoint();
             read.read(saved, helper.getLevel().registryAccess(), false, palette);
             helper.assertTrue(read.tag() == tags[1], "the point read again has the tag " + read.tag() + ", not " + tags[1]);
-            helper.succeed();
+            looked[0] = 0;
         });
     }
 
@@ -104,8 +110,9 @@ public class TrackTagTests {
             new BlockPos[] {at(6, TrackLine.TRACK_Z), at(110, TrackLine.TRACK_Z), at(BRANCH.toX(), 51)}, new String[] {"Depot", "A", "B"});
         line.cleanUpWhenTheTestEnds();
         TrackTagBlockEntity[] block = new TrackTagBlockEntity[1];
+        int[] looked = {-1};
         helper.onEachTick(() -> {
-            if (!line.setUp())
+            if (!line.setUp() || lookingOn(helper, looked))
                 return;
             if (block[0] == null) {
                 block[0] = line.placeTag(30, true, line.makeTag("Main (test)"));
@@ -123,8 +130,20 @@ public class TrackTagTests {
             helper.assertTrue(node != null && Math.abs(node.x() - junctionX) <= 1.5,
                 "the junction is where the branch turns off, at x = " + junctionX + ", not " + node);
             assertLength(helper, sections, network, 0, 2 * (BRANCH.fromX() - 30), "the section up to the junction");
-            helper.succeed();
+            looked[0] = 0;
         });
+    }
+
+    /**
+     * Whether the test has seen what it is for and is leaving the track up to be looked at; it succeeds
+     * after {@link #LOOK_TICKS}. {@code looked} holds the ticks since, or -1 before then.
+     */
+    private static boolean lookingOn(GameTestHelper helper, int[] looked) {
+        if (looked[0] < 0)
+            return false;
+        if (++looked[0] >= LOOK_TICKS)
+            helper.succeed();
+        return true;
     }
 
     private static BlockPos at(int x, int z) {
