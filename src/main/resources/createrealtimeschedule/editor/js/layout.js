@@ -96,11 +96,11 @@
       down,
     }));
     const { segments, rowIn, rowOut, parts } = path(axis, visits);
-    const stopOf = new Map();
+    const typeOf = new Map();
     for (const part of parts) {
       part.type = timetables.typeAt(train, part.stop);
       for (const segment of part.segments)
-        stopOf.set(segment, part.stop);
+        typeOf.set(segment, part.type);
     }
     const first = rowOut.length > 0 && rowOut[0] >= 0 ? rowOut[0] : visits.length === 0 ? -1 : axis.row(visits[0].station);
     const points = visits.map((visit, k) => {
@@ -119,7 +119,7 @@
       type: timetables.typeAt(train, 0),
       deadhead: train.deadhead,
       segments,
-      types: segments.map(segment => timetables.typeAt(train, stopOf.get(segment))),
+      types: segments.map(segment => typeOf.get(segment)),
       parts,
       labelSecond: train.stops.length > 0 ? train.stops[0].depart : NaN,
       labelPosition: first >= 0 ? axis.position(first) : 0,

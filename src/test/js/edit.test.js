@@ -131,6 +131,30 @@ test('the trains and stops follow a type renamed, and lose one taken out', () =>
   assert.equal('type' in removed.trains[2].stops[1], false, 'a stop changes to no type that is taken out');
 });
 
+test('a type taken out in the dialog leaves its trains, but one put back or renamed to keeps them', () => {
+  const before = ['local', 'rapid', 'special'];
+  assert.deepEqual(edit.typeChanges(before, [{ from: 'local', name: 'semi' }, { from: 'rapid', name: 'rapid' }]),
+    { renames: { local: 'semi', special: '' }, removed: ['special'] });
+  // rapid taken out and a new row of the same name added: its trains keep it.
+  assert.deepEqual(edit.typeChanges(before, [{ from: 'local', name: 'local' }, { from: null, name: 'rapid' }, { from: 'special', name: 'special' }]),
+    { renames: {}, removed: [] });
+  // local taken out and special renamed to it: local's trains stay local, special's become local.
+  assert.deepEqual(edit.typeChanges(before, [{ from: 'rapid', name: 'rapid' }, { from: 'special', name: 'local' }]),
+    { renames: { special: 'local' }, removed: [] });
+});
+
+test('a stop taken out passes its change of type on to the stop after it', () => {
+  const four = edit.addTrain(timetable(), { number: '4', line: 'a', type: 'local', deadhead: false, stops: [
+    { station: 'X', arrive: NONE, depart: t('10:00') }, { station: 'Y', arrive: t('10:05'), depart: t('10:06'), type: 'rapid' },
+    { station: 'X', arrive: t('10:10'), depart: t('10:11') }, { station: 'Y', arrive: t('10:15'), depart: NONE }] });
+  const cut = edit.removeStop(four, '4', 1);
+  assert.equal(cut.trains[2].stops[1].type, 'rapid', 'the rest of the train is still a rapid');
+  const own = edit.setStopType(four, '4', 2, 'special');
+  assert.equal(edit.removeStop(own, '4', 1).trains[2].stops[1].type, 'special', 'a stop with a type of its own keeps it');
+  const nearEnd = edit.setStopType(four, '4', 2, 'special');
+  assert.equal('type' in edit.removeStop(nearEnd, '4', 2).trains[2].stops[2], false, 'the last stop changes no type');
+});
+
 test('a stop moves with its dwell kept, and a train moves as a whole', () => {
   const three = edit.addTrain(timetable(), { number: '3', line: 'a', type: '', deadhead: false, stops: [
     { station: 'X', arrive: NONE, depart: t('09:00') }, { station: 'Y', arrive: t('09:05'), depart: t('09:06') }, { station: 'X', arrive: t('09:10'), depart: NONE }] });

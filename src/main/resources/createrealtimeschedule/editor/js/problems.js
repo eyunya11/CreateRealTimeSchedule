@@ -49,6 +49,11 @@
     return text !== '' && !SPACE_AT_AN_END.test(text) && !CONTROL.test(text);
   }
 
+  /** Whether text is a colour as a type has it: # and six hexadecimal digits (TypeColours.isColour of the mod). */
+  function isColour(text) {
+    return COLOUR.test(text);
+  }
+
   function isIdentifier(text) {
     return isText(text) && text.length <= MAX_ID_LENGTH;
   }
@@ -145,7 +150,7 @@
         problems.push(where + ': another type has the same name');
       else
         seen.add(type.name);
-      if (!COLOUR.test(type.color))
+      if (!isColour(type.color))
         problems.push(where + ': the color must be # and six hexadecimal digits, such as #d9822b');
     });
   }
@@ -416,5 +421,5 @@
     return found;
   }
 
-  return { NONE, MAX_ID_LENGTH, MAX_STOP_SECONDS, MAX_WAIT_SECONDS, problems, isText, isIdentifier, runsThrough, leavesOrRunsThrough, waitStation };
+  return { NONE, MAX_ID_LENGTH, MAX_STOP_SECONDS, MAX_WAIT_SECONDS, problems, isText, isIdentifier, isColour, runsThrough, leavesOrRunsThrough, waitStation };
 });
