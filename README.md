@@ -28,6 +28,7 @@ The clock is the game time plus an offset that is saved in the world. Twenty tic
 | `/rtclock set <H:MM[:SS]>` | operators | Sets the time of day and keeps the day. Trains that are waiting follow it: a later time lets them go, an earlier one makes them wait longer |
 | `/rtclock align` | operators | Sets the time of day to the server's own |
 | `/rtnetwork export` | operators | Writes the stations of the track network and the running time between them (for a train without fuel at full throttle) to `createrealtimeschedule/network.json` in the world folder. It is meant for the timetable editor that is still to come |
+| `/rtnetwork tags` | operators | Lists the track tags, how many blocks on the track have each, and what is wrong with their stretches (see "Track tags") |
 
 ## The sky
 
@@ -102,6 +103,15 @@ A train's panel marks it never to be cancelled to get a late train back on time 
 
 The editor checks a timetable by the same rules as the mod and words its problems the same way, undoes and redoes, keeps the draft in the browser, and speaks Japanese and English.
 
+## Track tags
+
+A track tag block gives a stretch of track a tag, such as "Local" or "Siding", which you name. For now a tag only marks the track; a later version will let a timetable keep a train to the track of a tag.
+
+- It is placed as a station is: use the item on the track first, facing the way the stretch is to run, then place the block near it. A railway casing and a paper make two, and the block is in Create's creative tab.
+- Its stretch runs the way it faces, to the next tag block that faces the same way, or to the end of the track, and holds for trains running either way. A block with no tag only ends the stretch of the block before it. A block facing the other way does not end it.
+- Anyone can use the block, from up to 64 blocks away, to open its screen. The screen lists the world's tags: pick one and press "Use", or press "None". Type a name to "Create" a tag, which the block then has, or to "Rename" the tag picked; "Delete" takes out the tag picked if no block on the track has it. A tag renamed is renamed on every block (a timetable that names it will have to be changed by hand). The tag's name shows over the block while you look at it.
+- A stretch must not come to a junction, where the track goes on more than one way, before its end: put a block just past the junction on each way instead. Nor may it overlap the stretch of a block facing the other way that has another tag. The screen says what is wrong with the block's stretch, and `/rtnetwork tags` lists every such problem.
+
 ## Settings
 
 The settings are per world, in `serverconfig/createrealtimeschedule-server.toml` of the world folder. A client uses the server's values while it is connected.
@@ -118,7 +128,7 @@ The settings are per world, in `serverconfig/createrealtimeschedule-server.toml`
 
 ## What is and is not checked
 
-Checked by the tests (`./gradlew test` and `./gradlew runGameTestServer`): the clock arithmetic, saving and sending the clock, the sky sync, the commands, the condition's rule and how slots follow each other, saving a train that waits on the condition, and a real train running on real track through three stations in a row, arriving early and late. For running a timetable: loading and saving it, two trains at the depot of a loop line taking the duties in the order they leave and coming back, leaving every call on its time (recorded when the train has really left the platform), a late train making up time, a train later than the threshold held at a station and leaving on the later call while the trains in between are cancelled (each rule of when it is held is also tested by taking it out), a duty with no train starting late with the train another duty brings back or, too late, not at all, a duty that was to start before the timetable was loaded starting late, a local waiting for an express to run through a station (seen as its last carriage goes past) or to leave it first, not waiting for one that does not run or past its longest wait, and a train that is given a schedule being let go. For the diagram: the distances between the stations from real track, the times sent to a client, and how the lines are worked out. For the editor: that it finds the same problems as the mod (shared cases read by both the Java and the Node tests), writes the same JSON, draws lines as the game does, and that a timetable made with its own code runs on real track on time; and, on the server's side, the clipboard commands.
+Checked by the tests (`./gradlew test` and `./gradlew runGameTestServer`): the clock arithmetic, saving and sending the clock, the sky sync, the commands, the condition's rule and how slots follow each other, saving a train that waits on the condition, and a real train running on real track through three stations in a row, arriving early and late. For running a timetable: loading and saving it, two trains at the depot of a loop line taking the duties in the order they leave and coming back, leaving every call on its time (recorded when the train has really left the platform), a late train making up time, a train later than the threshold held at a station and leaving on the later call while the trains in between are cancelled (each rule of when it is held is also tested by taking it out), a duty with no train starting late with the train another duty brings back or, too late, not at all, a duty that was to start before the timetable was loaded starting late, a local waiting for an express to run through a station (seen as its last carriage goes past) or to leave it first, not waiting for one that does not run or past its longest wait, and a train that is given a schedule being let go. For the diagram: the distances between the stations from real track, the times sent to a client, and how the lines are worked out. For the editor: that it finds the same problems as the mod (shared cases read by both the Java and the Node tests), writes the same JSON, draws lines as the game does, and that a timetable made with its own code runs on real track on time; and, on the server's side, the clipboard commands. For track tags: the stretches the blocks give and what is wrong with them, on networks written out by hand and on real track, and the world's list of tags.
 
 Not checked yet:
 
@@ -130,6 +140,7 @@ Not checked yet:
 - running a timetable across a restart of the server (only saving its state and reading it back is tested), on track with signals where several trains share a line, and with a train that derails on the way;
 - holding a late train at a station on track with signals, where other trains run too, and how cancelled trains look in the diagram on a real client;
 - each of the diagram's keys and mouse controls on a real client (the diagram itself has been looked at there: the timetable's lines and the real ones lie over each other, and its clock agrees with the server's);
+- the track tag block's screen, its look, and placing it with the item, on a real client;
 - the clipboard commands and `/rteditor` on a real client, and the editor opened from a `file://` address (it has been used in a Chromium browser from `http://localhost`), and the GitHub Pages site, which is published once Pages is switched on and the work is on main.
 
 ## Building
