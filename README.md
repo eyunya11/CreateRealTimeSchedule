@@ -105,12 +105,12 @@ The editor checks a timetable by the same rules as the mod and words its problem
 
 ## Track tags
 
-A track tag block gives a stretch of track a tag, such as "Local" or "Siding", which you name. For now a tag only marks the track; a later version will let a timetable keep a train to the track of a tag.
+A track tag block gives a stretch of track tags, such as "Local" or "Siding", which you name. For now a tag only marks the track; a later version will let a timetable keep a train to the track of a tag.
 
-- It is placed as a station is: use the item on the track first, facing the way the stretch is to run, then place the block near it. A railway casing and a paper make two, and the block is in Create's creative tab.
-- Its stretch runs the way it faces, to the next tag block that faces the same way, or to the end of the track, and holds for trains running either way. A block with no tag only ends the stretch of the block before it. A block facing the other way does not end it.
-- Anyone can use the block, from up to 64 blocks away, to open its screen. The screen lists the world's tags: pick one and press "Use", or press "None". Type a name to "Create" a tag, which the block then has, or to "Rename" the tag picked; "Delete" takes out the tag picked if no block on the track has it. A tag renamed is renamed on every block (a timetable that names it will have to be changed by hand). The tag's name shows over the block while you look at it.
-- A stretch must not come to a junction, where the track goes on more than one way, before its end: put a block just past the junction on each way instead. Nor may it overlap the stretch of a block facing the other way that has another tag. The screen says what is wrong with the block's stretch, and `/rtnetwork tags` lists every such problem.
+- There are two blocks, Track Tag (Both Ways) and Track Tag (One Way). Each is placed as a station is: use the item on the track first, facing the way the stretch is to run, then place the block near it. A railway casing and a paper make two blocks for both ways, and either block can be crafted into the other. Both are in Create's creative tab.
+- Its stretch runs the way it faces, to the next block of its kind that faces the same way, or to the end of the track. The tags of a block for both ways hold for trains running either way along its stretch; those of a one-way block hold only for trains running the way it faces, so that one track can have a tag for each way. A block may have more than one tag, and where stretches overlap, the track has the tags of them all. A block with no tag only ends the stretch of the block before it. A block facing the other way, or of the other kind, does not end it.
+- Anyone can use the block, from up to 64 blocks away, to open its screen. The screen lists the world's tags, with a mark by those the block has: pick one and press "Give" or "Take Off", or press "Take All Off". Type a name to "Create" a tag, which the block is then given, or to "Rename" the tag picked; "Delete" takes out the tag picked if no block on the track has it. A tag renamed is renamed on every block (a timetable that names it will have to be changed by hand). The names of the block's tags show over it while you look at it.
+- A stretch must not come to a junction, where the track goes on more than one way, before its end: put a block just past the junction on each way instead. Nor may the two kinds be mixed: a stretch must not overlap that of a block of the other kind, or have a block of the other kind in it. The screen says what is wrong with the block's stretch, and `/rtnetwork tags` lists every such problem.
 
 ## Settings
 
@@ -140,7 +140,7 @@ Not checked yet:
 - running a timetable across a restart of the server (only saving its state and reading it back is tested), on track with signals where several trains share a line, and with a train that derails on the way;
 - holding a late train at a station on track with signals, where other trains run too, and how cancelled trains look in the diagram on a real client;
 - each of the diagram's keys and mouse controls on a real client (the diagram itself has been looked at there: the timetable's lines and the real ones lie over each other, and its clock agrees with the server's);
-- the track tag block's screen, its look, and placing it with the item, on a real client;
+- the two track tag blocks' looks and their marks on the track, the screen with several tags, and placing the blocks with the items, on a real client (a tag's name over a block has been seen there);
 - the clipboard commands and `/rteditor` on a real client, and the editor opened from a `file://` address (it has been used in a Chromium browser from `http://localhost`), and the GitHub Pages site, which is published once Pages is switched on and the work is on main.
 
 ## Building
