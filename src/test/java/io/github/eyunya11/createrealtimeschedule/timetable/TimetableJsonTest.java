@@ -285,6 +285,23 @@ class TimetableJsonTest {
             "a stop that changes the type is version 6");
     }
 
+    /** The tracks a map shows and hides, which version 7 added; the example the editor's tests read too. */
+    @Test
+    void readsAndWritesTheTracksOfTheMapAsVersionSeven() {
+        String text = resource("example-map.json");
+        Timetable timetable = accepted(text);
+        Timetable.Line line = timetable.lines().getFirst();
+        assertEquals(List.of("minecraft:overworld 60.5,2,3.5 70.5,2,13.5"), line.mapAdd());
+        assertEquals(List.of("minecraft:overworld 0.5,2,3.5 60.5,2,3.5"), line.mapRemove());
+        assertEquals(List.of("minecraft:overworld 60.5,2,3.5 70.5,2,13.5"), timetable.mapHidden());
+        assertEquals(7, timetable.version());
+        assertEquals(text, TimetableJson.write(timetable));
+        Timetable none = new Timetable(timetable.name(), List.of(new Timetable.Line(line.id(), line.name(), line.stations(), false)),
+            timetable.stations(), timetable.types(), timetable.trains(), timetable.duties());
+        assertEquals(2, none.version(), "a timetable that shows and hides no track is no version 7");
+        assertFalse(TimetableJson.write(none).contains("map_"), "a timetable that shows and hides no track says nothing of the map");
+    }
+
     /** The example the editor's tests read too (src/test/js), which both have to write back as it is. */
     @Test
     void writesTheKeepExampleBackIdenticallyToTheCharacter() {
@@ -483,8 +500,8 @@ class TimetableJsonTest {
         for (String version : List.of("0", "-1"))
             assertOnlyProblem("{\"format\": \"createrealtimeschedule.timetable\", \"version\": " + version + "}", "version: must be 1 or more");
         // A newer version may have members this one has never heard of; they are not worth listing.
-        assertOnlyProblem("{\"format\": \"createrealtimeschedule.timetable\", \"version\": 7, \"colours\": [1, 2]}",
-            "version: is 7, but this mod reads timetables up to version 6");
+        assertOnlyProblem("{\"format\": \"createrealtimeschedule.timetable\", \"version\": 8, \"colours\": [1, 2]}",
+            "version: is 8, but this mod reads timetables up to version 7");
     }
 
     @Test

@@ -4,7 +4,7 @@
  * cases hold the two to the same results (src/test/resources/.../timetable/cases).
  *
  * A timetable here is plain data, as timetable.js reads it: {name, lines, stations, types, trains,
- * duties}, a line {id, name, stations, loop}, a station {name, dwell, minimumStop} with seconds or
+ * duties, mapHidden?}, a line {id, name, stations, loop, mapAdd?, mapRemove?}, a station {name, dwell, minimumStop} with seconds or
  * NONE, a type {name, color}, a train {number, line, type, stops, deadhead} with keep true if it is
  * never cancelled, a stop {station, arrive, depart, type?, waits?} with the times in seconds or NONE
  * and a minimumStop if it has one of its own, and a duty {id, depot, trains}. A timetable without
@@ -138,6 +138,41 @@
       if (station.minimumStop !== NONE && !isStopSeconds(station.minimumStop))
         problems.push(where + ': the minimum stop ' + STOP_RULE);
     });
+  }
+
+  /** The keys of a list of tracks, at where: each a text, and each once. */
+  function checkTracks(where, list, keys, problems) {
+    const seen = new Set();
+    const twice = new Set();
+    for (const key of keys) {
+      if (!isText(key))
+        problems.push(where + ': a track in ' + list + ' ' + TEXT_RULE);
+      else if (seen.has(key)) {
+        if (!twice.has(key)) {
+          twice.add(key);
+          problems.push(where + ': track "' + key + '" is listed twice in ' + list);
+        }
+      } else
+        seen.add(key);
+    }
+  }
+
+  function checkMap(timetable, problems) {
+    timetable.lines.forEach((line, i) => {
+      const where = label('line', 'lines', i, line.id);
+      const add = line.mapAdd || [];
+      const remove = line.mapRemove || [];
+      checkTracks(where, 'map_add', add, problems);
+      checkTracks(where, 'map_remove', remove, problems);
+      const added = new Set(add);
+      const both = new Set();
+      for (const key of remove)
+        if (added.has(key) && !both.has(key)) {
+          both.add(key);
+          problems.push(where + ': track "' + key + '" is both in map_add and in map_remove');
+        }
+    });
+    checkTracks('map_hidden', 'map_hidden', timetable.mapHidden || [], problems);
   }
 
   function checkTypes(timetable, problems) {
@@ -415,6 +450,7 @@
     const lineById = checkLines(timetable, found);
     checkStations(timetable, found);
     checkTypes(timetable, found);
+    checkMap(timetable, found);
     const trainByNumber = checkTrains(timetable, lineById, found);
     checkWaits(timetable, lineById, trainByNumber, found);
     checkDuties(timetable, trainByNumber, found);

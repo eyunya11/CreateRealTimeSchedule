@@ -1,0 +1,42 @@
+{
+  "about": "The map (version 7): a track a line adds twice, one it both adds and takes away, a key that is no key, and a track the timetable hides twice.",
+  "timetable": {
+    "format": "createrealtimeschedule.timetable",
+    "version": 7,
+    "name": "",
+    "lines": [
+      {
+        "id": "l",
+        "name": "L",
+        "stations": ["A", "B"],
+        "map_add": ["minecraft:overworld 0,2,0 10,2,0", "minecraft:overworld 0,2,0 10,2,0", "minecraft:overworld 10,2,0 20,2,0"],
+        "map_remove": ["minecraft:overworld 10,2,0 20,2,0", " "]
+      },
+      {
+        "id": "m",
+        "name": "M",
+        "stations": ["A", "B"],
+        "map_remove": ["minecraft:overworld 0,2,0 10,2,0"]
+      }
+    ],
+    "trains": [
+      {
+        "number": "1",
+        "line": "l",
+        "stops": [
+          {"station": "A", "depart": "08:00"},
+          {"station": "B", "arrive": "08:10"}
+        ]
+      }
+    ],
+    "duties": [],
+    "map_hidden": ["minecraft:overworld 30,2,0 40,2,0", "minecraft:overworld 30,2,0 40,2,0", ""]
+  },
+  "problems": [
+    "line \"l\": track \"minecraft:overworld 0,2,0 10,2,0\" is listed twice in map_add",
+    "line \"l\": a track in map_remove must not be empty, start or end with a space, or contain a control character",
+    "line \"l\": track \"minecraft:overworld 10,2,0 20,2,0\" is both in map_add and in map_remove",
+    "map_hidden: track \"minecraft:overworld 30,2,0 40,2,0\" is listed twice in map_hidden",
+    "map_hidden: a track in map_hidden must not be empty, start or end with a space, or contain a control character"
+  ]
+}

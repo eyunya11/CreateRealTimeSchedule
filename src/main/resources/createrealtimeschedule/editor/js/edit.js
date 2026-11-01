@@ -41,15 +41,20 @@
     return made;
   }
 
-  /** A copy to change; a timetable from before version 3 gets its (empty) stations, and one from before version 6 its types. */
+  /**
+   * A copy to change; a timetable from before version 3 gets its (empty) stations, one from before
+   * version 6 its types, and one from before version 7 its lists of tracks for the map.
+   */
   function copy(timetable) {
     return {
       name: timetable.name,
-      lines: timetable.lines.map(line => ({ id: line.id, name: line.name, stations: line.stations.slice(), loop: line.loop })),
+      lines: timetable.lines.map(line => ({ id: line.id, name: line.name, stations: line.stations.slice(), loop: line.loop,
+        mapAdd: (line.mapAdd || []).slice(), mapRemove: (line.mapRemove || []).slice() })),
       stations: (timetable.stations || []).map(station => ({ name: station.name, dwell: station.dwell, minimumStop: station.minimumStop })),
       types: (timetable.types || []).map(type => ({ name: type.name, color: type.color })),
       trains: timetable.trains.map(copyTrain),
       duties: timetable.duties.map(duty => ({ id: duty.id, depot: duty.depot, trains: duty.trains.slice() })),
+      mapHidden: (timetable.mapHidden || []).slice(),
     };
   }
 
@@ -78,8 +83,10 @@
    */
   function putLine(timetable, oldId, line) {
     const next = copy(timetable);
-    const made = { id: line.id, name: line.name, stations: line.stations.slice(), loop: !!line.loop };
     const at = oldId === null ? -1 : next.lines.findIndex(each => each.id === oldId);
+    // The tracks the line's map adds and takes away stay with it.
+    const made = { id: line.id, name: line.name, stations: line.stations.slice(), loop: !!line.loop,
+      mapAdd: at < 0 ? [] : next.lines[at].mapAdd, mapRemove: at < 0 ? [] : next.lines[at].mapRemove };
     if (at < 0) {
       next.lines.push(made);
     } else {
