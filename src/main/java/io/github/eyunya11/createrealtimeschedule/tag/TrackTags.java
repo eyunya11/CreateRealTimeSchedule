@@ -1,8 +1,10 @@
 package io.github.eyunya11.createrealtimeschedule.tag;
 
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.stream.IntStream;
 
 import org.jetbrains.annotations.Nullable;
 
@@ -51,6 +53,11 @@ public final class TrackTags {
     /** The names of the tags by their ids, in the order the ids were given. */
     public Map<Integer, String> names() {
         return Collections.unmodifiableMap(names);
+    }
+
+    /** The ids {@code ids} as a block holds them: in order, once each, without {@link #NONE}. */
+    public static List<Integer> ids(int... ids) {
+        return IntStream.of(ids).filter(id -> id > NONE).sorted().distinct().boxed().toList();
     }
 
     public int nextId() {

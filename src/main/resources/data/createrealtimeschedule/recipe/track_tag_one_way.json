@@ -1,0 +1,13 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "misc",
+  "ingredients": [
+    {
+      "item": "createrealtimeschedule:track_tag"
+    }
+  ],
+  "result": {
+    "count": 1,
+    "id": "createrealtimeschedule:track_tag_one_way"
+  }
+}

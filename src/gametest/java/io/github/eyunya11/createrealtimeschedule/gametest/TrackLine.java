@@ -462,17 +462,18 @@ final class TrackLine {
 
     /**
      * Does what placing a track tag block's item does, as for a signal: the block two north of the track
-     * at {@code x} (clear of a signal's), pointing at it, with the tag {@code tag}, its section running
-     * east, or west with {@code eastward} false. It makes its point on the graph on its first tick.
+     * at {@code x} (clear of a signal's), pointing at it, of the one-way kind or the one for both ways,
+     * with the tags {@code tags}, its section running east, or west with {@code eastward} false. It makes
+     * its point on the graph on its first tick.
      */
-    TrackTagBlockEntity placeTag(int x, boolean eastward, int tag) {
+    TrackTagBlockEntity placeTag(int x, boolean eastward, boolean oneWay, int... tags) {
         BlockPos trackPos = helper.absolutePos(track(x));
         BlockPos at = trackPos.north(2);
-        level.setBlock(at, ModRegistry.TRACK_TAG.get().defaultBlockState(), 3);
+        level.setBlock(at, (oneWay ? ModRegistry.TRACK_TAG_ONE_WAY : ModRegistry.TRACK_TAG).get().defaultBlockState(), 3);
         CompoundTag data = new CompoundTag();
         data.put("TargetTrack", NbtUtils.writeBlockPos(trackPos.subtract(at)));
         data.putBoolean("TargetDirection", !eastward);
-        data.putInt("Tag", tag);
+        data.putIntArray("Tags", tags);
         TrackTagBlockEntity entity = (TrackTagBlockEntity) level.getBlockEntity(at);
         entity.loadCustomOnly(data, level.registryAccess());
         tagBlocks.add(at);

@@ -15,8 +15,9 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.world.level.Level;
 
 /**
- * Draws a track tag block's mark on the track it points at, with the arrow of a station's for the way
- * its section runs, and the name of its tag over the block while the player looks at it.
+ * Draws a track tag block's mark on the track it points at, a signal's for the way its section runs (a
+ * one-way block's) or a two-sided signal's (a block's for both ways), and the names of its tags over
+ * the block while the player looks at it.
  */
 public class TrackTagRenderer extends SmartBlockEntityRenderer<TrackTagBlockEntity> {
 
@@ -27,9 +28,9 @@ public class TrackTagRenderer extends SmartBlockEntityRenderer<TrackTagBlockEnti
     @Override
     protected void renderSafe(TrackTagBlockEntity entity, float partialTicks, PoseStack ms, MultiBufferSource buffer, int light, int overlay) {
         super.renderSafe(entity, partialTicks, ms, buffer, light, overlay);
-        String name = TrackTagClient.name(entity.tag());
-        if (name != null)
-            renderNameplateOnHover(entity, Component.literal(name), 1, ms, buffer, light);
+        String names = TrackTagClient.names(entity.tags());
+        if (!names.isEmpty())
+            renderNameplateOnHover(entity, Component.literal(names), 1, ms, buffer, light);
 
         TrackTargetingBehaviour<TrackTagEdgePoint> target = entity.edgePoint;
         BlockPos track = target.getGlobalPosition();
@@ -40,7 +41,7 @@ public class TrackTagRenderer extends SmartBlockEntityRenderer<TrackTagBlockEnti
         ms.pushPose();
         ms.translate(offset.getX(), offset.getY(), offset.getZ());
         TrackTargetingBehaviour.render(level, track, target.getTargetDirection(), target.getTargetBezier(), ms, buffer, light, overlay,
-            RenderedTrackOverlayType.STATION, 1);
+            entity.oneWay() ? RenderedTrackOverlayType.SIGNAL : RenderedTrackOverlayType.DUAL_SIGNAL, 1);
         ms.popPose();
     }
 }

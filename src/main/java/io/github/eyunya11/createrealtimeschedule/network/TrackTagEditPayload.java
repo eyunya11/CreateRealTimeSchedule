@@ -14,14 +14,16 @@ import net.neoforged.neoforge.network.codec.NeoForgeStreamCodecs;
  * A change a player asks for on the tag screen of the block at {@code pos}. The server answers with a
  * {@link TrackTagOpenPayload}.
  *
- * @param tag  the tag to give the block, rename or delete; 0 for none
+ * @param tag  the tag to give the block or take off it, rename or delete
  * @param name the name of a tag to make, or the new name of one
  */
 public record TrackTagEditPayload(BlockPos pos, Action action, int tag, String name) implements CustomPacketPayload {
 
     public enum Action {
-        /** Gives the block {@code tag}. */
-        SET,
+        /** Gives the block {@code tag}, or takes it off the block if it has it. */
+        TOGGLE,
+        /** Takes all the block's tags off it. */
+        CLEAR,
         /** Makes a tag named {@code name} and gives the block it. */
         CREATE,
         /** Names {@code tag} {@code name}. */

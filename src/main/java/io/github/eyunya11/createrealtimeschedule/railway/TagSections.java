@@ -15,45 +15,55 @@ import io.github.eyunya11.createrealtimeschedule.railway.RailNetwork.Marker;
 import io.github.eyunya11.createrealtimeschedule.railway.RailNetwork.Place;
 
 /**
- * The stretches of track that track tag blocks give a tag ({@link RailNetwork#markers()}).
+ * The stretches of track that track tag blocks give tags ({@link RailNetwork#markers()}).
  *
  * <p>A block points at a place on the track and faces one way along it. Its section runs from there
- * the way it faces, to the next block that faces the same way or to the end of the track, and the tag
- * holds for trains running either way along it. A block with no tag gives no section; it only ends the
- * one of the block before it. A block facing the other way does not end a section.
+ * the way it faces, to the next block of its kind that faces the same way or to the end of the track.
+ * There are two kinds of block: a block for both ways gives its tags to trains running either way
+ * along its section, and a one-way block only to trains running the way it faces. A block may have
+ * more than one tag, and where sections overlap the track has the tags of them all. A block with no
+ * tag gives no section; it only ends the one of the block before it. A block facing the other way, or
+ * of the other kind, does not end a section.
  *
  * <p>Two things are wrong with a section, and are given as {@link Problem}s: it comes to a junction
  * (a node where the track goes on more than one way) before its end, where it could not be told which
- * way it goes on; or it overlaps the section of a block facing the other way that has another tag.
- * A section is kept as far as it could be followed, so that a problem with one block leaves the rest
- * of the network as it is.
+ * way it goes on; or the two kinds of block are mixed, a section overlapping one of the other kind or
+ * having a block of the other kind in it. A section is kept as far as it could be followed, so that a
+ * problem with one block leaves the rest of the network as it is.
  */
 public final class TagSections {
 
     private static final double EPSILON = 1e-9;
 
     /**
-     * A stretch of an edge with a tag.
+     * A stretch of an edge with tags.
      *
      * @param from   where it starts, from the start of the edge
      * @param to     where it ends
-     * @param tag    the tag's id
+     * @param tags   the ids of the tags of its block
+     * @param oneWay whether its block is a one-way one, whose tags hold only for trains running the way
+     *               of this edge
      * @param marker the index of the block whose section it is part of
      */
-    public record Span(double from, double to, int tag, int marker) {
+    public record Span(double from, double to, List<Integer> tags, boolean oneWay, int marker) {
+
+        public Span {
+            tags = List.copyOf(tags);
+        }
     }
 
     public enum Kind {
-        /** The section comes to a junction before the next block that faces the same way. */
+        /** The section comes to a junction before the next block of its kind that faces the same way. */
         JUNCTION,
-        /** The section overlaps one of another tag from a block facing the other way. */
-        OVERLAP
+        /** The section overlaps one from a block of the other kind, or has a block of the other kind in it. */
+        MIXED
     }
 
     /**
      * @param kind   what is wrong
-     * @param marker the index of the block whose section it is
-     * @param other  for an overlap, the index of the other block; otherwise -1
+     * @param marker the index of the block whose section it is; for blocks of two kinds mixed, the lower
+     *               of the two
+     * @param other  for blocks of two kinds mixed, the index of the other block; otherwise -1
      * @param node   for a junction, where its node is, if that is known
      */
     public record Problem(Kind kind, int marker, int other, @Nullable Place node) {
@@ -68,7 +78,11 @@ public final class TagSections {
         this.problems = List.copyOf(problems);
     }
 
-    /** The tagged stretches of {@code edge}, in the order they start along it. */
+    /**
+     * The tagged stretches of {@code edge}, in the order they start along it: those of both-ways blocks
+     * and those of one-way blocks facing the way the edge runs, which are the tags a train running along
+     * it meets.
+     */
     public List<Span> spans(int edge) {
         return spans.get(edge);
     }
@@ -77,7 +91,7 @@ public final class TagSections {
         return problems;
     }
 
-    /** The problems with the section of block {@code marker}, or with another that overlaps it. */
+    /** The problems with the section of block {@code marker}, or with another that it is mixed with. */
     public List<Problem> problemsOf(int marker) {
         return problems.stream().filter(problem -> problem.marker() == marker || problem.other() == marker).toList();
     }
@@ -113,7 +127,7 @@ public final class TagSections {
         List<Problem> problems = new ArrayList<>();
         for (int m = 0; m < markers.size(); m++) {
             Marker marker = markers.get(m);
-            if (marker.tag() == 0)
+            if (marker.tags().isEmpty())
                 continue;
             int edgeIndex = marker.edge();
             double from = marker.offset();
@@ -125,6 +139,8 @@ public final class TagSections {
                 double to = edge.length();
                 boolean ended = false;
                 for (int other : markersOn.get(edgeIndex)) {
+                    if (markers.get(other).oneWay() != marker.oneWay())
+                        continue;
                     double at = markers.get(other).offset();
                     if (first ? at > from + EPSILON : at >= from) {
                         to = at;
@@ -133,9 +149,9 @@ public final class TagSections {
                     }
                 }
                 if (to - from > EPSILON) {
-                    spans.get(edgeIndex).add(new Span(from, to, marker.tag(), m));
-                    if (reverse[edgeIndex] >= 0)
-                        spans.get(reverse[edgeIndex]).add(new Span(edge.length() - to, edge.length() - from, marker.tag(), m));
+                    spans.get(edgeIndex).add(new Span(from, to, marker.tags(), marker.oneWay(), m));
+                    if (!marker.oneWay() && reverse[edgeIndex] >= 0)
+                        spans.get(reverse[edgeIndex]).add(new Span(edge.length() - to, edge.length() - from, marker.tags(), false, m));
                 }
                 if (ended || edge.next().isEmpty())
                     break;
@@ -148,23 +164,46 @@ public final class TagSections {
             }
         }
 
-        Set<List<Integer>> overlapping = new LinkedHashSet<>();
+        // Both kinds of block mixed: sections of the two kinds that overlap (a both-ways section is on
+        // the edges both ways, so it meets a one-way one on the one-way one's edge), and a block of one
+        // kind in a section of the other, with tags or without.
+        Set<List<Integer>> mixed = new LinkedHashSet<>();
         for (List<Span> onEdge : spans) {
             onEdge.sort(Comparator.comparingDouble(Span::from).thenComparingInt(Span::marker));
             for (int i = 0; i < onEdge.size(); i++)
                 for (int j = i + 1; j < onEdge.size(); j++) {
                     Span a = onEdge.get(i);
                     Span b = onEdge.get(j);
-                    if (a.tag() != b.tag() && Math.min(a.to(), b.to()) - Math.max(a.from(), b.from()) > EPSILON)
-                        overlapping.add(List.of(Math.min(a.marker(), b.marker()), Math.max(a.marker(), b.marker())));
+                    if (a.oneWay() != b.oneWay() && Math.min(a.to(), b.to()) - Math.max(a.from(), b.from()) > EPSILON)
+                        mixed.add(pair(a.marker(), b.marker()));
                 }
         }
-        for (List<Integer> pair : overlapping)
-            problems.add(new Problem(Kind.OVERLAP, pair.get(0), pair.get(1), null));
+        for (int m = 0; m < markers.size(); m++) {
+            Marker marker = markers.get(m);
+            int edge = marker.edge();
+            for (Span span : spans.get(edge))
+                if (span.oneWay() != marker.oneWay() && within(span, marker.offset()))
+                    mixed.add(pair(m, span.marker()));
+            if (reverse[edge] >= 0)
+                for (Span span : spans.get(reverse[edge]))
+                    if (span.oneWay() != marker.oneWay() && within(span, edges.get(edge).length() - marker.offset()))
+                        mixed.add(pair(m, span.marker()));
+        }
+        for (List<Integer> pair : mixed)
+            problems.add(new Problem(Kind.MIXED, pair.get(0), pair.get(1), null));
 
         List<List<Span>> kept = new ArrayList<>();
         for (List<Span> onEdge : spans)
             kept.add(List.copyOf(onEdge));
         return new TagSections(List.copyOf(kept), problems);
+    }
+
+    private static List<Integer> pair(int a, int b) {
+        return List.of(Math.min(a, b), Math.max(a, b));
+    }
+
+    /** Whether {@code at} is in {@code span}, from its start up to but not at its end. */
+    private static boolean within(Span span, double at) {
+        return at > span.from() - EPSILON && at < span.to() - EPSILON;
     }
 }

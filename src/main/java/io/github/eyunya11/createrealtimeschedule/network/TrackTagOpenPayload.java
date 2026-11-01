@@ -17,11 +17,12 @@ import net.minecraft.resources.ResourceLocation;
  * Opens the tag screen of the track tag block at {@code pos}, or brings it up to date if it is open,
  * after a change the player asked for.
  *
- * @param tag      the block's tag, or 0 for none
+ * @param tags     the ids of the block's tags
+ * @param oneWay   whether it is a one-way block
  * @param problems what is wrong with the block's section
  * @param message  how the player's last change went, if it was refused or did something to say
  */
-public record TrackTagOpenPayload(BlockPos pos, int tag, List<Component> problems, Optional<Component> message)
+public record TrackTagOpenPayload(BlockPos pos, List<Integer> tags, boolean oneWay, List<Component> problems, Optional<Component> message)
     implements CustomPacketPayload {
 
     public static final Type<TrackTagOpenPayload> TYPE =
@@ -29,7 +30,8 @@ public record TrackTagOpenPayload(BlockPos pos, int tag, List<Component> problem
 
     public static final StreamCodec<RegistryFriendlyByteBuf, TrackTagOpenPayload> STREAM_CODEC = StreamCodec.composite(
         BlockPos.STREAM_CODEC, TrackTagOpenPayload::pos,
-        ByteBufCodecs.VAR_INT, TrackTagOpenPayload::tag,
+        ByteBufCodecs.VAR_INT.apply(ByteBufCodecs.list()), TrackTagOpenPayload::tags,
+        ByteBufCodecs.BOOL, TrackTagOpenPayload::oneWay,
         ComponentSerialization.STREAM_CODEC.apply(ByteBufCodecs.list()), TrackTagOpenPayload::problems,
         ComponentSerialization.OPTIONAL_STREAM_CODEC, TrackTagOpenPayload::message,
         TrackTagOpenPayload::new);

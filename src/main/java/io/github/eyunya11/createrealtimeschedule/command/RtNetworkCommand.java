@@ -84,10 +84,12 @@ public final class RtNetworkCommand {
         RailNetwork network = CreateNetwork.read(Create.RAILWAYS.trackNetworks.values());
         List<RailNetwork.Marker> markers = network.markers();
         List<TagSections.Problem> problems = TagSections.of(network).problems();
-        source.sendSuccess(() -> Component.translatableWithFallback(KEY + "tags", "%1$s track tags, %2$s tag blocks on the track, %3$s problems",
-            tags.names().size(), markers.size(), problems.size()), false);
+        long oneWay = markers.stream().filter(RailNetwork.Marker::oneWay).count();
+        source.sendSuccess(() -> Component.translatableWithFallback(KEY + "tags",
+            "%1$s track tags; on the track, %2$s tag blocks for both ways and %3$s one-way ones; %4$s problems",
+            tags.names().size(), markers.size() - oneWay, oneWay, problems.size()), false);
         for (Map.Entry<Integer, String> tag : tags.names().entrySet()) {
-            long blocks = markers.stream().filter(marker -> marker.tag() == tag.getKey()).count();
+            long blocks = markers.stream().filter(marker -> marker.tags().contains(tag.getKey())).count();
             source.sendSuccess(() -> Component.translatableWithFallback(KEY + "tag", "%1$s: %2$s blocks", tag.getValue(), blocks), false);
         }
         for (TagSections.Problem problem : problems)

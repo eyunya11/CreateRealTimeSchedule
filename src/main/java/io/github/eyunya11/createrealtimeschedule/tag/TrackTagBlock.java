@@ -15,13 +15,23 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 
 /**
- * The track tag block. It is placed as a station is: the item is used on the track first, which picks
- * the place and the way it faces. Used, the block opens the screen to choose its tag.
+ * The track tag block, of one of two kinds: for both ways, whose tags hold for trains running either
+ * way along its section, or one way, whose tags hold only for those running the way it faces. It is
+ * placed as a station is: the item is used on the track first, which picks the place and the way it
+ * faces. Used, the block opens the screen to choose its tags.
  */
 public class TrackTagBlock extends Block implements IBE<TrackTagBlockEntity>, IWrenchable {
 
-    public TrackTagBlock(Properties properties) {
+    private final boolean oneWay;
+
+    public TrackTagBlock(Properties properties, boolean oneWay) {
         super(properties);
+        this.oneWay = oneWay;
+    }
+
+    /** Whether it is the one-way kind. */
+    public boolean oneWay() {
+        return oneWay;
     }
 
     @Override

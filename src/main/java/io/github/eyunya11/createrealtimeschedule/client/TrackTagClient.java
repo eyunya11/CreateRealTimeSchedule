@@ -1,10 +1,10 @@
 package io.github.eyunya11.createrealtimeschedule.client;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
-
-import org.jetbrains.annotations.Nullable;
 
 import io.github.eyunya11.createrealtimeschedule.network.TrackTagListPayload;
 import io.github.eyunya11.createrealtimeschedule.network.TrackTagOpenPayload;
@@ -39,9 +39,18 @@ public final class TrackTagClient {
         return names;
     }
 
-    /** The name of tag {@code id}, or null for none or a tag the client does not know of. */
-    public static @Nullable String name(int id) {
-        return names.get(id);
+    /**
+     * The names of the tags {@code ids}, joined with commas; a tag the client does not know of, one
+     * deleted meanwhile, is left out.
+     */
+    public static String names(List<Integer> ids) {
+        List<String> known = new ArrayList<>();
+        for (int id : ids) {
+            String name = names.get(id);
+            if (name != null)
+                known.add(name);
+        }
+        return String.join(", ", known);
     }
 
     static void reset() {

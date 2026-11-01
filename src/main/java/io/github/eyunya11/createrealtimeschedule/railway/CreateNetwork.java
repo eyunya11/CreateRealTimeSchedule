@@ -177,7 +177,7 @@ public final class CreateNetwork {
                             if (point instanceof GlobalStation station)
                                 hash = 31 * hash + Objects.hashCode(station.name) + Boolean.hashCode(station.canApproachFrom(edge.node2));
                             else if (point instanceof TrackTagEdgePoint tag)
-                                hash = 31 * hash + tag.tag();
+                                hash = 31 * hash + tag.tags().hashCode() + Boolean.hashCode(tag.oneWay());
                             else if (signType != null && point.getType() == signType)
                                 hash = 31 * hash + Objects.hashCode(sign(point, 0, unreadable));
                         }
@@ -278,7 +278,7 @@ public final class CreateNetwork {
             BlockPos block = point.getBlockEntityPos();
             RailNetwork.Place place = block == null ? new RailNetwork.Place(Double.NaN, Double.NaN, Double.NaN)
                 : new RailNetwork.Place(block.getX(), block.getY(), block.getZ());
-            reading.markers.add(new RailNetwork.Marker(at, offset, point.tag(), place));
+            reading.markers.add(new RailNetwork.Marker(at, offset, point.tags(), point.oneWay(), place));
         }
     }
 

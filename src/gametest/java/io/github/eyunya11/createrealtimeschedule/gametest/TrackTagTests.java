@@ -24,8 +24,8 @@ import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
 /**
- * Track tag blocks on real track, with {@code ./gradlew runGameTestServer}: the point each makes on
- * Create's graph, and the sections that {@link TagSections} reads from them. Each test has a batch of
+ * Track tag blocks of both kinds on real track, with {@code ./gradlew runGameTestServer}: the point
+ * each makes on Create's graph, and the sections that {@link TagSections} reads from them. Each test has a batch of
  * its own (see {@link TrackLine}).
  */
 @GameTestHolder(Createrealtimeschedule.MODID)
@@ -44,10 +44,10 @@ public class TrackTagTests {
     private static final double SLACK = 1;
 
     /**
-     * A straight line, which Create splits into edges at the chunk borders, with three blocks beside it:
-     * at x = 20 facing east with the tag Local, at 50 facing east with none, and at 40 facing west with
-     * Local too. The first block's section runs east to the second, and the third's west to the end of
-     * the line, over it.
+     * A straight line, which Create splits into edges at the chunk borders, with three blocks for both
+     * ways beside it: at x = 20 facing east with the tag Local, at 50 facing east with none, and at 40
+     * facing west with Rapid. The first block's section runs east to the second, and the third's west to
+     * the end of the line, over it: from 20 to 40 the track has both tags, which is no problem.
      */
     @GameTest(template = TURN, batch = "realtimetag_sections", timeoutTicks = TIMEOUT_TICKS)
     public static void aSectionRunsToTheNextBlockFacingTheSameWayForTrainsBothWays(GameTestHelper helper) {
@@ -62,45 +62,87 @@ public class TrackTagTests {
             if (blocks[0] == null) {
                 tags[0] = line.makeTag("Local (test)");
                 tags[1] = line.makeTag("Rapid (test)");
-                blocks[0] = line.placeTag(20, true, tags[0]);
-                blocks[1] = line.placeTag(50, true, TrackTags.NONE);
-                blocks[2] = line.placeTag(40, false, tags[0]);
+                blocks[0] = line.placeTag(20, true, false, tags[0]);
+                blocks[1] = line.placeTag(50, true, false);
+                blocks[2] = line.placeTag(40, false, false, tags[1]);
                 return;
             }
-            for (TrackTagBlockEntity block : blocks)
-                if (block.edgePoint.getEdgePoint() == null)
-                    return;
+            if (!onTrack(blocks))
+                return;
             TrackGraph graph = line.train().graph;
             RailNetwork network = CreateNetwork.read(List.of(graph));
             helper.assertTrue(network.markers().size() == 3, "3 tag blocks on the track, not " + network.markers().size());
             TagSections sections = TagSections.of(network);
             int east = marker(helper, network, blocks[0]);
             int west = marker(helper, network, blocks[2]);
-            // A section is on the edges both ways, so the length tagged for it is twice its own.
+            // A section for both ways is on the edges both ways, so the length tagged for it is twice its own.
             assertLength(helper, sections, network, east, 2 * (50 - 20), "the eastward Local block's");
-            assertLength(helper, sections, network, west, 2 * (40 - 0), "the westward Local block's");
+            assertLength(helper, sections, network, west, 2 * (40 - 0), "the westward Rapid block's");
             assertLength(helper, sections, network, marker(helper, network, blocks[1]), 0, "the block with no tag's");
-            helper.assertTrue(sections.problems().isEmpty(), "sections of one tag may overlap: " + sections.problems());
+            assertOverlap(helper, sections, network, east, west, 2 * (40 - 20));
+            helper.assertTrue(sections.problems().isEmpty(), "sections of two tags facing two ways may overlap: " + sections.problems());
 
-            // The westward block gets another tag: its section and the eastward one now overlap with two.
+            // The westward block gets both tags.
             long before = CreateNetwork.fingerprint(List.of(graph));
-            blocks[2].setTag(tags[1]);
+            blocks[2].setTags(tags[1], tags[0]);
             helper.assertTrue(CreateNetwork.fingerprint(List.of(graph)) != before, "a tag changed is a change of the track");
+            List<Integer> both = TrackTags.ids(tags);
             RailNetwork changed = CreateNetwork.read(List.of(graph));
-            List<TagSections.Problem> problems = TagSections.of(changed).problems();
-            helper.assertTrue(problems.equals(List.of(new TagSections.Problem(TagSections.Kind.OVERLAP, Math.min(east, west), Math.max(east, west), null))),
-                "the two sections overlap with two tags: " + problems);
-            helper.assertTrue(TrackTagService.uses(tags[0]) == 1 && TrackTagService.uses(tags[1]) == 1,
-                "one block has each tag: " + TrackTagService.uses(tags[0]) + " and " + TrackTagService.uses(tags[1]));
+            List<Integer> westTags = changed.markers().get(marker(helper, changed, blocks[2])).tags();
+            helper.assertTrue(westTags.equals(both), "the westward block has both tags, not " + westTags);
+            helper.assertTrue(TrackTagService.uses(tags[0]) == 2 && TrackTagService.uses(tags[1]) == 1,
+                "two blocks have Local and one Rapid: " + TrackTagService.uses(tags[0]) + " and " + TrackTagService.uses(tags[1]));
 
-            // The point keeps its tag with Create's graph, saved and read again.
-            TrackTagEdgePoint point = blocks[2].edgePoint.getEdgePoint();
-            DimensionPalette palette = new DimensionPalette();
-            CompoundTag saved = new CompoundTag();
-            point.write(saved, helper.getLevel().registryAccess(), palette);
-            TrackTagEdgePoint read = new TrackTagEdgePoint();
-            read.read(saved, helper.getLevel().registryAccess(), false, palette);
-            helper.assertTrue(read.tag() == tags[1], "the point read again has the tag " + read.tag() + ", not " + tags[1]);
+            // The point keeps its tags and its kind with Create's graph, saved and read again.
+            TrackTagEdgePoint read = savedAndRead(helper, blocks[2].edgePoint.getEdgePoint());
+            helper.assertTrue(read.tags().equals(both) && !read.oneWay(), "the point read again has the tags " + read.tags()
+                + (read.oneWay() ? ", one way" : "") + ", not " + both + " for both ways");
+            startLooking(helper, looked, blocks);
+        });
+    }
+
+    /**
+     * One-way blocks on a straight line: Up at x = 20 facing east and Down at 60 facing west, on the
+     * same track. Each section is only on the edges the way its block faces, and the two are no problem.
+     * A block for both ways at 40 then mixes the two kinds, in both sections.
+     */
+    @GameTest(template = TURN, batch = "realtimetag_one_way", timeoutTicks = TIMEOUT_TICKS)
+    public static void aOneWaySectionHoldsOnlyForTrainsRunningTheWayItsBlockFaces(GameTestHelper helper) {
+        TrackLine line = new TrackLine(helper, 80, new int[] {5, 75}, new String[] {"A", "B"});
+        line.cleanUpWhenTheTestEnds();
+        TrackTagBlockEntity[] blocks = new TrackTagBlockEntity[3];
+        int[] looked = {-1};
+        helper.onEachTick(() -> {
+            if (!line.setUp() || lookingOn(helper, looked))
+                return;
+            if (blocks[0] == null) {
+                blocks[0] = line.placeTag(20, true, true, line.makeTag("Up (test)"));
+                blocks[1] = line.placeTag(60, false, true, line.makeTag("Down (test)"));
+                return;
+            }
+            if (blocks[2] == null) {
+                if (!onTrack(blocks[0], blocks[1]))
+                    return;
+                RailNetwork network = CreateNetwork.read(List.of(line.train().graph));
+                TagSections sections = TagSections.of(network);
+                helper.assertTrue(network.markers().stream().allMatch(RailNetwork.Marker::oneWay), "both blocks are one-way: " + network.markers());
+                // A one-way section is on the edges one way only, so the length tagged for it is its own.
+                assertLength(helper, sections, network, marker(helper, network, blocks[0]), 80 - 20, "the eastward Up block's");
+                assertLength(helper, sections, network, marker(helper, network, blocks[1]), 60 - 0, "the westward Down block's");
+                helper.assertTrue(sections.problems().isEmpty(), "one-way sections facing two ways may overlap: " + sections.problems());
+                TrackTagEdgePoint read = savedAndRead(helper, blocks[0].edgePoint.getEdgePoint());
+                helper.assertTrue(read.oneWay(), "the point read again is one-way");
+                blocks[2] = line.placeTag(40, true, false, line.makeTag("Main (test)"));
+                return;
+            }
+            if (!onTrack(blocks[2]))
+                return;
+            RailNetwork network = CreateNetwork.read(List.of(line.train().graph));
+            List<TagSections.Problem> problems = TagSections.of(network).problems();
+            int both = marker(helper, network, blocks[2]);
+            helper.assertTrue(problems.size() == 2 && problems.stream().allMatch(problem -> problem.kind() == TagSections.Kind.MIXED
+                && (problem.marker() == both || problem.other() == both)),
+                "the block for both ways is mixed with each one-way block: " + problems);
             startLooking(helper, looked, blocks);
         });
     }
@@ -117,7 +159,7 @@ public class TrackTagTests {
             if (!line.setUp() || lookingOn(helper, looked))
                 return;
             if (block[0] == null) {
-                block[0] = line.placeTag(30, true, line.makeTag("Main (test)"));
+                block[0] = line.placeTag(30, true, false, line.makeTag("Main (test)"));
                 return;
             }
             if (block[0].edgePoint.getEdgePoint() == null)
@@ -177,6 +219,35 @@ public class TrackTagTests {
                 return i;
         }
         throw new IllegalStateException("no tag block at " + pos.toShortString() + " in the network");
+    }
+
+    /** Whether the blocks have all made their points on the graph. */
+    private static boolean onTrack(TrackTagBlockEntity... blocks) {
+        for (TrackTagBlockEntity block : blocks)
+            if (block.edgePoint.getEdgePoint() == null)
+                return false;
+        return true;
+    }
+
+    /** {@code point} saved as Create saves its graph, and read again. */
+    private static TrackTagEdgePoint savedAndRead(GameTestHelper helper, TrackTagEdgePoint point) {
+        DimensionPalette palette = new DimensionPalette();
+        CompoundTag saved = new CompoundTag();
+        point.write(saved, helper.getLevel().registryAccess(), palette);
+        TrackTagEdgePoint read = new TrackTagEdgePoint();
+        read.read(saved, helper.getLevel().registryAccess(), false, palette);
+        return read;
+    }
+
+    /** The length the sections of blocks {@code a} and {@code b} overlap, over all the edges, is {@code expected}. */
+    private static void assertOverlap(GameTestHelper helper, TagSections sections, RailNetwork network, int a, int b, double expected) {
+        double length = 0;
+        for (int edge = 0; edge < network.edges().size(); edge++)
+            for (TagSections.Span one : sections.spans(edge))
+                for (TagSections.Span other : sections.spans(edge))
+                    if (one.marker() == a && other.marker() == b)
+                        length += Math.max(0, Math.min(one.to(), other.to()) - Math.max(one.from(), other.from()));
+        helper.assertTrue(Math.abs(length - expected) <= 2 * SLACK, "the sections overlap " + length + " long both ways, not " + expected);
     }
 
     /** The length tagged for the section of block {@code marker}, over all the edges, is {@code expected}. */

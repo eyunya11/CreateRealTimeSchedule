@@ -22,7 +22,8 @@ import net.minecraft.util.Mth;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 /**
- * The screen of a track tag block: the world's tags, to pick the block's from, make, rename and delete.
+ * The screen of a track tag block: the world's tags, to give the block or take off it, make, rename
+ * and delete. A block may have any number of tags.
  * Each change is sent to the server, which answers with the block as it now is.
  */
 public final class TrackTagScreen extends Screen {
@@ -35,10 +36,11 @@ public final class TrackTagScreen extends Screen {
     private static final int BUTTON_WIDTH = 82;
 
     private final BlockPos pos;
-    private int tag;
+    private List<Integer> tags = List.of();
+    private boolean oneWay;
     private List<Component> problems;
     private @Nullable Component message;
-    /** The tag picked in the list, for the buttons that act on one; at first the block's own. */
+    /** The tag picked in the list, for the buttons that act on one; at first the block's first. */
     private int selected;
     private int scroll;
     private String typed = "";
@@ -49,7 +51,7 @@ public final class TrackTagScreen extends Screen {
         super(Component.translatableWithFallback(KEY + "title", "Track Tag"));
         this.pos = payload.pos();
         update(payload);
-        this.selected = tag;
+        this.selected = tags.isEmpty() ? TrackTags.NONE : tags.get(0);
     }
 
     BlockPos pos() {
@@ -58,7 +60,8 @@ public final class TrackTagScreen extends Screen {
 
     /** The block as the server now has it, after a change. */
     void update(TrackTagOpenPayload payload) {
-        tag = payload.tag();
+        tags = payload.tags();
+        oneWay = payload.oneWay();
         problems = payload.problems();
         message = payload.message().orElse(null);
         if (minecraft != null)
@@ -80,18 +83,18 @@ public final class TrackTagScreen extends Screen {
 
     @Override
     protected void init() {
-        List<Map.Entry<Integer, String>> tags = new ArrayList<>(TrackTagClient.names().entrySet());
+        List<Map.Entry<Integer, String>> names = new ArrayList<>(TrackTagClient.names().entrySet());
         if (!TrackTagClient.names().containsKey(selected))
             selected = TrackTags.NONE;
-        scroll = Mth.clamp(scroll, 0, Math.max(0, tags.size() - ROWS));
+        scroll = Mth.clamp(scroll, 0, Math.max(0, names.size() - ROWS));
         int left = left();
         int y = top() + 30;
-        for (int row = 0; row < ROWS && scroll + row < tags.size(); row++) {
-            Map.Entry<Integer, String> entry = tags.get(scroll + row);
+        for (int row = 0; row < ROWS && scroll + row < names.size(); row++) {
+            Map.Entry<Integer, String> entry = names.get(scroll + row);
             int id = entry.getKey();
             Component label = Component.literal(entry.getValue());
-            if (id == tag)
-                label = label.copy().withStyle(ChatFormatting.GREEN);
+            if (tags.contains(id))
+                label = Component.literal("✔ ").append(label).withStyle(ChatFormatting.GREEN);
             if (id == selected)
                 label = Component.literal("> ").append(label).append(" <");
             addRenderableWidget(Button.builder(label, button -> {
@@ -102,10 +105,11 @@ public final class TrackTagScreen extends Screen {
 
         int right = left + WIDTH - BUTTON_WIDTH;
         boolean picked = selected != TrackTags.NONE;
-        addRenderableWidget(action(Component.translatableWithFallback(KEY + "use", "Use"), right, y,
-            picked && selected != tag, () -> send(Action.SET, selected)));
-        addRenderableWidget(action(Component.translatableWithFallback(KEY + "none", "None"), right, y + ROW_HEIGHT,
-            tag != TrackTags.NONE, () -> send(Action.SET, TrackTags.NONE)));
+        Component toggle = tags.contains(selected) ? Component.translatableWithFallback(KEY + "remove", "Take Off")
+            : Component.translatableWithFallback(KEY + "add", "Give");
+        addRenderableWidget(action(toggle, right, y, picked, () -> send(Action.TOGGLE, selected)));
+        addRenderableWidget(action(Component.translatableWithFallback(KEY + "clear", "Take All Off"), right, y + ROW_HEIGHT,
+            !tags.isEmpty(), () -> send(Action.CLEAR, TrackTags.NONE)));
         rename = addRenderableWidget(action(Component.translatableWithFallback(KEY + "rename", "Rename"), right, y + 3 * ROW_HEIGHT,
             picked && !typed.isBlank(), () -> send(Action.RENAME, selected)));
         addRenderableWidget(action(Component.translatableWithFallback(KEY + "delete", "Delete"), right, y + 4 * ROW_HEIGHT,
@@ -154,10 +158,10 @@ public final class TrackTagScreen extends Screen {
         super.render(graphics, mouseX, mouseY, partialTick);
         int left = left();
         int top = top();
-        graphics.drawCenteredString(font, title, width / 2, top, 0xFFFFFF);
-        String name = TrackTagClient.name(tag);
-        Component current = tag == TrackTags.NONE ? Component.translatableWithFallback(KEY + "none", "None")
-            : name == null ? Component.translatableWithFallback(KEY + "deleted_tag", "(a deleted tag)") : Component.literal(name);
+        Component kind = oneWay ? Component.translatableWithFallback(KEY + "one_way", "One way: for trains running the way it faces")
+            : Component.translatableWithFallback(KEY + "both_ways", "Both ways: for trains running either way");
+        graphics.drawCenteredString(font, Component.empty().append(title).append(" - ").append(kind), width / 2, top, 0xFFFFFF);
+        Component current = tags.isEmpty() ? Component.translatableWithFallback(KEY + "none", "None") : Component.literal(TrackTagClient.names(tags));
         graphics.drawString(font, Component.translatableWithFallback(KEY + "current", "This block: %1$s", current), left, top + 14, 0xFFFFFF);
         int names = TrackTagClient.names().size();
         int y = top + 30;

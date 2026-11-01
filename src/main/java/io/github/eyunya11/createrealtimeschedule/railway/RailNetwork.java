@@ -102,10 +102,15 @@ public final class RailNetwork {
      *
      * @param edge   the index of the edge it faces along: its section runs on the way this edge runs
      * @param offset its distance from the start of that edge
-     * @param tag    the id of its tag, or 0 for none
+     * @param tags   the ids of its tags, none for a block that only ends a section
+     * @param oneWay whether it is a one-way block, whose tags hold only for trains running the way it faces
      * @param block  where the block is, to tell the player which one is meant
      */
-    public record Marker(int edge, double offset, int tag, Place block) {
+    public record Marker(int edge, double offset, List<Integer> tags, boolean oneWay, Place block) {
+
+        public Marker {
+            tags = List.copyOf(tags);
+        }
     }
 
     /**

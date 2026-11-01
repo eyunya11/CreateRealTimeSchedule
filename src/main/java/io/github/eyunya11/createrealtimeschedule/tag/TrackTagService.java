@@ -44,7 +44,7 @@ public final class TrackTagService {
     public static void open(ServerPlayer player, BlockPos pos, @Nullable Component message) {
         if (!(player.level().getBlockEntity(pos) instanceof TrackTagBlockEntity entity))
             return;
-        PacketDistributor.sendToPlayer(player, new TrackTagOpenPayload(pos, entity.tag(), problems(entity), Optional.ofNullable(message)));
+        PacketDistributor.sendToPlayer(player, new TrackTagOpenPayload(pos, entity.tags(), entity.oneWay(), problems(entity), Optional.ofNullable(message)));
     }
 
     /** The list as the clients are sent it. */
@@ -67,17 +67,22 @@ public final class TrackTagService {
         TrackTags tags = data.tags();
         String before = tags.name(edit.tag());
         Outcome outcome = switch (edit.action()) {
-            case SET -> {
-                if (edit.tag() != TrackTags.NONE && before == null)
+            case TOGGLE -> {
+                // A tag deleted meanwhile can still be taken off; that is what initialize does too.
+                if (before == null && !entity.tags().contains(edit.tag()))
                     yield Outcome.refused(TrackTags.Refusal.UNKNOWN, null);
-                entity.setTag(edit.tag());
+                entity.toggle(edit.tag());
+                yield new Outcome(null, false);
+            }
+            case CLEAR -> {
+                entity.setTags();
                 yield new Outcome(null, false);
             }
             case CREATE -> {
                 TrackTags.Created created = tags.create(edit.name());
                 if (created.refusal() != null)
                     yield Outcome.refused(created.refusal(), edit.name());
-                entity.setTag(created.id());
+                entity.toggle(created.id());
                 yield new Outcome(Component.translatableWithFallback(KEY + "created", "Made the tag %1$s", tags.name(created.id())), true);
             }
             case RENAME -> {
@@ -137,7 +142,7 @@ public final class TrackTagService {
         int count = 0;
         for (TrackGraph graph : Create.RAILWAYS.trackNetworks.values())
             for (TrackTagEdgePoint point : graph.getPoints(type))
-                if (point.tag() == id)
+                if (point.tags().contains(id))
                     count++;
         return count;
     }
@@ -164,9 +169,9 @@ public final class TrackTagService {
     public static Component describe(TagSections.Problem problem, int self, List<RailNetwork.Marker> markers) {
         return switch (problem.kind()) {
             case JUNCTION -> Component.translatableWithFallback(KEY + "junction",
-                "Its section comes to a junction at %1$s before the next tag block facing the same way", where(problem.node()));
-            case OVERLAP -> Component.translatableWithFallback(KEY + "overlap",
-                "Its section overlaps that of the block at %1$s, which has another tag",
+                "Its section comes to a junction at %1$s before the next tag block of its kind facing the same way", where(problem.node()));
+            case MIXED -> Component.translatableWithFallback(KEY + "mixed",
+                "It is mixed with the tag block of the other kind at %1$s: their sections overlap, or one is in the other's section",
                 where(markers.get(problem.marker() == self ? problem.other() : problem.marker()).block()));
         };
     }

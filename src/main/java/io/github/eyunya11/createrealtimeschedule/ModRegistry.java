@@ -23,19 +23,29 @@ public final class ModRegistry {
     private static final DeferredRegister<BlockEntityType<?>> BLOCK_ENTITY_TYPES =
         DeferredRegister.create(Registries.BLOCK_ENTITY_TYPE, Createrealtimeschedule.MODID);
 
-    /** The track tag block, which gives a stretch of track a tag (see {@link TrackTagBlock}). */
-    public static final DeferredBlock<TrackTagBlock> TRACK_TAG = BLOCKS.register("track_tag",
-        () -> new TrackTagBlock(BlockBehaviour.Properties.of().mapColor(MapColor.PODZOL).strength(1.5f).sound(SoundType.NETHERITE_BLOCK)));
+    /** The track tag block for both ways, which gives a stretch of track tags (see {@link TrackTagBlock}). */
+    public static final DeferredBlock<TrackTagBlock> TRACK_TAG = BLOCKS.register("track_tag", () -> new TrackTagBlock(tagBlock(), false));
+
+    /** The one-way track tag block, whose tags hold only for trains running the way it faces. */
+    public static final DeferredBlock<TrackTagBlock> TRACK_TAG_ONE_WAY = BLOCKS.register("track_tag_one_way", () -> new TrackTagBlock(tagBlock(), true));
 
     public static final DeferredItem<TrackTagItem> TRACK_TAG_ITEM = ITEMS.register("track_tag",
         () -> new TrackTagItem(TRACK_TAG.get(), new Item.Properties()));
 
+    public static final DeferredItem<TrackTagItem> TRACK_TAG_ONE_WAY_ITEM = ITEMS.register("track_tag_one_way",
+        () -> new TrackTagItem(TRACK_TAG_ONE_WAY.get(), new Item.Properties()));
+
+    /** The block entity of both kinds of track tag block. */
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<TrackTagBlockEntity>> TRACK_TAG_ENTITY =
         BLOCK_ENTITY_TYPES.register("track_tag", () -> BlockEntityType.Builder
-            .of((pos, state) -> new TrackTagBlockEntity(ModRegistry.TRACK_TAG_ENTITY.get(), pos, state), TRACK_TAG.get())
+            .of((pos, state) -> new TrackTagBlockEntity(ModRegistry.TRACK_TAG_ENTITY.get(), pos, state), TRACK_TAG.get(), TRACK_TAG_ONE_WAY.get())
             .build(null));
 
     private ModRegistry() {}
+
+    private static BlockBehaviour.Properties tagBlock() {
+        return BlockBehaviour.Properties.of().mapColor(MapColor.PODZOL).strength(1.5f).sound(SoundType.NETHERITE_BLOCK);
+    }
 
     static void register(IEventBus modBus) {
         BLOCKS.register(modBus);
