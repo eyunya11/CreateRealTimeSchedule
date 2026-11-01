@@ -18,10 +18,11 @@ public final class ModNetwork {
      * leaves out, and 5 since the timetable in the diagram's payload may be of version 5 (the trains a
      * stop waits for), which a client of before cannot read: it would show the diagram as of no
      * timetable, where this keeps it off the server with a message saying why. 6 since a duty's times
-     * in the diagram's payload carry the stations it ran through, and 7 since the timetable may be of
-     * version 6 (the types' colours and the stops that change a train's type).
+     * in the diagram's payload carry the stations it ran through, 7 since the timetable may be of
+     * version 6 (the types' colours and the stops that change a train's type), and 8 since it may be of
+     * version 7 (the tracks a map shows and hides).
      */
-    private static final String PROTOCOL_VERSION = "7";
+    private static final String PROTOCOL_VERSION = "8";
 
     private ModNetwork() {}
 
