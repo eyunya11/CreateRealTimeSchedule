@@ -255,6 +255,10 @@
       train.type = fields.type;
     if (fields.deadhead !== undefined)
       train.deadhead = fields.deadhead;
+    if (fields.tag === '')
+      delete train.tag;
+    else if (fields.tag !== undefined)
+      train.tag = fields.tag;
     if (fields.keep === true)
       train.keep = true;
     else if (fields.keep === false)
@@ -278,12 +282,22 @@
 
   /**
    * The seconds a train takes at the least from one stop to the next: the running time the track
-   * gives (running, from one station's name to another's, null where it does not say), and in any
-   * case a second, since a train has to arrive after it leaves.
+   * gives (running, from one station's name to another's on the stop's own track tag, '' for none,
+   * null where it does not say), and in any case a second, since a train has to arrive after it leaves.
    */
   function leastRunning(running, from, to) {
-    const seconds = running ? running(from.station, to.station) : null;
+    const seconds = running ? running(from.station, to.station, from.tag || '') : null;
     return Math.max(1, seconds === null ? 1 : seconds);
+  }
+
+  /**
+   * running for the stops of train: a way from a stop with no track tag of its own is on the train's.
+   * Null for null.
+   */
+  function forTrain(running, train) {
+    if (!running)
+      return running;
+    return (from, to, tag) => running(from, to, tag || train.tag || '');
   }
 
   /**
@@ -333,6 +347,7 @@
    * are rounded in to it (see heldBy).
    */
   function moveStop(timetable, number, index, delta, running, step) {
+    running = forTrain(running, trainAt(timetable, number));
     const next = copy(timetable);
     const stops = trainAt(next, number).stops;
     const stop = stops[index];
@@ -353,6 +368,7 @@
    * one of these is not moved further. With a step, the limits are rounded in to it (see heldBy).
    */
   function moveRun(timetable, number, index, delta, running, step) {
+    running = forTrain(running, trainAt(timetable, number));
     const next = copy(timetable);
     const stops = trainAt(next, number).stops;
     const from = stops[index];
@@ -377,6 +393,7 @@
    * it (see heldBy).
    */
   function moveArrival(timetable, number, index, delta, running, step) {
+    running = forTrain(running, trainAt(timetable, number));
     const stops = trainAt(timetable, number).stops;
     if (stops[index].arrive === NONE)
       return moveStop(timetable, number, index, delta, running, step);
@@ -469,6 +486,7 @@
    * the two cannot both hold, the stop before wins.
    */
   function setStopTime(timetable, number, index, field, seconds, running) {
+    running = forTrain(running, trainAt(timetable, number));
     const next = copy(timetable);
     const stops = trainAt(next, number).stops;
     const stop = stops[index];
@@ -488,6 +506,7 @@
    * later than the running time to the stop after allows.
    */
   function setDwell(timetable, number, index, seconds, running) {
+    running = forTrain(running, trainAt(timetable, number));
     const next = copy(timetable);
     const stops = trainAt(next, number).stops;
     const stop = stops[index];
@@ -510,7 +529,7 @@
       for (let k = 1; k < train.stops.length; k++) {
         const before = train.stops[k - 1];
         const stop = train.stops[k];
-        const needed = running(before.station, stop.station);
+        const needed = running(before.station, stop.station, timetables.tagAt(train, k - 1));
         if (needed === null || before.depart === NONE || comesIn(stop) === NONE)
           continue;
         const given = comesIn(stop) - before.depart;
@@ -529,6 +548,86 @@
     else
       stop.minimumStop = seconds;
     return next;
+  }
+
+  /** Sets the track tag a train runs on from one of its stops to the next; '' leaves it to the train's. */
+  function setStopTag(timetable, number, index, tag) {
+    const next = copy(timetable);
+    const stop = trainAt(next, number).stops[index];
+    if (tag === '')
+      delete stop.tag;
+    else
+      stop.tag = tag;
+    return next;
+  }
+
+  /** The track tags the timetable holds trains to, each once, in the order they first come (TagWays.tags of the mod). */
+  function tagsOf(timetable) {
+    const found = [];
+    for (const train of timetable.trains)
+      for (let k = 0; k + 1 < train.stops.length; k++) {
+        const tag = timetables.tagAt(train, k);
+        if (tag !== '' && !found.includes(tag))
+          found.push(tag);
+      }
+    return found;
+  }
+
+  /**
+   * The ways between stops a train cannot run on its track tag, by train and then by stop: TagWays.of
+   * of the mod, rule for rule, which shared test cases hold the two to. The platforms a set may stand
+   * at are followed along each duty from those of its depot, and along each train in no duty from
+   * those of its first stop; a way none of them has a way on from, on its tag, has none, and the set
+   * is then taken to come in at any platform of the next stop. Only ways with a tag are told of.
+   *
+   * @param track {platforms(station), way(platform, station, tag)}: the platforms of a station, and
+   *   the platform a train of tag comes to from one, or -1 (network.js has them)
+   * @returns {Array<{train: string, stop: number, from: string, to: string, tag: string}>}
+   */
+  function noWay(timetable, track) {
+    const found = [];
+    const followed = new Set();
+    const follow = (train, at, into) => {
+      for (let k = 0; k + 1 < train.stops.length; k++) {
+        const tag = timetables.tagAt(train, k);
+        const to = train.stops[k + 1].station;
+        let next = [];
+        for (const platform of at) {
+          const way = track.way(platform, to, tag);
+          if (way >= 0 && !next.includes(way))
+            next.push(way);
+        }
+        if (next.length === 0) {
+          if (tag !== '')
+            into.push({ train: train.number, stop: k, from: train.stops[k].station, to, tag });
+          next = track.platforms(to).slice();
+        }
+        at = next;
+      }
+      return at;
+    };
+    for (const duty of timetable.duties) {
+      let at = track.platforms(duty.depot).slice();
+      for (const number of duty.trains) {
+        const train = timetable.trains.find(each => each.number === number);
+        if (train === undefined || train.stops.length === 0)
+          break;
+        const first = !followed.has(number);
+        followed.add(number);
+        at = follow(train, at, first ? found : []);
+      }
+    }
+    for (const train of timetable.trains)
+      if (train.stops.length > 0 && !followed.has(train.number)) {
+        followed.add(train.number);
+        follow(train, track.platforms(train.stops[0].station).slice(), found);
+      }
+    const ordered = [];
+    for (const train of timetable.trains)
+      for (const way of found)
+        if (way.train === train.number)
+          ordered.push(way);
+    return ordered;
   }
 
   /** Sets the type a train has from one of its stops on; '' leaves it as it is there. */
@@ -670,7 +769,7 @@
   return {
     NONE, copy, setName, putLine, removeLine, stationTimes, dwellAt, setStations, typeList, setTypes, typeChanges, trainsOfType,
     nextNumber, addTrain, removeTrain, setTrain, stopLimits, moveStop, moveRun, moveArrival, stretchStop, draggedTime, drag, sameStops, shiftTrain, setStopTime, setDwell, setStopMinimum, setStopType, setStopWaits, setStopStation,
-    removeStop, tooFast,
+    removeStop, tooFast, setStopTag, tagsOf, noWay,
     snap, snapUp, snapDown, drawStop, drawClick, setDrawnDwell, finishDrawing,
   };
 });
