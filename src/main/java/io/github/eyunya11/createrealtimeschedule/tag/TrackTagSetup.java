@@ -26,9 +26,10 @@ public final class TrackTagSetup {
     /** Beside Create's own blocks that are placed on the track. */
     @SubscribeEvent
     public static void onCreativeTabs(BuildCreativeModeTabContentsEvent event) {
-        if (event.getTabKey() == AllCreativeModeTabs.BASE_CREATIVE_TAB.getKey())
+        if (event.getTabKey() == AllCreativeModeTabs.BASE_CREATIVE_TAB.getKey()) {
             event.accept(ModRegistry.TRACK_TAG_ITEM.get());
             event.accept(ModRegistry.TRACK_TAG_ONE_WAY_ITEM.get());
+        }
     }
 
     @SubscribeEvent
