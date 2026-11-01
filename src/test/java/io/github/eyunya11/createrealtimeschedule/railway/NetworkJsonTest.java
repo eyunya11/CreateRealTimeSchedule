@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
@@ -19,6 +20,7 @@ import com.google.gson.JsonParser;
 
 import io.github.eyunya11.createrealtimeschedule.railway.RailNetwork.Edge;
 import io.github.eyunya11.createrealtimeschedule.railway.RailNetwork.Station;
+import io.github.eyunya11.createrealtimeschedule.tag.TrackTags;
 import io.github.eyunya11.createrealtimeschedule.travel.SpeedSign;
 import io.github.eyunya11.createrealtimeschedule.travel.TrainSpec;
 
@@ -48,6 +50,25 @@ class NetworkJsonTest {
     void writesTheStationsAndTheLegsWithTheirRunningTimes() {
         // 20 and 40 blocks at full throttle are two of the runs that were measured on a real train.
         assertEquals(EXAMPLE, write(threeInARow(), 1.0));
+    }
+
+    /**
+     * A network with track tags is written as version 3: the tags, the platforms, the legs for each tag
+     * and for one the world has none of, and where a train of each comes to from each platform. The
+     * example the editor's tests read too: the siding of {@link ForcedTagSearchTest}.
+     */
+    @Test
+    void writesTheTagsTheirLegsAndTheWaysFromEachPlatformAsVersionThree() {
+        TrackTags tags = new TrackTags(Map.of(1, "express", 2, "local"), 3);
+        assertEquals(resource("example-tags.json"), NetworkJson.write(ForcedTagSearchTest.siding(false), tags, TrainSpec.STANDARD, 1.0));
+    }
+
+    /** One with no tags and no tag blocks is written as version 2, as before them, for an editor that reads no later one. */
+    @Test
+    void aNetworkWithNoTagsIsWrittenAsVersionTwo() {
+        assertEquals(EXAMPLE, NetworkJson.write(threeInARow(), new TrackTags(), TrainSpec.STANDARD, 1.0));
+        assertTrue(NetworkJson.write(threeInARow(), new TrackTags(Map.of(1, "local"), 2), TrainSpec.STANDARD, 1.0).contains("\"version\": 3,"),
+            "a world with a tag and no block writes the tag");
     }
 
     /** The proposal shows this example; if it is not found, the test fails, as there is nothing to compare. */

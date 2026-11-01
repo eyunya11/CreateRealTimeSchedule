@@ -75,7 +75,8 @@ public final class RtNetworkCommand {
         RailNetwork network = CreateNetwork.read(Create.RAILWAYS.trackNetworks.values());
         List<String> names = network.names();
         List<Leg> legs = network.legs();
-        return new Written(NetworkJson.write(names, legs, spec, 1.0), names.size(), legs.size());
+        TrackTags tags = TrackTagData.get(source.getServer()).tags();
+        return new Written(NetworkJson.write(network, tags, spec, 1.0), names.size(), legs.size());
     }
 
     private static int tags(CommandContext<CommandSourceStack> context) {

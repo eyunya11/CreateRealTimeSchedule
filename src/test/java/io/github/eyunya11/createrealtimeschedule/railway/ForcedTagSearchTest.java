@@ -56,7 +56,7 @@ class ForcedTagSearchTest {
      * the siding the local's (2) from 5 in on edge 2 to 5 in on edge 4, by blocks for both ways; or for
      * the siding, if {@code oneWaySiding}, by one-way blocks facing east.
      */
-    private static RailNetwork siding(boolean oneWaySiding) {
+    static RailNetwork siding(boolean oneWaySiding) {
         return siding(oneWaySiding, true);
     }
 

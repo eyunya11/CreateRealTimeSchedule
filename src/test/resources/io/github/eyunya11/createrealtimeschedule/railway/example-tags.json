@@ -1,0 +1,41 @@
+{
+  "format": "createrealtimeschedule.network",
+  "version": 3,
+  "train": {"topSpeed": 28, "turnSpeed": 14, "acceleration": 3, "throttle": 1},
+  "stations": ["Depot", "A", "B"],
+  "tags": ["express", "local"],
+  "tagProblems": [],
+  "platforms": [
+    {"station": "Depot"},
+    {"station": "A"},
+    {"station": "A"},
+    {"station": "B"},
+    {"station": "A"},
+    {"station": "A"}
+  ],
+  "legs": [
+    {"from": "Depot", "to": "A", "distance": 40, "ticks": 133},
+    {"from": "Depot", "to": "B", "distance": 100, "via": ["A"], "ticks": 218},
+    {"from": "A", "to": "B", "distance": 60, "ticks": 168},
+    {"from": "Depot", "to": "A", "tag": "express", "distance": 40, "ticks": 133},
+    {"from": "Depot", "to": "B", "tag": "express", "distance": 100, "via": ["A"], "ticks": 218},
+    {"from": "A", "to": "B", "tag": "express", "distance": 60, "ticks": 168},
+    {"from": "Depot", "to": "A", "tag": "local", "distance": 40, "ticks": 133},
+    {"from": "Depot", "to": "B", "tag": "local", "distance": 102, "via": ["A"], "ticks": 222},
+    {"from": "A", "to": "B", "tag": "local", "distance": 62, "ticks": 172},
+    {"from": "A", "to": "B", "otherTag": true, "distance": 60, "ticks": 168}
+  ],
+  "ways": [
+    {"from": 0, "to": {"A": 1, "B": 3}},
+    {"from": 1, "to": {"B": 3}},
+    {"from": 2, "to": {"B": 3}},
+    {"from": 0, "tag": "express", "to": {"A": 1, "B": 3}},
+    {"from": 1, "tag": "express", "to": {"B": 3}},
+    {"from": 2, "tag": "express", "to": {"B": 3}},
+    {"from": 0, "tag": "local", "to": {"A": 2, "B": 3}},
+    {"from": 1, "tag": "local", "to": {"B": 3}},
+    {"from": 2, "tag": "local", "to": {"B": 3}},
+    {"from": 1, "otherTag": true, "to": {"B": 3}},
+    {"from": 2, "otherTag": true, "to": {"B": 3}}
+  ]
+}
