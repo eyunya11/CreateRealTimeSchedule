@@ -329,7 +329,7 @@ public final class RailNetwork {
             }
         }
         signs.addAll(signsPastTheEnd(chain.getLast(), end.offset(), distance));
-        return new Leg(start.name(), end.name(), distance, curves, new ArrayList<>(via), signs);
+        return new Leg(start.name(), end.name(), distance, curves, new ArrayList<>(via), signs, chain);
     }
 
     /**

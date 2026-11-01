@@ -5,9 +5,12 @@ import java.math.RoundingMode;
 import java.util.List;
 import java.util.OptionalInt;
 
+import org.jetbrains.annotations.Nullable;
+
 import io.github.eyunya11.createrealtimeschedule.json.JsonOutput;
 import io.github.eyunya11.createrealtimeschedule.json.JsonOutput.ListNode;
 import io.github.eyunya11.createrealtimeschedule.json.JsonOutput.MapNode;
+import io.github.eyunya11.createrealtimeschedule.map.TrackMapJson;
 import io.github.eyunya11.createrealtimeschedule.travel.SpeedSign;
 import io.github.eyunya11.createrealtimeschedule.travel.TrainSpec;
 
@@ -19,14 +22,20 @@ import io.github.eyunya11.createrealtimeschedule.travel.TrainSpec;
  * <p>Distances are given to a hundredth of a block, but the ticks are worked out from the distance
  * before it was rounded. The ticks are for a train that starts under no speed limit; one that comes
  * in under the limit of an earlier sign takes longer until the first sign of the leg.
+ *
+ * <p>With a map of the track, it is written as version 3: the map, and for each leg the tracks of the
+ * map it runs along, by their indexes. Without one, it is version 2, as before there was a map.
  */
 public final class NetworkJson {
 
     /** The {@code format} member of a network in JSON. */
     public static final String FORMAT = "createrealtimeschedule.network";
 
-    /** The version of the JSON written. Version 2 added the signs of a leg. */
-    public static final int VERSION = 2;
+    /**
+     * The newest version of the JSON written. Version 2 added the signs of a leg, and version 3 the
+     * map of the track. A network is written in the oldest version that holds it.
+     */
+    public static final int VERSION = 3;
 
     private NetworkJson() {}
 
@@ -37,9 +46,18 @@ public final class NetworkJson {
      * @param throttle the share of the top speed the train is held to, from 0 to 1
      */
     public static String write(List<String> names, List<Leg> legs, TrainSpec spec, double throttle) {
+        return write(names, legs, spec, throttle, null);
+    }
+
+    /**
+     * {@link #write(List, List, TrainSpec, double)} with the map of the track, if there is one.
+     *
+     * @param map the map, and which track of it each edge of the legs is; null for none
+     */
+    public static String write(List<String> names, List<Leg> legs, TrainSpec spec, double throttle, @Nullable NetworkMap map) {
         MapNode root = new MapNode();
         root.put("format", JsonOutput.text(FORMAT));
-        root.put("version", JsonOutput.raw(Integer.toString(VERSION)));
+        root.put("version", JsonOutput.raw(Integer.toString(map != null ? 3 : 2)));
         root.put("train", new MapNode()
             .put("topSpeed", number(spec.topSpeed()))
             .put("turnSpeed", number(spec.turnSpeed()))
@@ -76,9 +94,13 @@ public final class NetworkJson {
             OptionalInt ticks = leg.ticks(spec, throttle);
             if (ticks.isPresent())
                 node.put("ticks", JsonOutput.raw(Integer.toString(ticks.getAsInt())));
+            if (map != null)
+                node.put("tracks", TrackMapJson.indexes(map.tracks(leg)));
             list.add(node);
         }
         root.put("legs", list);
+        if (map != null)
+            root.put("map", TrackMapJson.write(map.map()));
         return JsonOutput.render(root);
     }
 

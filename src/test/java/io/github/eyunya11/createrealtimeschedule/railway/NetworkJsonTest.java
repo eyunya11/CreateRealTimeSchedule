@@ -17,6 +17,16 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
+import io.github.eyunya11.createrealtimeschedule.map.TrackMap;
+import io.github.eyunya11.createrealtimeschedule.map.TrackMap.Carriage;
+import io.github.eyunya11.createrealtimeschedule.map.TrackMap.Lamp;
+import io.github.eyunya11.createrealtimeschedule.map.TrackMap.SignalMark;
+import io.github.eyunya11.createrealtimeschedule.map.TrackMap.SignalSide;
+import io.github.eyunya11.createrealtimeschedule.map.TrackMap.SpeedMark;
+import io.github.eyunya11.createrealtimeschedule.map.TrackMap.Spot;
+import io.github.eyunya11.createrealtimeschedule.map.TrackMap.StationMark;
+import io.github.eyunya11.createrealtimeschedule.map.TrackMap.Track;
+import io.github.eyunya11.createrealtimeschedule.map.TrackMap.TrainMark;
 import io.github.eyunya11.createrealtimeschedule.railway.RailNetwork.Edge;
 import io.github.eyunya11.createrealtimeschedule.railway.RailNetwork.Station;
 import io.github.eyunya11.createrealtimeschedule.travel.SpeedSign;
@@ -25,6 +35,7 @@ import io.github.eyunya11.createrealtimeschedule.travel.TrainSpec;
 class NetworkJsonTest {
 
     private static final String EXAMPLE = resource("example.json");
+    private static final String EXAMPLE_MAP = resource("example-map.json");
 
     private static String resource(String name) {
         try (InputStream in = NetworkJsonTest.class.getResourceAsStream(name)) {
@@ -55,6 +66,51 @@ class NetworkJsonTest {
     void theExampleInTheProposalIsTheExampleHere() throws IOException {
         String proposal = Files.readString(Path.of("docs", "proposal.md"), StandardCharsets.UTF_8).replace("\r\n", "\n");
         assertTrue(proposal.contains(EXAMPLE.strip()), "docs/proposal.md does not show the example of the network JSON as it is in example.json");
+    }
+
+    /**
+     * The three stations in a row on a straight track running east, and a curve off its east end
+     * towards the south that no leg runs along, with a signal, two signs and a train. The editor's
+     * tests read the same file.
+     */
+    static NetworkMap exampleMap() {
+        String overworld = "minecraft:overworld";
+        Track line = new Track("minecraft:overworld 0.5,2,3.5 60.5,2,3.5", 0, List.of(new Spot(0.5, 3.5), new Spot(60.5, 3.5)));
+        Track curve = new Track("minecraft:overworld 60.5,2,3.5 70.5,2,13.5", 0,
+            List.of(new Spot(60.5, 3.5), new Spot(66.36, 5.84), new Spot(68.66, 8.14), new Spot(70.5, 13.5)));
+        Spot east = new Spot(1, 0);
+        Spot west = new Spot(-1, 0);
+        TrackMap map = new TrackMap(List.of(overworld), List.of(line, curve),
+            List.of(new StationMark("Alpha", 0, new Spot(10.5, 3.5)), new StationMark("Beta", 0, new Spot(30.5, 3.5)),
+                new StationMark("Gamma", 0, new Spot(50.5, 3.5))),
+            List.of(new SignalMark("3f1c", 0, new Spot(40.5, 3.5),
+                List.of(new SignalSide(east, "create", List.of(Lamp.GREEN)),
+                    new SignalSide(west, "light4", List.of(Lamp.YELLOW, Lamp.GREEN))))),
+            List.of(new SpeedMark(0, new Spot(20.5, 3.5), east, 60, false), new SpeedMark(1, new Spot(68.66, 8.14),
+                new Spot(0.7071, 0.7071), 0, true)),
+            List.of(new TrainMark("Train 1", List.of(new Carriage(new Spot(25.04, 3.5), new Spot(16.04, 3.5), 0, 0)))));
+        return new NetworkMap(map, List.of(0));
+    }
+
+    @Test
+    void withAMapItIsVersion3AndListsTheTracksOfEachLeg() {
+        RailNetwork network = threeInARow();
+        assertEquals(EXAMPLE_MAP, NetworkJson.write(network.names(), network.legs(), TrainSpec.STANDARD, 1.0, exampleMap()));
+    }
+
+    @Test
+    void theExampleOfTheMapIsInTheProposal() throws IOException {
+        String proposal = Files.readString(Path.of("docs", "proposal.md"), StandardCharsets.UTF_8).replace("\r\n", "\n");
+        // The member as it is in the file, without the brace that closes the whole.
+        String map = EXAMPLE_MAP.substring(EXAMPLE_MAP.indexOf("  \"map\""), EXAMPLE_MAP.stripTrailing().length() - 1);
+        assertTrue(proposal.contains(map.strip()), "docs/proposal.md does not show the map of example-map.json");
+    }
+
+    @Test
+    void aLegComingBackOntoATrackListsItAgainButNotTwiceInARow() {
+        NetworkMap map = new NetworkMap(TrackMap.EMPTY, List.of(0, 0, 1, -1, 0));
+        Leg leg = new Leg("A", "B", 10, List.of(), List.of(), List.of(), List.of(0, 1, 2, 3, 4));
+        assertEquals(List.of(0, 1, 0), map.tracks(leg));
     }
 
     @Test
