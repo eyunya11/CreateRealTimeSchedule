@@ -15,9 +15,11 @@ import com.simibubi.create.Create;
 import com.simibubi.create.content.trains.entity.Train;
 
 import io.github.eyunya11.createrealtimeschedule.Createrealtimeschedule;
+import io.github.eyunya11.createrealtimeschedule.railway.CreateMap;
 import io.github.eyunya11.createrealtimeschedule.railway.CreateNetwork;
 import io.github.eyunya11.createrealtimeschedule.railway.Leg;
 import io.github.eyunya11.createrealtimeschedule.railway.NetworkJson;
+import io.github.eyunya11.createrealtimeschedule.railway.NetworkMap;
 import io.github.eyunya11.createrealtimeschedule.railway.RailNetwork;
 import io.github.eyunya11.createrealtimeschedule.travel.TrainSpec;
 import io.github.eyunya11.createrealtimeschedule.travel.TrainSpecs;
@@ -94,7 +96,20 @@ public class NetworkExportTests {
             helper.assertTrue(json.contains("\"from\": \"Alpha\", \"to\": \"Gamma\", \"distance\": 40, \"via\": [\"Beta\"], \"ticks\": 133}"),
                 "the JSON does not have the leg from Alpha to Gamma as expected: " + json);
 
-            checkTheCommand(helper, json);
+            // The command writes the map of the track too, which the legs list the tracks of.
+            CreateNetwork.All all = CreateNetwork.readAll(Create.RAILWAYS.trackNetworks.values());
+            CreateMap.Read read = CreateMap.read(Create.RAILWAYS.trackNetworks.values(), Create.RAILWAYS.trains.values(),
+                helper.getLevel().getServer()::getLevel);
+            NetworkMap map = NetworkMap.of(read.map(), all.edges(), read.trackOf());
+            Leg mapped = leg(helper, all.network().legs(), "Alpha", "Gamma");
+            List<Integer> tracks = map.tracks(mapped);
+            helper.assertFalse(tracks.isEmpty(), "the leg from Alpha to Gamma runs along no track of the map");
+            for (int track : tracks)
+                helper.assertTrue(track >= 0 && track < read.map().tracks().size(), "the leg lists a track that is not there: " + track);
+            String withMap = NetworkJson.write(network.names(), legs, spec, 1.0, map);
+            helper.assertTrue(withMap.contains("\"version\": 3,") && withMap.contains("\"map\": {"), "the JSON with a map: " + withMap);
+
+            checkTheCommand(helper, withMap);
             helper.succeed();
         });
     }

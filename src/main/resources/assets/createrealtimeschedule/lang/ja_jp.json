@@ -55,6 +55,7 @@
   "commands.createrealtimeschedule.clipboard.not_allowed": "ゲームとのコピーと貼り付けは、オペレーター(権限レベル2)だけができます",
   "commands.createrealtimeschedule.clipboard.too_large": "%1$s 文字あり、クリップボードに送れる %2$s 文字を超えています",
   "commands.createrealtimeschedule.rtnetwork.copied": "%1$s 駅、%2$s 区間をクリップボードに写しました",
+  "commands.createrealtimeschedule.rtnetwork.copied_without_map": "%1$s 駅、%2$s 区間を、地図なしでクリップボードに写しました。地図を入れると %3$s 文字で、送れる %4$s 文字を超えます",
   "commands.createrealtimeschedule.rttimetable.copied": "ダイヤ %1$s をクリップボードに写しました",
   "commands.createrealtimeschedule.rttimetable.clipboard": "クリップボード",
   "commands.createrealtimeschedule.rttimetable.paste_empty": "%1$s に文字がありません",

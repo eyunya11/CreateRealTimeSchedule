@@ -2,6 +2,7 @@ package io.github.eyunya11.createrealtimeschedule.railway;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import io.github.eyunya11.createrealtimeschedule.map.TrackMap;
 
@@ -17,6 +18,17 @@ public record NetworkMap(TrackMap map, List<Integer> trackOfEdge) {
 
     public NetworkMap {
         trackOfEdge = List.copyOf(trackOfEdge);
+    }
+
+    /**
+     * The map, for a network whose edges are {@code edges} by their indexes, of which {@code trackOf}
+     * gives the track; an edge it does not give is not on the map.
+     */
+    public static <E> NetworkMap of(TrackMap map, List<E> edges, Map<E, Integer> trackOf) {
+        List<Integer> trackOfEdge = new ArrayList<>();
+        for (E edge : edges)
+            trackOfEdge.add(trackOf.getOrDefault(edge, -1));
+        return new NetworkMap(map, trackOfEdge);
     }
 
     /** The tracks a leg runs along, in order, each once for each time the leg comes onto it. */

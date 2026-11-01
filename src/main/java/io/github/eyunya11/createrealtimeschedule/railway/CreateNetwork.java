@@ -54,7 +54,7 @@ public final class CreateNetwork {
     private static final Logger LOGGER = LogUtils.getLogger();
 
     /** The kind of edge point that Create Train Next's speed-limit signs and release signs are. */
-    private static final ResourceLocation SPEED_LIMIT = ResourceLocation.fromNamespaceAndPath("createtrainnext", "speed_limit");
+    static final ResourceLocation SPEED_LIMIT = ResourceLocation.fromNamespaceAndPath("createtrainnext", "speed_limit");
 
     /** {@code isRelease} and {@code getLimit} of a class of sign, looked up once. */
     private record SignMethods(Method isRelease, Method getLimit) {}
@@ -80,10 +80,22 @@ public final class CreateNetwork {
 
     /** The network of all the track graphs of the game, which a train cannot get from one to another of. */
     public static RailNetwork read(Collection<TrackGraph> graphs) {
+        return readAll(graphs).network();
+    }
+
+    /**
+     * The network of {@link #read}, and the graphs' edge of each of its edges.
+     *
+     * @param edges the edge of the graphs that each edge of the network is, by its index
+     */
+    public record All(RailNetwork network, List<TrackEdge> edges) {}
+
+    /** {@link #read}, with the way back from the network's edges to the graphs'. */
+    public static All readAll(Collection<TrackGraph> graphs) {
         Reading reading = new Reading();
         for (TrackGraph graph : graphs)
             addGraph(graph, reading);
-        return reading.network();
+        return new All(reading.network(), List.copyOf(reading.graphEdges));
     }
 
     /**
@@ -302,6 +314,15 @@ public final class CreateNetwork {
                 signs.computeIfAbsent(edge, unused -> new ArrayList<>()).add(sign);
         }
         return signs;
+    }
+
+    /** {@link #sign} at the start of its edge, for the map, which places it itself; null, and a warning in the log, if it cannot be read. */
+    static @Nullable SpeedSign readSign(TrackEdgePoint point) {
+        Unreadable unreadable = new Unreadable();
+        SpeedSign sign = sign(point, 0, unreadable);
+        if (sign == null)
+            LOGGER.warn("Could not read a speed-limit sign of Create Train Next; it is left out of the map", unreadable.first);
+        return sign;
     }
 
     /** The sign as Create Train Next's {@code isRelease} and {@code getLimit} (in km/h) give it, or null if they cannot be read. */

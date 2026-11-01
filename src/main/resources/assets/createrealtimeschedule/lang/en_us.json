@@ -55,6 +55,7 @@
   "commands.createrealtimeschedule.clipboard.not_allowed": "Only an operator (permission level 2) may copy from or paste to the game",
   "commands.createrealtimeschedule.clipboard.too_large": "That is %1$s characters, more than the %2$s the clipboard is sent",
   "commands.createrealtimeschedule.rtnetwork.copied": "Copied %1$s stations and %2$s legs to your clipboard",
+  "commands.createrealtimeschedule.rtnetwork.copied_without_map": "Copied %1$s stations and %2$s legs to your clipboard, without the map: with it, that is %3$s characters, more than the %4$s the clipboard is sent",
   "commands.createrealtimeschedule.rttimetable.copied": "Copied the timetable %1$s to your clipboard",
   "commands.createrealtimeschedule.rttimetable.clipboard": "your clipboard",
   "commands.createrealtimeschedule.rttimetable.paste_empty": "There is no text in %1$s",
