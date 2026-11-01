@@ -234,6 +234,11 @@ final class TrackLine {
     /** The track tag blocks put beside the line, and the tags made for them; see {@link #placeTag}. */
     private final List<BlockPos> tagBlocks = new ArrayList<>();
     private final List<Integer> tagsMade = new ArrayList<>();
+    /** The track tag blocks to put when the stations are; see {@link #withTag}. */
+    private final List<PendingTag> pendingTags = new ArrayList<>();
+
+    /** A block of {@link #withTag}. */
+    private record PendingTag(int x, int z, boolean eastward, boolean oneWay, int[] tags) {}
 
     /** A line that leaves the clock alone, for a test that does not read it. */
     TrackLine(GameTestHelper helper, int lastX, int[] stationX, String[] names) {
@@ -460,6 +465,20 @@ final class TrackLine {
         return created.id();
     }
 
+    /** The name of the {@code index}-th tag {@link #makeTag} made, as the world's list has it. */
+    String madeTag(int index) {
+        return TrackTagData.get(server).tags().name(tagsMade.get(index));
+    }
+
+    /**
+     * Has the block of {@link #placeTag(int, int, boolean, boolean, int...)} put when the stations are,
+     * once the track graph is there: for a test that loads a timetable before the line is set up.
+     */
+    TrackLine withTag(int x, int z, boolean eastward, boolean oneWay, int... tags) {
+        pendingTags.add(new PendingTag(x, z, eastward, oneWay, tags));
+        return this;
+    }
+
     /**
      * Does what placing a track tag block's item does, as for a signal: the block two north of the track
      * at {@code x} (clear of a signal's), pointing at it, of the one-way kind or the one for both ways,
@@ -467,7 +486,12 @@ final class TrackLine {
      * its point on the graph on its first tick.
      */
     TrackTagBlockEntity placeTag(int x, boolean eastward, boolean oneWay, int... tags) {
-        BlockPos trackPos = helper.absolutePos(track(x));
+        return placeTag(x, Signal.FIRST_ROW, eastward, oneWay, tags);
+    }
+
+    /** {@link #placeTag(int, boolean, boolean, int...)} beside the track of the row at {@code z}, or of the first row for {@link Signal#FIRST_ROW}. */
+    TrackTagBlockEntity placeTag(int x, int z, boolean eastward, boolean oneWay, int... tags) {
+        BlockPos trackPos = helper.absolutePos(z == Signal.FIRST_ROW ? track(x) : new BlockPos(x, TRACK_Y, z));
         BlockPos at = trackPos.north(2);
         level.setBlock(at, (oneWay ? ModRegistry.TRACK_TAG_ONE_WAY : ModRegistry.TRACK_TAG).get().defaultBlockState(), 3);
         CompoundTag data = new CompoundTag();
@@ -628,6 +652,8 @@ final class TrackLine {
             placeStation(i);
         for (Signal signal : signals)
             placeSignal(signal);
+        for (PendingTag tag : pendingTags)
+            placeTag(tag.x(), tag.z(), tag.eastward(), tag.oneWay(), tag.tags());
         enter(Phase.WAIT_FOR_STATIONS);
     }
 
