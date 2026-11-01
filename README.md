@@ -105,6 +105,10 @@ A train's panel marks it never to be cancelled to get a late train back on time 
 
 The editor checks a timetable by the same rules as the mod and words its problems the same way, undoes and redoes, keeps the draft in the browser, and speaks Japanese and English.
 
+### The map screen
+
+The Map Screen (in Create's tab; a railway casing, a glass pane and paper make two) shows the same map in the world. Place it against a wall: blocks facing the same way side by side make one screen, up to 12 by 12 blocks, and a block put beside a screen takes on what it shows. Use it to set the X and Z in the middle of it, how many blocks of the world a block of it shows ("Fit all track" puts all the track of the dimension on it), the lines whose track it shows (none for all the track; this needs a timetable being run, and follows its added, taken away and hidden tracks), and which of the stations, their names, the signals, the speed limits and the trains it shows. It shows the dimension it is in. The signals show what they show now, with Create Train Next's colour light signals showing their aspect (one in a chunk that is not loaded shows the aspect last read), and the trains where they are now, as the server sends them twice a second while a screen is in sight.
+
 ## Track tags
 
 A track tag block gives a stretch of track tags, such as "Local" or "Siding", which you name. A timetable can hold a train to a tag: a train's `tag` (version 7) holds on every way between its stops, and a stop's `tag` on the way from it to the next stop only. A train held to a tag runs only on track with no tag and on stretches with its tag, though it may leave the stretch it starts in; at a junction it takes the way to a stretch with its tag, and with no way it does not leave. Loading the timetable and `/rttimetable status` say which ways have none on their tag, and which tags the world lacks. The editor checks the same from the exported network (version 3), and offers the world's tags in the boxes for a train and its stops.
