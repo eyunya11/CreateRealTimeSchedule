@@ -206,7 +206,7 @@ public final class Recovery {
 
     /** Whether the set can get from where it stands to the station after call {@code to} within the threshold of the timetable's time. */
     private static boolean wayOn(List<Call> calls, int to, Reach reach, long threshold) {
-        OptionalLong ticks = reach.ticksTo(calls.get(to + 1).station());
+        OptionalLong ticks = reach.ticksTo(calls.get(to + 1).station(), calls.get(to).tag());
         return ticks.isPresent() && ticks.getAsLong() <= Forecast.plannedRunTicks(calls, to) + threshold;
     }
 

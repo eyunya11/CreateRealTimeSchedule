@@ -128,8 +128,14 @@ public final class OperationData extends SavedData {
     private int timesRevision;
     /** Not saved: the diagram's axis of each line, worked out from the track when it is first needed; null until then. */
     private @Nullable Map<String, LineAxis> axes;
-    /** Not saved: the ways between the timetable's stations by their ends, worked out with the axes ({@link TrackFacts}). */
+    /** Not saved: the ways between the timetable's stations by their ends and tag, worked out with the axes ({@link TrackFacts}). */
     private @Nullable Map<List<String>, Leg> legs;
+    /** Not saved: the ways between stops the trains cannot run on their track tags, worked out with the axes. */
+    private List<TagWays.NoWay> noWays = List.of();
+    /** Not saved: the track tags the timetable holds trains to that the world has none of, worked out with the axes. */
+    private List<String> unknownTags = List.of();
+    /** Not saved: what the log has been told of these last. */
+    private List<Object> loggedTags = List.of();
     /** Not saved: how long the track takes for each train waited for, with what it was worked out for (its fuel and throttle). */
     private final Map<UUID, Map.Entry<Object, RunTimes>> trainTimes = new HashMap<>();
     /** Not saved: whether the track has changed since the axes and the ways were worked out. */
@@ -383,20 +389,40 @@ public final class OperationData extends SavedData {
         return axes;
     }
 
-    /** The ways between the timetable's stations, by their two ends; null if they have not been worked out, as {@link #axes()}. */
+    /** The ways between the timetable's stations, by their two ends and track tag; null if they have not been worked out, as {@link #axes()}. */
     public @Nullable Map<List<String>, Leg> legs() {
         return legs;
+    }
+
+    /** The ways between stops the trains cannot run on their track tags, as last worked out with the axes. */
+    public List<TagWays.NoWay> noWays() {
+        return noWays;
+    }
+
+    /** The track tags the timetable holds trains to that the world has none of, as last worked out with the axes. */
+    public List<String> unknownTags() {
+        return unknownTags;
     }
 
     /**
      * Keeps what the track says of the timetable's stations ({@link TrackFacts}). Worked out again after
      * the track has changed, axes that differ from those kept make a client's copy old, and the waits
-     * are worked out again with them.
+     * are worked out again with them. What is wrong with the track tags is logged when it changes.
      */
-    public void track(Map<String, LineAxis> axes, Map<List<String>, Leg> legs) {
+    public void track(Map<String, LineAxis> axes, Map<List<String>, Leg> legs, List<TagWays.NoWay> noWays, List<String> unknownTags) {
         Map<String, LineAxis> before = this.axes;
         this.axes = Map.copyOf(axes);
         this.legs = Map.copyOf(legs);
+        this.noWays = List.copyOf(noWays);
+        this.unknownTags = List.copyOf(unknownTags);
+        List<Object> tags = List.of(this.noWays, this.unknownTags);
+        if (!tags.equals(loggedTags)) {
+            loggedTags = tags;
+            for (String tag : this.unknownTags)
+                LOGGER.warn("The world has no track tag \"{}\" that the timetable holds trains to; they run on track with no tag only", tag);
+            for (TagWays.NoWay way : this.noWays)
+                LOGGER.warn(way.text());
+        }
         trainTimes.clear();
         if (before != null && !before.equals(this.axes)) {
             waits = null;

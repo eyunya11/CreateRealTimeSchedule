@@ -41,8 +41,8 @@ class RecoveryTest {
         }
 
         @Override
-        public OptionalLong ticks(String from, String to) {
-            return times.ticks(from, to);
+        public OptionalLong ticks(String from, String to, String tag) {
+            return times.ticks(from, to, tag);
         }
 
         @Override
@@ -56,7 +56,7 @@ class RecoveryTest {
         }
 
         @Override
-        public OptionalLong ticksTo(String station) {
+        public OptionalLong ticksTo(String station, String tag) {
             return onward;
         }
     }
@@ -85,7 +85,7 @@ class RecoveryTest {
         // A and B have a minimum stop of 2 minutes, all the time they stand, and the track takes 14
         // minutes, a minute more than the timetable: the set loses time on the way, and makes none up.
         Timetable timetable = OperationTimetables.laps(120, List.of(), List.of(), List.of());
-        RunTimes slow = (from, to) -> OptionalLong.of(840 * SECOND);
+        RunTimes slow = (from, to, tag) -> OptionalLong.of(840 * SECOND);
         Around slowTrack = new Around(slow, 1, 0, OptionalLong.of(840 * SECOND));
         assertEquals(Optional.empty(), onArrival(timetable, at("08:08"), slowTrack), "it leaves at 08:10, 10 minutes late");
         assertEquals(Optional.of(new Hold(3, at("08:30"), List.of("1", "2"), List.of())), onArrival(timetable, at("08:08") + 1, slowTrack),

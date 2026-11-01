@@ -8,6 +8,7 @@ import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalInt;
 import java.util.Set;
 import java.util.UUID;
 
@@ -128,12 +129,20 @@ public final class CreateRoutes {
      * finds it with no cap on the cost; null if there is none, or the train is on no graph.
      */
     public static @Nullable DiscoveredPath pathTo(Train train, List<GlobalStation> stations) {
+        return pathTo(train, stations, OptionalInt.empty());
+    }
+
+    /**
+     * {@link #pathTo(Train, List)} for a train held to the track tag of id {@code tag}, if any, which
+     * Create's search knows nothing of ({@link RouteSearch}).
+     */
+    public static @Nullable DiscoveredPath pathTo(Train train, List<GlobalStation> stations, OptionalInt tag) {
         TrackGraph graph = train.graph;
         if (graph == null || stations.isEmpty())
             return null;
-        Found found = find(train, stations, mapped(graph, false));
+        Found found = find(train, stations, mapped(graph, false), tag);
         if (found.stale())
-            found = find(train, stations, mapped(graph, true));
+            found = find(train, stations, mapped(graph, true), tag);
         return found.path();
     }
 
@@ -145,7 +154,7 @@ public final class CreateRoutes {
      */
     private record Found(@Nullable DiscoveredPath path, boolean stale) {}
 
-    private static Found find(Train train, List<GlobalStation> stations, Mapped mapped) {
+    private static Found find(Train train, List<GlobalStation> stations, Mapped mapped, OptionalInt tag) {
         TrackGraph graph = train.graph;
         if (!knows(train, mapped, true) || !knows(train, mapped, false))
             return new Found(null, true);
@@ -163,7 +172,7 @@ public final class CreateRoutes {
         boolean canDriveForward = train.hasForwardConductor() || train.runtime.paused;
         boolean canDriveBackward = train.doubleEnded && train.hasBackwardConductor() || train.runtime.paused;
         Route route = RouteSearch.find(network, front, back, canDriveForward, canDriveBackward,
-            station -> wanted.contains(platform(mapped, network.stations().get(station).platform())), live);
+            station -> wanted.contains(platform(mapped, network.stations().get(station).platform())), live, tag);
         if (route == null)
             return new Found(null, false);
         for (int edge : route.edges())

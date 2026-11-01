@@ -49,8 +49,8 @@ public final class CreateReach implements Reach {
     }
 
     @Override
-    public OptionalLong ticks(String from, String to) {
-        return times.ticks(from, to);
+    public OptionalLong ticks(String from, String to, String tag) {
+        return times.ticks(from, to, tag);
     }
 
     @Override
@@ -83,8 +83,8 @@ public final class CreateReach implements Reach {
      * this is the least it can take.
      */
     @Override
-    public OptionalLong ticksTo(String station) {
-        DiscoveredPath path = TrainDriver.pathTo(train, station);
+    public OptionalLong ticksTo(String station, String tag) {
+        DiscoveredPath path = TrainDriver.pathTo(train, station, tag);
         if (path == null)
             return OptionalLong.empty();
         OptionalInt ticks = TravelTime.ticks(spec, train.throttle, Math.abs(path.distance), List.of());

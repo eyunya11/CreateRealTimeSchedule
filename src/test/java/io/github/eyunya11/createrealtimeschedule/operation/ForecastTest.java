@@ -20,7 +20,7 @@ class ForecastTest {
     private static final long MINIMUM = 20 * SECOND;
 
     /** 12 minutes between A and B, which the timetable gives 13. */
-    static final RunTimes TRACK = (from, to) -> Set.of(from, to).equals(Set.of("A", "B")) ? OptionalLong.of(720 * SECOND)
+    static final RunTimes TRACK = (from, to, tag) -> Set.of(from, to).equals(Set.of("A", "B")) ? OptionalLong.of(720 * SECOND)
         : Set.of(from, to).equals(Set.of("Depot", "A")) ? OptionalLong.of(240 * SECOND) : OptionalLong.empty();
 
     private static final Timetable LAPS = OperationTimetables.laps();
@@ -48,6 +48,16 @@ class ForecastTest {
         assertEquals(at("08:52:00"), Forecast.leaves(CALLS, DAY, 1, at("08:25:20"), 3, RunTimes.NONE, MINIMUM));
         assertEquals(780 * SECOND, Forecast.runTicks(CALLS, 1, RunTimes.NONE));
         assertEquals(720 * SECOND, Forecast.runTicks(CALLS, 1, TRACK));
+    }
+
+    /** The time of a way is that of the track tag the set leaves its call on. */
+    @Test
+    void aSetRunsInTheTimeOfTheTagItLeavesOn() {
+        RunTimes byTag = (from, to, tag) -> OptionalLong.of((tag.equals("local") ? 600 : 500) * SECOND);
+        List<Call> calls = List.of(new Call("A", Stop.NONE, t("08:00"), "", "1", Stop.NONE, List.of(), "local"),
+            new Call("B", t("08:13"), Stop.NONE, "1", ""));
+        assertEquals(600 * SECOND, Forecast.runTicks(calls, 0, byTag));
+        assertEquals(500 * SECOND, Forecast.runTicks(List.of(new Call("A", Stop.NONE, t("08:00"), "", "1"), calls.get(1)), 0, byTag));
     }
 
     @Test

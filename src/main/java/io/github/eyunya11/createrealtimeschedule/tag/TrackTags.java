@@ -3,6 +3,7 @@ package io.github.eyunya11.createrealtimeschedule.tag;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalInt;
 import java.util.TreeMap;
 import java.util.stream.IntStream;
 
@@ -19,6 +20,9 @@ public final class TrackTags {
 
     /** The id a block with no tag holds. */
     public static final int NONE = 0;
+
+    /** The id a train is held to for a tag the list does not have: one no block holds. */
+    public static final int UNKNOWN = -1;
 
     /** The longest name a tag can have. */
     public static final int MAX_NAME_LENGTH = 32;
@@ -69,6 +73,20 @@ public final class TrackTags {
     /** The name of tag {@code id}, or null if there is no such tag. */
     public @Nullable String name(int id) {
         return names.get(id);
+    }
+
+    /**
+     * The id a train held to the tag named {@code name} looks for on the track (see
+     * {@code RouteSearch}): empty for no name, which holds a train to no tag; for a name the list does
+     * not have, {@link #UNKNOWN}, which no section has.
+     */
+    public OptionalInt held(String name) {
+        if (name.isEmpty())
+            return OptionalInt.empty();
+        for (Map.Entry<Integer, String> entry : names.entrySet())
+            if (entry.getValue().equals(name))
+                return OptionalInt.of(entry.getKey());
+        return OptionalInt.of(UNKNOWN);
     }
 
     /** A new tag named {@code name}, its spaces at either end left off. */

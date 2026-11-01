@@ -14,6 +14,7 @@ import com.simibubi.create.content.trains.graph.TrackGraph;
 import io.github.eyunya11.createrealtimeschedule.network.TrackTagEditPayload;
 import io.github.eyunya11.createrealtimeschedule.network.TrackTagListPayload;
 import io.github.eyunya11.createrealtimeschedule.network.TrackTagOpenPayload;
+import io.github.eyunya11.createrealtimeschedule.operation.OperationData;
 import io.github.eyunya11.createrealtimeschedule.railway.CreateNetwork;
 import io.github.eyunya11.createrealtimeschedule.railway.RailNetwork;
 import io.github.eyunya11.createrealtimeschedule.railway.TagSections;
@@ -114,6 +115,8 @@ public final class TrackTagService {
     public static void listChanged(MinecraftServer server) {
         TrackTagData.get(server).setDirty();
         PacketDistributor.sendToAllPlayers(list(server));
+        // The timetable names its tags: the ways for them are worked out again by the names as they are now.
+        OperationData.get(server).forgetAxes();
     }
 
     /** What a change did: what to tell the player, and whether the list is not as it was. */

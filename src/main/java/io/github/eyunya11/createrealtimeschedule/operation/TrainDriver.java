@@ -10,6 +10,7 @@ import com.simibubi.create.content.trains.graph.EdgePointType;
 import com.simibubi.create.content.trains.station.GlobalStation;
 
 import io.github.eyunya11.createrealtimeschedule.railway.CreateRoutes;
+import io.github.eyunya11.createrealtimeschedule.tag.TrackTagData;
 
 /**
  * Takes a Create train through a {@link DutyRun}, by Create's own path finding and driving and not by
@@ -24,7 +25,9 @@ import io.github.eyunya11.createrealtimeschedule.railway.CreateRoutes;
  * out along, so that the train goes the way they were worked out for. Create then drives it, and
  * leaves the station itself once the train moves, which is on a later tick, and later still when the
  * signal ahead is not yet green: that is when the run records the departure. Create cancels a journey
- * when the train loses its driver or overshoots; the train is then sent again.
+ * when the train loses its driver or overshoots; the train is then sent again. A train the timetable
+ * holds to a track tag between two calls is sent on track open to the tag only, which may leave it no
+ * way to the next station: then it does not leave, and is sent again each tick.
  */
 public final class TrainDriver {
 
@@ -62,7 +65,7 @@ public final class TrainDriver {
             case STANDING:
                 if (!run.dueToLeave(now))
                     return Outcome.GOING;
-                if (!sendTo(train, run.nextStation()))
+                if (!sendTo(train, run.nextStation(), run.nextTag()))
                     return Outcome.NO_WAY;
                 run.sent();
                 return Outcome.GOING;
@@ -74,7 +77,7 @@ public final class TrainDriver {
                 // Still at the platform: held by a signal, or the journey was cancelled before it moved.
                 if (train.navigation.destination != null)
                     return Outcome.GOING;
-                return sendTo(train, run.nextStation()) ? Outcome.GOING : Outcome.NO_WAY;
+                return sendTo(train, run.nextStation(), run.nextTag()) ? Outcome.GOING : Outcome.NO_WAY;
             case RUNNING:
             default:
                 if (train.navigation.destination != null)
@@ -83,7 +86,7 @@ public final class TrainDriver {
                     run.arrived(now, minimumStop);
                     return run.finished() ? Outcome.FINISHED : Outcome.GOING;
                 }
-                return sendTo(train, run.nextStation()) ? Outcome.GOING : Outcome.NO_WAY;
+                return sendTo(train, run.nextStation(), run.nextTag()) ? Outcome.GOING : Outcome.NO_WAY;
         }
     }
 
@@ -95,17 +98,21 @@ public final class TrainDriver {
         return at != null && station.equals(at.name);
     }
 
-    /** Sends the train to the station of that name it has the best path to; false if it has none. */
-    static boolean sendTo(Train train, String station) {
-        DiscoveredPath path = pathTo(train, station);
+    /**
+     * Sends the train to the station of that name it has the best path to, held to the track tag
+     * {@code tag} (empty for none); false if it has none.
+     */
+    static boolean sendTo(Train train, String station, String tag) {
+        DiscoveredPath path = pathTo(train, station, tag);
         return path != null && train.navigation.startNavigation(path) >= 0;
     }
 
     /**
-     * The path the train would be sent on to the station of that name it has the best path to; null if
-     * it has none, or stands there. Finding it leaves the train as it was.
+     * The path the train would be sent on to the station of that name it has the best path to, held to
+     * the track tag {@code tag} (empty for none); null if it has none, or stands there. Finding it leaves
+     * the train as it was.
      */
-    static @Nullable DiscoveredPath pathTo(Train train, String station) {
+    static @Nullable DiscoveredPath pathTo(Train train, String station, String tag) {
         if (train.graph == null)
             return null;
         ArrayList<GlobalStation> stations = new ArrayList<>();
@@ -114,7 +121,7 @@ public final class TrainDriver {
                 stations.add(candidate);
         if (stations.isEmpty())
             return null;
-        DiscoveredPath path = CreateRoutes.pathTo(train, stations);
+        DiscoveredPath path = CreateRoutes.pathTo(train, stations, TrackTagData.held(tag));
         if (path == null || path.destination == train.getCurrentStation())
             return null;
         return path;

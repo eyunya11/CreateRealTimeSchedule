@@ -16,9 +16,9 @@ public interface Reach extends RunTimes {
     int standing(String station);
 
     /**
-     * The ticks the set takes from where it stands to a station named {@code station}, by the way
-     * Create would send it there; empty if Create finds no way, as for a set that would have to run
-     * backwards and cannot.
+     * The ticks the set takes from where it stands to a station named {@code station}, held to the
+     * track tag {@code tag} (empty for none), by the way it would be sent there; empty if there is no
+     * way, as for a set that would have to run backwards and cannot.
      */
-    OptionalLong ticksTo(String station);
+    OptionalLong ticksTo(String station, String tag);
 }

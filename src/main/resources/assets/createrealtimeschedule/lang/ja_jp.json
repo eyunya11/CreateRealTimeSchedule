@@ -20,6 +20,8 @@
   "commands.createrealtimeschedule.rttimetable.late": "%1$s: %2$s を %3$s に出るはずでした。空いた列車を待って、遅れて出ます",
   "commands.createrealtimeschedule.rttimetable.wait_in_no_duty": "列車 %1$s は、%2$s で列車 %3$s を待ちません。%3$s はどの運用にも入っておらず、走らないためです",
   "commands.createrealtimeschedule.rttimetable.wait_no_way": "列車 %1$s は、%2$s で列車 %3$s を待ちません。線路で決まる %3$s の道筋では、それより前に %4$s を出ることも、通ることもないためです",
+  "commands.createrealtimeschedule.rttimetable.tag_unknown": "ワールドに線路のタグ「%1$s」がありません。このタグの列車は、タグのない線路だけを走ります",
+  "commands.createrealtimeschedule.rttimetable.tag_no_way": "列車 %1$s は、線路のタグ「%5$s」では %2$s(%3$s 番目の停車)から %4$s への道がありません。そこで発車しません",
   "commands.createrealtimeschedule.rttimetable.note": "%1$s: 運用 %2$s(%3$s 日目)%4$s",
   "createrealtimeschedule.schedule.condition.real_time_of_day": "現実の時刻",
   "createrealtimeschedule.schedule.condition.real_time_of_day.status": "発車時刻: %1$s",
