@@ -198,5 +198,35 @@
     return parts.join('');
   }
 
-  return { LAYERS, MIN_SCALE, MAX_SCALE, visible, missing, bounds, View, pathData };
+  /** How far a point is from the segment from (ax, az) to (bx, bz). */
+  function fromSegment(x, z, ax, az, bx, bz) {
+    const dx = bx - ax;
+    const dz = bz - az;
+    const length = dx * dx + dz * dz;
+    const along = length === 0 ? 0 : clamp(((x - ax) * dx + (z - az) * dz) / length, 0, 1);
+    return Math.hypot(x - (ax + along * dx), z - (az + along * dz));
+  }
+
+  /**
+   * The index of the track of a dimension nearest the world's point (x, z), if it is no further than
+   * reach blocks; else -1. Of two as near, the first.
+   */
+  function nearestTrack(map, dimension, x, z, reach) {
+    let best = -1;
+    let bestDistance = reach;
+    map.tracks.forEach((track, index) => {
+      if (track === null || track.dimension !== dimension)
+        return;
+      for (let i = 2; i < track.points.length; i += 2) {
+        const distance = fromSegment(x, z, track.points[i - 2], track.points[i - 1], track.points[i], track.points[i + 1]);
+        if (distance <= bestDistance && (best < 0 || distance < bestDistance)) {
+          best = index;
+          bestDistance = distance;
+        }
+      }
+    });
+    return best;
+  }
+
+  return { LAYERS, MIN_SCALE, MAX_SCALE, visible, missing, bounds, View, pathData, nearestTrack };
 });

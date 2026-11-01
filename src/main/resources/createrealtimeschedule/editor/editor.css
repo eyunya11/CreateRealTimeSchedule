@@ -201,7 +201,98 @@ h2 {
   font-size: 12px;
 }
 
+/* The diagram or the map, with the switch between them and the map's tools above. */
+.centre {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.view-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.view-switch {
+  display: flex;
+  gap: 4px;
+}
+
+.map-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.map-tools[hidden],
+#map[hidden],
+#diagram[hidden],
+#map-dimension[hidden] {
+  display: none;
+}
+
+.map-tools .note {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.menu {
+  position: relative;
+}
+
+.menu summary {
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.menu[open] summary {
+  border-color: var(--accent);
+}
+
+.menu-list {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 220px;
+  max-height: 50vh;
+  overflow-y: auto;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 15%);
+}
+
+.menu-list .note {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+label.check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+}
+
 #diagram-area {
+  flex: 1;
   position: relative;
   min-width: 0;
   min-height: 0;
@@ -226,6 +317,114 @@ h2 {
   justify-content: center;
   color: var(--muted);
   pointer-events: none;
+}
+
+#map {
+  display: block;
+  width: 100%;
+  height: 100%;
+  user-select: none;
+  touch-action: none;
+  cursor: grab;
+}
+
+#map .track {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+#map .track.other {
+  stroke: var(--grid-strong);
+  stroke-width: 2;
+}
+
+#map .track.hidden {
+  stroke: var(--grid-strong);
+  stroke-width: 2;
+  stroke-dasharray: 4 4;
+}
+
+#map .track.shown {
+  stroke: var(--train);
+  stroke-width: 3;
+}
+
+#map .track.chosen {
+  stroke: var(--accent);
+  stroke-width: 5;
+  stroke-opacity: 0.7;
+}
+
+#map .map-station {
+  fill: var(--plot);
+  stroke: var(--text);
+  stroke-width: 1.5;
+}
+
+#map .map-station.current {
+  fill: var(--accent);
+  stroke: var(--accent);
+}
+
+#map .map-station-name {
+  font-size: 12px;
+  fill: var(--text);
+  paint-order: stroke;
+  stroke: var(--plot);
+  stroke-width: 3px;
+}
+
+#map .map-station-name.current {
+  font-weight: 600;
+  fill: var(--accent);
+}
+
+#map .map-signal .head {
+  stroke: #20262c;
+  stroke-width: 8;
+  stroke-linecap: round;
+}
+
+#map .map-limit circle {
+  fill: #ffffff;
+  stroke: #d23b2f;
+  stroke-width: 2;
+}
+
+#map .map-limit text {
+  font-size: 8px;
+  font-weight: 700;
+  fill: #20262c;
+}
+
+#map .map-limit.release circle {
+  stroke: #20262c;
+}
+
+#map .map-limit.release line {
+  stroke: #20262c;
+  stroke-width: 1.5;
+}
+
+#map .map-train line {
+  stroke: #e8590c;
+  stroke-width: 5;
+  stroke-linecap: round;
+}
+
+#map .map-train text {
+  font-size: 11px;
+  fill: #e8590c;
+  paint-order: stroke;
+  stroke: var(--plot);
+  stroke-width: 3px;
+}
+
+#inspector .note.key {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 11px;
+  overflow-wrap: anywhere;
 }
 
 #diagram.drawing {

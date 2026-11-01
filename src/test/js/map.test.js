@@ -137,3 +137,11 @@ test('the path of the tracks goes along their points, one line each', () => {
   view.zoom(2, 0, 0);
   assert.equal(map.pathData(read, [0], view), 'M1 7L121 7');
 });
+
+test('a click finds the nearest track within reach, of the dimension shown', () => {
+  const read = network.read(EXAMPLE_MAP).network.map;
+  assert.equal(map.nearestTrack(read, 0, 30, 4.5, 2), 0);
+  assert.equal(map.nearestTrack(read, 0, 69, 9, 2), 1);
+  assert.equal(map.nearestTrack(read, 0, 30, 8, 2), -1, 'nothing within two blocks');
+  assert.equal(map.nearestTrack(read, 1, 30, 3.5, 2), -1, 'no track of another dimension');
+});

@@ -12,6 +12,8 @@
   const t = i18n.t;
 
   const STORE = 'createrealtimeschedule-editor';
+  /** Where the network is kept, apart from the draft: with a map it can be large, and a draft too large to keep would lose the timetable too. */
+  const NETWORK_STORE = 'createrealtimeschedule-editor-network';
   const SVG = 'http://www.w3.org/2000/svg';
   const MAX_UNDO = 200;
   /** How far apart, in pixels, the two points of a stop are drawn at the least, so that both can be taken. */
@@ -24,7 +26,11 @@
     lineId: null,
     selection: null,
     // Times dragged or drawn land on the step, or on the fine step while Shift is held.
-    settings: { language: i18n.guess(navigator.language), dwell: 20, snap: 15, fineSnap: 5 },
+    settings: {
+      language: i18n.guess(navigator.language), dwell: 20, snap: 15, fineSnap: 5,
+      // The diagram or the map, the lines whose track the map shows (none for all), and what it shows on it.
+      view: 'diagram', mapLines: [], mapLayers: {},
+    },
     undo: [],
     redo: [],
   };
@@ -112,12 +118,20 @@
       localStorage.setItem(STORE, JSON.stringify({
         version: 1,
         timetable: rt.timetable.write(state.timetable),
-        network: state.networkText,
+        network: null,
         lineId: state.lineId,
         settings: state.settings,
       }));
     } catch (e) {
       // A browser that keeps nothing for a page opened from a file: the draft lasts as long as the page.
+    }
+    try {
+      if (state.networkText === null)
+        localStorage.removeItem(NETWORK_STORE);
+      else if (localStorage.getItem(NETWORK_STORE) !== state.networkText)
+        localStorage.setItem(NETWORK_STORE, state.networkText);
+    } catch (e) {
+      // Too large to keep: the network lasts as long as the page, and has to be loaded again after.
     }
   }
 
@@ -152,11 +166,20 @@
       if (read.timetable !== null)
         state.timetable = read.timetable;
     }
-    if (typeof stored.network === 'string') {
-      const read = rt.network.read(stored.network);
+    // A draft kept before the network was kept apart has it in the draft.
+    let networkText = typeof stored.network === 'string' ? stored.network : null;
+    try {
+      const kept = localStorage.getItem(NETWORK_STORE);
+      if (kept !== null)
+        networkText = kept;
+    } catch (e) {
+      // Nothing kept apart.
+    }
+    if (networkText !== null) {
+      const read = rt.network.read(networkText);
       if (read.network !== null) {
         state.network = read.network;
-        state.networkText = stored.network;
+        state.networkText = networkText;
       }
     }
     if (typeof stored.lineId === 'string')
@@ -242,7 +265,7 @@
     renderLines();
     renderTrains();
     renderDuties();
-    renderDiagram();
+    renderCentre();
     renderInspector();
     renderProblems();
     renderStatus();
@@ -356,8 +379,15 @@
     const fast = state.network === null ? [] : rt.edit.tooFast(state.timetable, running);
     $('problems-title').textContent = (found.length === 0 ? t('noProblems') : t('problemCount', found.length))
       + (fast.length === 0 ? '' : t('tooFastCount', fast.length));
+    // Tracks the timetable names that the map does not have: laid again since, or taken up.
+    const missing = state.network === null || state.network.map === null ? []
+      : rt.map.missing(state.network.map.tracks.map(track => track.key), state.timetable);
+    if (missing.length > 0)
+      $('problems-title').textContent += t('mapMissingCount', missing.length);
     const list = $('problems');
     list.replaceChildren();
+    for (const key of missing)
+      list.append(h('li', { class: 'warning' }, t('mapMissing', key)));
     for (const way of fast)
       list.append(h('li', { class: 'warning', onclick: () => select({ kind: 'train', number: way.number }) },
         t('tooFast', way.number, way.from, way.to, way.given, way.needed)));
@@ -787,6 +817,8 @@
     drawing = { stops: [], type: drawing !== null ? drawing.type : '', deadhead: false, dwell: drawing !== null ? drawing.dwell : rt.edit.NONE, leaving: false };
     hover = null;
     state.selection = null;
+    // A train is drawn on the diagram.
+    state.settings.view = 'diagram';
     render();
   }
 
@@ -903,7 +935,348 @@
         renderPreview();
       }
     });
-    new ResizeObserver(() => renderDiagram()).observe($('diagram-area'));
+    new ResizeObserver(() => renderCentre()).observe($('diagram-area'));
+  }
+
+  // ------------------------------------------------------------------ the map
+
+  /** What part of the map is shown, and the map it was fitted to: fitted again when another comes in. */
+  let mapView = null;
+  let mapFor = null;
+  /** The index of the dimension shown, in the map's list. */
+  let mapDimension = 0;
+  /** The index of the track chosen on the map, or null. */
+  let mapTrack = null;
+
+  function onMap() {
+    return state.settings.view === 'map';
+  }
+
+  function layerOn(name) {
+    return !state.settings.mapLayers || state.settings.mapLayers[name] !== false;
+  }
+
+  /** The diagram or the map, whichever is shown. */
+  function renderCentre() {
+    $('view-diagram').classList.toggle('active', !onMap());
+    $('view-map').classList.toggle('active', onMap());
+    // An svg has no hidden property, as an HTML element has: the attribute it is.
+    $('diagram').toggleAttribute('hidden', onMap());
+    $('map').toggleAttribute('hidden', !onMap());
+    $('map-tools').hidden = !onMap();
+    if (onMap())
+      renderMap();
+    else
+      renderDiagram();
+  }
+
+  function setView(name) {
+    if (state.settings.view === name)
+      return;
+    state.settings.view = name;
+    if (name === 'map') {
+      drawing = null;
+      hover = null;
+    }
+    render();
+  }
+
+  /** The tracks of the dimension shown that a line's trains run along, as if it added and took away none. */
+  function routeOf(map, line) {
+    const keys = map.tracks.map(track => track.key);
+    const bare = { lines: [Object.assign({}, line, { mapAdd: [], mapRemove: [] })] };
+    return new Set(rt.map.visible(keys, state.network.legs, bare, [line.id]));
+  }
+
+  function renderMapTools() {
+    const lines = $('map-lines-list');
+    lines.replaceChildren();
+    const chosen = new Set(state.settings.mapLines || []);
+    lines.append(h('p', { class: 'note' }, t('mapLinesHelp')));
+    for (const line of state.timetable.lines)
+      lines.append(h('label', { class: 'check' }, h('input', {
+        type: 'checkbox', checked: chosen.has(line.id),
+        onchange: event => {
+          const next = new Set(state.settings.mapLines || []);
+          if (event.target.checked)
+            next.add(line.id);
+          else
+            next.delete(line.id);
+          state.settings.mapLines = state.timetable.lines.map(each => each.id).filter(id => next.has(id));
+          render();
+        },
+      }), line.name));
+    $('map-lines-summary').textContent = chosen.size === 0 ? t('mapAllLines') : t('mapSomeLines', chosen.size);
+
+    const layers = $('map-layers-list');
+    layers.replaceChildren();
+    for (const name of rt.map.LAYERS)
+      layers.append(h('label', { class: 'check' }, h('input', {
+        type: 'checkbox', checked: layerOn(name),
+        onchange: event => {
+          state.settings.mapLayers = Object.assign({}, state.settings.mapLayers, { [name]: event.target.checked });
+          render();
+        },
+      }), t('layer_' + name)));
+
+    const select = $('map-dimension');
+    const map = state.network === null ? null : state.network.map;
+    const dimensions = map === null ? [] : map.dimensions;
+    select.hidden = dimensions.length < 2;
+    select.replaceChildren(...dimensions.map((name, i) => h('option', { value: String(i), selected: i === mapDimension }, name)));
+  }
+
+  /** The map's place for a world's point, in pixels. */
+  function mapPoint(x, z) {
+    return [mapView.x(x), mapView.y(z)];
+  }
+
+  function renderMap() {
+    const svg = $('map');
+    svg.replaceChildren();
+    renderMapTools();
+    const network = state.network;
+    const map = network === null ? null : network.map;
+    $('empty-message').textContent = network === null ? t('mapNoNetwork') : map === null ? t('mapOld')
+      : map.tracks.length === 0 ? t('mapEmpty') : '';
+    if (map === null || map.tracks.length === 0)
+      return;
+    if (mapDimension >= map.dimensions.length)
+      mapDimension = 0;
+    const area = $('diagram-area');
+    const width = area.clientWidth;
+    const height = area.clientHeight;
+    if (mapView === null || mapFor !== map) {
+      mapView = new rt.map.View(width, height);
+      const box = rt.map.bounds(map, mapDimension);
+      if (box !== null)
+        mapView.fit(box, 40);
+      mapFor = map;
+    } else if (mapView.width !== width || mapView.height !== height) {
+      mapView.resize(width, height);
+    }
+
+    const keys = map.tracks.map(track => track.key);
+    const shownTracks = new Set(rt.map.visible(keys, network.legs, state.timetable, state.settings.mapLines || []));
+    const hidden = new Set(rt.timetable.mapHidden(state.timetable));
+    const here = [];
+    map.tracks.forEach((track, i) => {
+      if (track !== null && track.dimension === mapDimension)
+        here.push(i);
+    });
+    const on = (track) => shownTracks.has(track) && map.tracks[track].dimension === mapDimension;
+    svg.append(s('path', { class: 'track other', d: rt.map.pathData(map, here.filter(i => !shownTracks.has(i) && !hidden.has(keys[i])), mapView) }));
+    svg.append(s('path', { class: 'track hidden', d: rt.map.pathData(map, here.filter(i => hidden.has(keys[i])), mapView) }));
+    svg.append(s('path', { class: 'track shown', d: rt.map.pathData(map, here.filter(i => shownTracks.has(i)), mapView) }));
+    if (mapTrack !== null && mapTrack < map.tracks.length && map.tracks[mapTrack].dimension === mapDimension)
+      svg.append(s('path', { class: 'track chosen', d: rt.map.pathData(map, [mapTrack], mapView) }));
+
+    if (layerOn('speedLimits'))
+      for (const sign of map.speedLimits)
+        if (sign !== null && on(sign.track))
+          svg.append(speedSign(sign));
+    if (layerOn('signals'))
+      for (const signal of map.signals)
+        if (signal !== null && on(signal.track))
+          for (const side of signal.sides)
+            if (side !== null)
+              svg.append(signalHead(signal, side));
+    if (layerOn('trains'))
+      for (const train of map.trains) {
+        if (train === null)
+          continue;
+        const carriages = train.carriages.filter(carriage => carriage !== null && (on(carriage.tracks[0]) || on(carriage.tracks[1])));
+        if (carriages.length === 0)
+          continue;
+        const group = s('g', { class: 'map-train' });
+        for (const carriage of carriages) {
+          const [x1, y1] = mapPoint(carriage.points[0], carriage.points[1]);
+          const [x2, y2] = mapPoint(carriage.points[2], carriage.points[3]);
+          group.append(s('line', { x1, y1, x2, y2 }));
+        }
+        const [x, y] = mapPoint(carriages[0].points[0], carriages[0].points[1]);
+        // Below the train, where the stations' names, which are above them, are not.
+        const label = s('text', { x: x + 6, y: y + 16 });
+        label.textContent = train.name;
+        group.append(label);
+        svg.append(group);
+      }
+    if (layerOn('stations') || layerOn('stationNames'))
+      renderMapStations(svg, map, on);
+  }
+
+  /** The stations: a dot for each marker, and the name once for the markers of a name, in the middle of them. */
+  function renderMapStations(svg, map, on) {
+    const line = currentLine();
+    const ofLine = new Set(line === null ? [] : line.stations);
+    const byName = new Map();
+    for (const station of map.stations) {
+      if (station === null || !on(station.track))
+        continue;
+      if (layerOn('stations'))
+        svg.append(s('circle', {
+          class: 'map-station' + (ofLine.has(station.name) ? ' current' : ''),
+          cx: mapView.x(station.x), cy: mapView.y(station.z), r: 4,
+        }));
+      if (!byName.has(station.name))
+        byName.set(station.name, []);
+      byName.get(station.name).push(station);
+    }
+    if (!layerOn('stationNames'))
+      return;
+    for (const [name, markers] of byName) {
+      // Close in, every name; far out, only those of the line chosen, so that they do not run into each other.
+      if (mapView.scale < 0.75 && !ofLine.has(name))
+        continue;
+      const x = markers.reduce((sum, station) => sum + station.x, 0) / markers.length;
+      const z = markers.reduce((sum, station) => sum + station.z, 0) / markers.length;
+      const label = s('text', { class: 'map-station-name' + (ofLine.has(name) ? ' current' : ''), x: mapView.x(x) + 7, y: mapView.y(z) - 7 });
+      label.textContent = name;
+      svg.append(label);
+    }
+  }
+
+  /** The colours the lamps are drawn in. */
+  const LAMP_COLOURS = { R: '#e5483f', Y: '#f2c230', G: '#2fbf71' };
+
+  /** Where a thing beside the track for trains running (dx, dz) is drawn: to their right, as Create puts signals. */
+  function besideTheTrack(thing, dx, dz, away) {
+    const length = Math.hypot(dx, dz) || 1;
+    return [mapView.x(thing.x) - dz / length * away, mapView.y(thing.z) + dx / length * away];
+  }
+
+  /** One way of a signal: its lamps, lit as they were, in a dark head to the right of the trains it is for. */
+  function signalHead(signal, side) {
+    const [x, y] = besideTheTrack(signal, side.dx, side.dz, 9);
+    const length = Math.hypot(side.dx, side.dz) || 1;
+    const ux = side.dx / length;
+    const uy = side.dz / length;
+    const group = s('g', { class: 'map-signal' });
+    const count = side.lamps.length;
+    const reach = (count - 1) * 3.5 + 4;
+    group.append(s('line', { class: 'head', x1: x - ux * reach, y1: y - uy * reach, x2: x + ux * reach, y2: y + uy * reach }));
+    side.lamps.forEach((lamp, i) => {
+      const along = (i - (count - 1) / 2) * 7;
+      group.append(s('circle', { cx: x + ux * along, cy: y + uy * along, r: 2.6, fill: LAMP_COLOURS[lamp] }));
+    });
+    const title = s('title');
+    title.textContent = t('mapSignal', side.kind === 'create' ? t('mapSignalCreate') : t('mapSignalLight', side.kind.slice(5)));
+    group.append(title);
+    return group;
+  }
+
+  /** A speed-limit sign to the right of the trains it holds: its limit, or a slash for one that ends the limit. */
+  function speedSign(sign) {
+    const [x, y] = besideTheTrack(sign, sign.dx, sign.dz, 10);
+    const group = s('g', { class: 'map-limit' + (sign.release ? ' release' : '') });
+    group.append(s('circle', { cx: x, cy: y, r: 8 }));
+    if (sign.release) {
+      group.append(s('line', { x1: x - 5, y1: y + 5, x2: x + 5, y2: y - 5 }));
+    } else {
+      const text = s('text', { x, y: y + 3.5, 'text-anchor': 'middle' });
+      text.textContent = String(sign.kmh);
+      group.append(text);
+    }
+    const title = s('title');
+    title.textContent = sign.release ? t('mapRelease') : t('mapLimit', sign.kmh);
+    group.append(title);
+    return group;
+  }
+
+  function bindMap() {
+    const svg = $('map');
+    svg.addEventListener('wheel', event => {
+      if (mapView === null)
+        return;
+      event.preventDefault();
+      const box = svg.getBoundingClientRect();
+      mapView.zoom(event.deltaY > 0 ? 0.8 : 1.25, event.clientX - box.left, event.clientY - box.top);
+      renderMap();
+    }, { passive: false });
+    let gesture = null;
+    svg.addEventListener('pointerdown', event => {
+      if (mapView === null || event.button !== 0)
+        return;
+      gesture = { x: event.clientX, y: event.clientY, startX: event.clientX, startY: event.clientY, id: event.pointerId, moved: false };
+      svg.setPointerCapture(event.pointerId);
+    });
+    svg.addEventListener('pointermove', event => {
+      if (gesture === null || event.pointerId !== gesture.id)
+        return;
+      if (!gesture.moved && Math.hypot(event.clientX - gesture.startX, event.clientY - gesture.startY) < 4)
+        return;
+      gesture.moved = true;
+      mapView.pan(event.clientX - gesture.x, event.clientY - gesture.y);
+      gesture.x = event.clientX;
+      gesture.y = event.clientY;
+      renderMap();
+    });
+    const end = event => {
+      if (gesture === null || event.pointerId !== gesture.id)
+        return;
+      const clicked = !gesture.moved && event.type === 'pointerup';
+      gesture = null;
+      if (!clicked || state.network === null || state.network.map === null)
+        return;
+      const box = svg.getBoundingClientRect();
+      const x = mapView.worldX(event.clientX - box.left);
+      const z = mapView.worldZ(event.clientY - box.top);
+      const found = rt.map.nearestTrack(state.network.map, mapDimension, x, z, 8 / mapView.scale);
+      mapTrack = found < 0 ? null : found;
+      render();
+    };
+    svg.addEventListener('pointerup', end);
+    svg.addEventListener('pointercancel', end);
+    $('view-diagram').addEventListener('click', () => setView('diagram'));
+    $('view-map').addEventListener('click', () => setView('map'));
+    $('map-fit').addEventListener('click', () => {
+      mapView = null;
+      render();
+    });
+    $('map-dimension').addEventListener('change', event => {
+      mapDimension = Number(event.target.value);
+      mapView = null;
+      mapTrack = null;
+      render();
+    });
+  }
+
+  /** The track chosen on the map: which lines run along it, and how the line chosen and every map have it. */
+  function trackInspector(panel) {
+    const map = state.network.map;
+    const track = map.tracks[mapTrack];
+    panel.append(h('h2', null, t('mapTrack')));
+    panel.append(h('p', { class: 'note key' }, track.key));
+    const along = state.timetable.lines.filter(line => routeOf(map, line).has(mapTrack)).map(line => line.name);
+    panel.append(h('p', null, along.length === 0 ? t('mapTrackNoLines') : t('mapTrackLines', along.join(', '))));
+
+    const line = currentLine();
+    if (line === null) {
+      panel.append(h('p', { class: 'note' }, t('mapNoLine')));
+    } else {
+      panel.append(h('h2', null, t('mapForLine', line.name)));
+      const how = rt.timetable.mapAdd(line).includes(track.key) ? 'add' : rt.timetable.mapRemove(line).includes(track.key) ? 'remove' : 'route';
+      const runs = routeOf(map, line).has(mapTrack);
+      const choices = [['route', runs ? t('mapRouteShown') : t('mapRouteNotShown')], ['add', t('mapAdd')], ['remove', t('mapRemove')]];
+      for (const [value, label] of choices)
+        panel.append(h('label', { class: 'check' }, h('input', {
+          type: 'radio', name: 'map-how', checked: how === value,
+          onchange: () => change(rt.edit.setLineTrack(state.timetable, line.id, track.key, value)),
+        }), label));
+    }
+    const hidden = rt.timetable.mapHidden(state.timetable).includes(track.key);
+    panel.append(h('h2', null, t('mapEveryMap')));
+    panel.append(h('label', { class: 'check' }, h('input', {
+      type: 'checkbox', checked: hidden,
+      onchange: event => change(rt.edit.setTrackHidden(state.timetable, track.key, event.target.checked)),
+    }), t('mapHide')));
+    panel.append(h('div', { class: 'buttons' }, h('button', {
+      type: 'button',
+      onclick: () => {
+        mapTrack = null;
+        render();
+      },
+    }, t('mapDeselect'))));
   }
 
   // ------------------------------------------------------------------ the inspector
@@ -917,6 +1290,10 @@
     panel.replaceChildren();
     if (drawing !== null) {
       drawingInspector(panel);
+      return;
+    }
+    if (onMap() && mapTrack !== null && state.network !== null && state.network.map !== null && mapTrack < state.network.map.tracks.length) {
+      trackInspector(panel);
       return;
     }
     const train = selectedTrain();
@@ -1399,6 +1776,9 @@
     }, (network, text) => {
       state.network = network;
       state.networkText = text;
+      mapView = null;
+      mapTrack = null;
+      mapDimension = 0;
       render();
     });
   }
@@ -1791,6 +2171,7 @@
       }
     });
     bindDiagram();
+    bindMap();
   }
 
   restore();

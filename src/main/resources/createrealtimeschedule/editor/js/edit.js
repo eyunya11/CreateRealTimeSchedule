@@ -110,6 +110,35 @@
     return dropStationsOffTheLines(next);
   }
 
+  // ------------------------------------------------------------------ the map
+
+  /**
+   * How a line's map is to have a track: 'add' it, though the line's trains do not run along it;
+   * 'remove' it, though they do; or 'route', as the trains have it, neither added nor taken away.
+   */
+  function setLineTrack(timetable, lineId, key, how) {
+    const next = copy(timetable);
+    const line = next.lines.find(each => each.id === lineId);
+    if (line === undefined)
+      return timetable;
+    line.mapAdd = line.mapAdd.filter(each => each !== key);
+    line.mapRemove = line.mapRemove.filter(each => each !== key);
+    if (how === 'add')
+      line.mapAdd.push(key);
+    else if (how === 'remove')
+      line.mapRemove.push(key);
+    return next;
+  }
+
+  /** Hides a track from every map, or shows it again. */
+  function setTrackHidden(timetable, key, hidden) {
+    const next = copy(timetable);
+    next.mapHidden = next.mapHidden.filter(each => each !== key);
+    if (hidden)
+      next.mapHidden.push(key);
+    return next;
+  }
+
   // ------------------------------------------------------------------ the stations' times
 
   /** The times a station has of its own, {name, dwell, minimumStop}; none (NONE) for a station not listed. */
@@ -671,7 +700,7 @@
   }
 
   return {
-    NONE, copy, setName, putLine, removeLine, stationTimes, dwellAt, setStations, typeList, setTypes, typeChanges, trainsOfType,
+    NONE, copy, setName, putLine, removeLine, setLineTrack, setTrackHidden, stationTimes, dwellAt, setStations, typeList, setTypes, typeChanges, trainsOfType,
     nextNumber, addTrain, removeTrain, setTrain, stopLimits, moveStop, moveRun, moveArrival, stretchStop, draggedTime, drag, sameStops, shiftTrain, setStopTime, setDwell, setStopMinimum, setStopType, setStopWaits, setStopStation,
     removeStop, tooFast,
     snap, snapUp, snapDown, drawStop, drawClick, setDrawnDwell, finishDrawing,

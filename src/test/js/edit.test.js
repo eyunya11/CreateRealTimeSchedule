@@ -438,3 +438,23 @@ test('a stop that becomes the last when the one after it is taken out waits for 
   const waiting = edit.setStopWaits(three, '4', 1, [{ train: '3', at: 'X', maxWait: 60 }]);
   assert.equal('waits' in edit.removeStop(waiting, '4', 2).trains.find(train => train.number === '4').stops[1], false);
 });
+
+test('a line\'s map adds a track or takes it away, and a track is hidden from every map, each a change of its own', () => {
+  const before = {
+    name: '', lines: [{ id: 'l', name: 'L', stations: ['A', 'B'], loop: false }], trains: [], duties: [],
+  };
+  const added = edit.setLineTrack(before, 'l', 'k1', 'add');
+  assert.deepEqual(added.lines[0].mapAdd, ['k1']);
+  assert.deepEqual(added.lines[0].mapRemove, []);
+  assert.equal(before.lines[0].mapAdd, undefined, 'the timetable given is as it was');
+  const removed = edit.setLineTrack(added, 'l', 'k1', 'remove');
+  assert.deepEqual(removed.lines[0].mapAdd, [], 'a track taken away is no longer added');
+  assert.deepEqual(removed.lines[0].mapRemove, ['k1']);
+  assert.deepEqual(edit.setLineTrack(removed, 'l', 'k1', 'route').lines[0].mapRemove, []);
+  assert.equal(edit.setLineTrack(before, 'nope', 'k1', 'add'), before, 'no line, no change');
+  const hidden = edit.setTrackHidden(added, 'k2', true);
+  assert.deepEqual(hidden.mapHidden, ['k2']);
+  assert.deepEqual(edit.setTrackHidden(hidden, 'k2', true).mapHidden, ['k2'], 'hidden once');
+  assert.deepEqual(edit.setTrackHidden(hidden, 'k2', false).mapHidden, []);
+  assert.deepEqual(problems.problems(edit.setTrackHidden(removed, 'k2', true)), []);
+});
