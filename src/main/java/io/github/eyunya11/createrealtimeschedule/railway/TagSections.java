@@ -91,6 +91,76 @@ public final class TagSections {
         return problems;
     }
 
+    /** The blocks whose sections cover the place {@code at} on {@code edge}, from their start up to but not at their end. */
+    public Set<Integer> markersAt(int edge, double at) {
+        Set<Integer> found = new LinkedHashSet<>();
+        for (Span span : spans.get(edge))
+            if (within(span, at))
+                found.add(span.marker());
+        return found;
+    }
+
+    /**
+     * Whether a train held to {@code tag} may be at the place {@code at} on {@code edge}: where no
+     * section covers it, or one that covers it has the tag.
+     */
+    public boolean allows(int edge, double at, int tag) {
+        boolean covered = false;
+        for (Span span : spans.get(edge))
+            if (within(span, at)) {
+                if (span.tags().contains(tag))
+                    return true;
+                covered = true;
+            }
+        return !covered;
+    }
+
+    /** Whether a section with {@code tag} lies on {@code edge}, anywhere along it. */
+    public boolean hasTag(int edge, int tag) {
+        for (Span span : spans.get(edge))
+            if (span.tags().contains(tag))
+                return true;
+        return false;
+    }
+
+    /**
+     * Where on {@code edge} a train held to {@code tag} may not run on from: the start of each stretch
+     * that sections cover, none of them with the tag, in order. The sections of the blocks
+     * {@code allowed} count as having it, as those of the place the train starts from do.
+     */
+    public List<Double> closedTo(int edge, int tag, Set<Integer> allowed) {
+        List<Span> onEdge = spans.get(edge);
+        if (onEdge.isEmpty())
+            return List.of();
+        List<Double> cuts = new ArrayList<>();
+        for (Span span : onEdge) {
+            cuts.add(span.from());
+            cuts.add(span.to());
+        }
+        cuts.sort(null);
+        List<Double> starts = new ArrayList<>();
+        boolean closed = false;
+        for (int i = 0; i + 1 < cuts.size(); i++) {
+            double from = cuts.get(i);
+            double to = cuts.get(i + 1);
+            if (to - from <= EPSILON)
+                continue;
+            double middle = (from + to) / 2;
+            boolean covered = false;
+            boolean open = false;
+            for (Span span : onEdge)
+                if (span.from() <= middle && middle < span.to()) {
+                    covered = true;
+                    open |= span.tags().contains(tag) || allowed.contains(span.marker());
+                }
+            boolean now = covered && !open;
+            if (now && !closed)
+                starts.add(from);
+            closed = now;
+        }
+        return starts;
+    }
+
     /** The problems with the section of block {@code marker}, or with another that it is mixed with. */
     public List<Problem> problemsOf(int marker) {
         return problems.stream().filter(problem -> problem.marker() == marker || problem.other() == marker).toList();
