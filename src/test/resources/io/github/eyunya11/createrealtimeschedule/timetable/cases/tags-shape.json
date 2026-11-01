@@ -1,0 +1,31 @@
+{
+  "about": "The shape of track tags (version 7): a train's tag and a stop's tag that are not strings.",
+  "timetable": {
+    "format": "createrealtimeschedule.timetable",
+    "version": 7,
+    "name": "",
+    "lines": [
+      {
+        "id": "l",
+        "name": "L",
+        "stations": ["A", "B"]
+      }
+    ],
+    "trains": [
+      {
+        "number": "1",
+        "line": "l",
+        "tag": 1,
+        "stops": [
+          {"station": "A", "depart": "08:00", "tag": ["local"]},
+          {"station": "B", "arrive": "08:10"}
+        ]
+      }
+    ],
+    "duties": []
+  },
+  "problems": [
+    "trains[0].tag: must be a string",
+    "trains[0].stops[0].tag: must be a string"
+  ]
+}

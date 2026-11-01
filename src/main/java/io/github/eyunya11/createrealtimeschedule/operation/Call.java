@@ -21,14 +21,23 @@ import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Wait;
  *                      for the server's config
  * @param waits         the trains the set waits for before it leaves, as the stop it leaves from has
  *                      them, each with its station filled in ({@link Wait#station})
+ * @param tag           the track tag the set runs on from here to the next call, as the train it
+ *                      leaves as has it there ({@code Train.tagAt}); empty for none, and at the last call
  */
-public record Call(String station, int arrive, int depart, String arrivingTrain, String leavingTrain, int minimumStop, List<Wait> waits) {
+public record Call(String station, int arrive, int depart, String arrivingTrain, String leavingTrain, int minimumStop, List<Wait> waits,
+                   String tag) {
 
     public Call {
         Objects.requireNonNull(station, "station");
         Objects.requireNonNull(arrivingTrain, "arrivingTrain");
         Objects.requireNonNull(leavingTrain, "leavingTrain");
+        Objects.requireNonNull(tag, "tag");
         waits = List.copyOf(waits);
+    }
+
+    /** A call the set leaves on no track tag. */
+    public Call(String station, int arrive, int depart, String arrivingTrain, String leavingTrain, int minimumStop, List<Wait> waits) {
+        this(station, arrive, depart, arrivingTrain, leavingTrain, minimumStop, waits, "");
     }
 
     /** A call that waits for no train. */

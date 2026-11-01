@@ -14,7 +14,7 @@
 
   /**
    * A stop as it is, with a minimumStop only if it has one of its own, a type only if it changes the
-   * train's, and waits only if it waits for a train.
+   * train's, a tag only if it has a track tag of its own, and waits only if it waits for a train.
    */
   function copyStop(stop) {
     const made = { station: stop.station, arrive: stop.arrive, depart: stop.depart };
@@ -22,12 +22,14 @@
       made.minimumStop = stop.minimumStop;
     if (stop.type !== undefined && stop.type !== '')
       made.type = stop.type;
+    if (stop.tag !== undefined && stop.tag !== '')
+      made.tag = stop.tag;
     if (stop.waits !== undefined && stop.waits.length > 0)
       made.waits = stop.waits.map(wait => ({ train: wait.train, at: wait.at, maxWait: wait.maxWait }));
     return made;
   }
 
-  /** A train as it is, with a keep mark only if it is never to be cancelled. */
+  /** A train as it is, with a keep mark only if it is never to be cancelled, and a tag only if it has one. */
   function copyTrain(train) {
     const made = {
       number: train.number,
@@ -38,6 +40,8 @@
     };
     if (train.keep === true)
       made.keep = true;
+    if (train.tag !== undefined && train.tag !== '')
+      made.tag = train.tag;
     return made;
   }
 

@@ -1,0 +1,43 @@
+{
+  "about": "Track tags (version 7): a train's tag and a stop's tag that are no names, and a tag at the last stop, which the train does not leave.",
+  "timetable": {
+    "format": "createrealtimeschedule.timetable",
+    "version": 7,
+    "name": "",
+    "lines": [
+      {
+        "id": "l",
+        "name": "L",
+        "stations": ["A", "S", "B"]
+      }
+    ],
+    "trains": [
+      {
+        "number": "1",
+        "line": "l",
+        "tag": " local",
+        "stops": [
+          {"station": "A", "depart": "08:00"},
+          {"station": "S", "arrive": "08:04", "depart": "08:05", "tag": "main "},
+          {"station": "B", "arrive": "08:10", "tag": "main"}
+        ]
+      },
+      {
+        "number": "2",
+        "line": "l",
+        "tag": "local",
+        "stops": [
+          {"station": "A", "depart": "09:00", "tag": "express"},
+          {"station": "S", "arrive": "09:04", "depart": "09:05", "tag": ""},
+          {"station": "B", "arrive": "09:10", "tag": ""}
+        ]
+      }
+    ],
+    "duties": []
+  },
+  "problems": [
+    "train \"1\": the track tag must not start or end with a space or contain a control character",
+    "train \"1\", stop 2 \"S\": the track tag must not start or end with a space or contain a control character",
+    "train \"1\", stop 3 \"B\": is the last stop, which the train does not leave, so it has no track tag"
+  ]
+}
