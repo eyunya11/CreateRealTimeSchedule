@@ -140,7 +140,7 @@ Not checked yet:
 - running a timetable across a restart of the server (only saving its state and reading it back is tested), on track with signals where several trains share a line, and with a train that derails on the way;
 - holding a late train at a station on track with signals, where other trains run too, and how cancelled trains look in the diagram on a real client;
 - each of the diagram's keys and mouse controls on a real client (the diagram itself has been looked at there: the timetable's lines and the real ones lie over each other, and its clock agrees with the server's);
-- the two track tag blocks' looks and their marks on the track, the screen with several tags, and placing the blocks with the items, on a real client (a tag's name over a block has been seen there);
+- the mark shown on the track while a track tag block's item picks its place, on a real client (the blocks' looks, their marks on the track, the names over them, the screen with several tags, and placing them with the items have been seen there);
 - the clipboard commands and `/rteditor` on a real client, and the editor opened from a `file://` address (it has been used in a Chromium browser from `http://localhost`), and the GitHub Pages site, which is published once Pages is switched on and the work is on main.
 
 ## Building
