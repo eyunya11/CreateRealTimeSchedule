@@ -1,6 +1,7 @@
 {
   "values": [
     "createrealtimeschedule:track_tag",
-    "createrealtimeschedule:track_tag_one_way"
+    "createrealtimeschedule:track_tag_one_way",
+    "createrealtimeschedule:map_screen"
   ]
 }

@@ -97,5 +97,21 @@
   "createrealtimeschedule.track_tag.remove": "Take Off",
   "createrealtimeschedule.track_tag.clear": "Take All Off",
   "createrealtimeschedule.track_tag.both_ways": "Both ways: for trains running either way",
-  "createrealtimeschedule.track_tag.one_way": "One way: for trains running the way it faces"
+  "createrealtimeschedule.track_tag.one_way": "One way: for trains running the way it faces",
+  "block.createrealtimeschedule.map_screen": "Map Screen",
+  "gui.createrealtimeschedule.map_screen.title": "Map screen",
+  "gui.createrealtimeschedule.map_screen.size": "%1$s × %2$s blocks",
+  "gui.createrealtimeschedule.map_screen.x": "Middle X",
+  "gui.createrealtimeschedule.map_screen.z": "Middle Z",
+  "gui.createrealtimeschedule.map_screen.scale": "Blocks per block",
+  "gui.createrealtimeschedule.map_screen.fit": "Fit all track",
+  "gui.createrealtimeschedule.map_screen.layers": "Show",
+  "gui.createrealtimeschedule.map_screen.layer.stations": "Stations",
+  "gui.createrealtimeschedule.map_screen.layer.stationNames": "Station names",
+  "gui.createrealtimeschedule.map_screen.layer.signals": "Signals",
+  "gui.createrealtimeschedule.map_screen.layer.speedLimits": "Speed limits",
+  "gui.createrealtimeschedule.map_screen.layer.trains": "Trains",
+  "gui.createrealtimeschedule.map_screen.lines": "Lines (none: all the track)",
+  "gui.createrealtimeschedule.map_screen.no_timetable": "No timetable is run: all the track is shown",
+  "gui.createrealtimeschedule.map_screen.more_lines": "and %1$s more"
 }

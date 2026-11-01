@@ -4,9 +4,11 @@ import io.github.eyunya11.createrealtimeschedule.Createrealtimeschedule;
 import io.github.eyunya11.createrealtimeschedule.client.ClientClock;
 import io.github.eyunya11.createrealtimeschedule.client.ClipboardClient;
 import io.github.eyunya11.createrealtimeschedule.client.DiagramClient;
+import io.github.eyunya11.createrealtimeschedule.client.MapClient;
 import io.github.eyunya11.createrealtimeschedule.client.TrackTagClient;
 import io.github.eyunya11.createrealtimeschedule.command.ClipboardService;
 import io.github.eyunya11.createrealtimeschedule.diagram.DiagramService;
+import io.github.eyunya11.createrealtimeschedule.screen.MapScreenService;
 import io.github.eyunya11.createrealtimeschedule.tag.TrackTagService;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
@@ -23,7 +25,8 @@ public final class ModNetwork {
      * in the diagram's payload carry the stations it ran through, and 7 since the timetable may be of
      * version 6 (the types' colours and the stops that change a train's type), 8 since the track
      * tags' payloads came in, 9 since the timetable may be of version 7 (the track tags trains run
-     * on), and 10 since it may be of version 8 (the tracks a map shows and hides).
+     * on), and 10 since it may be of version 8 (the tracks a map shows and hides), and the map
+     * screens' payloads came in.
      */
     private static final String PROTOCOL_VERSION = "10";
 
@@ -48,6 +51,12 @@ public final class ModNetwork {
             .playToServer(TimetablePastePayload.TYPE, TimetablePastePayload.STREAM_CODEC, ClipboardService::onPaste)
             .playToClient(TrackTagListPayload.TYPE, TrackTagListPayload.STREAM_CODEC, (payload, context) -> TrackTagClient.onList(payload))
             .playToClient(TrackTagOpenPayload.TYPE, TrackTagOpenPayload.STREAM_CODEC, (payload, context) -> TrackTagClient.onOpen(payload))
-            .playToServer(TrackTagEditPayload.TYPE, TrackTagEditPayload.STREAM_CODEC, TrackTagService::onEdit);
+            .playToServer(TrackTagEditPayload.TYPE, TrackTagEditPayload.STREAM_CODEC, TrackTagService::onEdit)
+            .playToClient(MapScreenOpenPayload.TYPE, MapScreenOpenPayload.STREAM_CODEC, (payload, context) -> MapClient.onOpen(payload))
+            .playToServer(MapScreenEditPayload.TYPE, MapScreenEditPayload.STREAM_CODEC, MapScreenService::onEdit)
+            .playToServer(MapViewRequestPayload.TYPE, MapViewRequestPayload.STREAM_CODEC, MapScreenService::onViewRequest)
+            .playToClient(MapViewPayload.TYPE, MapViewPayload.STREAM_CODEC, (payload, context) -> MapClient.onView(payload))
+            .playToServer(MapLiveRequestPayload.TYPE, MapLiveRequestPayload.STREAM_CODEC, MapScreenService::onLiveRequest)
+            .playToClient(MapLivePayload.TYPE, MapLivePayload.STREAM_CODEC, (payload, context) -> MapClient.onLive(payload));
     }
 }

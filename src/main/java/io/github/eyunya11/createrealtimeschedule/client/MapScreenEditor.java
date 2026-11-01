@@ -1,0 +1,161 @@
+package io.github.eyunya11.createrealtimeschedule.client;
+
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+
+import io.github.eyunya11.createrealtimeschedule.map.MapProjection;
+import io.github.eyunya11.createrealtimeschedule.map.ScreenLayout.Place;
+import io.github.eyunya11.createrealtimeschedule.map.ScreenSettings;
+import io.github.eyunya11.createrealtimeschedule.network.MapScreenEditPayload;
+import io.github.eyunya11.createrealtimeschedule.network.MapScreenOpenPayload;
+import io.github.eyunya11.createrealtimeschedule.screen.MapScreenBlockEntity;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.Checkbox;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.network.chat.CommonComponents;
+import net.minecraft.network.chat.Component;
+import net.neoforged.neoforge.network.PacketDistributor;
+
+/**
+ * The settings of a map screen: the world's X and Z in the middle of it, how many blocks of the world
+ * a block of it shows, the lines whose track it shows (none for all), and what it shows on the track.
+ * "Fit all" puts all the track of the dimension on it. Done sends them to the server, which gives them
+ * to every block of the screen.
+ */
+public class MapScreenEditor extends Screen {
+
+    private static final String KEY = "gui.createrealtimeschedule.map_screen.";
+    /** The most lines listed, which fit the screen; the others keep what they had. */
+    private static final int MOST_LINES = 12;
+
+    private final MapScreenBlockEntity entity;
+    private final List<MapScreenOpenPayload.Line> lines;
+    private final ScreenSettings settings;
+    private final Place place;
+
+    private EditBox x;
+    private EditBox z;
+    private EditBox scale;
+    private final Map<String, Checkbox> lineBoxes = new LinkedHashMap<>();
+    private final Map<String, Checkbox> layerBoxes = new LinkedHashMap<>();
+
+    public MapScreenEditor(MapScreenBlockEntity entity, List<MapScreenOpenPayload.Line> lines) {
+        super(Component.translatableWithFallback(KEY + "title", "Map screen"));
+        this.entity = entity;
+        this.lines = lines;
+        this.settings = entity.settings();
+        this.place = entity.place();
+    }
+
+    @Override
+    protected void init() {
+        int left = width / 2 - 160;
+        int right = width / 2 + 10;
+        int top = 40;
+        x = number(left + 90, top, settings.centreX(), "x");
+        z = number(left + 90, top + 24, settings.centreZ(), "z");
+        scale = number(left + 90, top + 48, settings.scale(), "scale");
+        addRenderableWidget(Button.builder(Component.translatableWithFallback(KEY + "fit", "Fit all track"), button -> fit())
+            .bounds(left, top + 76, 150, 20).build());
+
+        int y = top + 120;
+        for (String layer : ScreenSettings.LAYERS) {
+            Checkbox box = Checkbox.builder(Component.translatableWithFallback(KEY + "layer." + layer, layer), font).pos(left, y)
+                .selected(settings.shows(layer)).build();
+            layerBoxes.put(layer, addRenderableWidget(box));
+            y += 22;
+        }
+
+        y = top + 12;
+        for (MapScreenOpenPayload.Line line : lines.subList(0, Math.min(MOST_LINES, lines.size()))) {
+            Checkbox box = Checkbox.builder(Component.literal(line.name()), font).pos(right, y).selected(settings.lines().contains(line.id()))
+                .build();
+            lineBoxes.put(line.id(), addRenderableWidget(box));
+            y += 22;
+        }
+
+        addRenderableWidget(Button.builder(CommonComponents.GUI_DONE, button -> done()).bounds(width / 2 - 104, height - 30, 100, 20).build());
+        addRenderableWidget(Button.builder(CommonComponents.GUI_CANCEL, button -> onClose()).bounds(width / 2 + 4, height - 30, 100, 20).build());
+    }
+
+    private EditBox number(int left, int top, double value, String name) {
+        EditBox box = new EditBox(font, left, top, 70, 18, Component.translatableWithFallback(KEY + name, name));
+        box.setValue(show(value));
+        box.setFilter(text -> text.matches("-?[0-9]*\\.?[0-9]*"));
+        return addRenderableWidget(box);
+    }
+
+    private static String show(double value) {
+        return value == Math.rint(value) ? Long.toString((long) value) : String.format(Locale.ROOT, "%.2f", value);
+    }
+
+    private static double read(EditBox box, double fallback) {
+        try {
+            double value = Double.parseDouble(box.getValue());
+            return Double.isFinite(value) ? value : fallback;
+        } catch (NumberFormatException e) {
+            return fallback;
+        }
+    }
+
+    /** Fills in the middle and the scale that put all the track of the dimension on the screen. */
+    private void fit() {
+        if (minecraft == null || minecraft.level == null)
+            return;
+        double[] fit = MapProjection.fit(MapClient.bounds(MapClient.dimension(minecraft.level.dimension().location().toString())),
+            place.width(), place.height());
+        if (fit == null)
+            return;
+        x.setValue(show(Math.round(fit[0])));
+        z.setValue(show(Math.round(fit[1])));
+        scale.setValue(show(fit[2]));
+    }
+
+    private void done() {
+        List<String> chosen = new ArrayList<>();
+        for (MapScreenOpenPayload.Line line : lines) {
+            Checkbox box = lineBoxes.get(line.id());
+            if (box != null ? box.selected() : settings.lines().contains(line.id()))
+                chosen.add(line.id());
+        }
+        // Lines the timetable no longer has are dropped: they show nothing.
+        List<String> hidden = new ArrayList<>();
+        layerBoxes.forEach((layer, box) -> {
+            if (!box.selected())
+                hidden.add(layer);
+        });
+        PacketDistributor.sendToServer(new MapScreenEditPayload(entity.getBlockPos(), read(x, settings.centreX()), read(z, settings.centreZ()),
+            MapProjection.clampScale(read(scale, settings.scale())), chosen, hidden));
+        onClose();
+    }
+
+    @Override
+    public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        super.render(graphics, mouseX, mouseY, partialTick);
+        int left = width / 2 - 160;
+        int right = width / 2 + 10;
+        int top = 40;
+        graphics.drawCenteredString(font, title, width / 2, 12, 0xFFFFFF);
+        graphics.drawString(font, Component.translatableWithFallback(KEY + "size", "%1$s × %2$s blocks", place.width(), place.height()),
+            left, top - 14, 0xA0A0A0);
+        graphics.drawString(font, Component.translatableWithFallback(KEY + "x", "Middle X"), left, top + 5, 0xFFFFFF);
+        graphics.drawString(font, Component.translatableWithFallback(KEY + "z", "Middle Z"), left, top + 29, 0xFFFFFF);
+        graphics.drawString(font, Component.translatableWithFallback(KEY + "scale", "Blocks per block"), left, top + 53, 0xFFFFFF);
+        graphics.drawString(font, Component.translatableWithFallback(KEY + "layers", "Show"), left, top + 106, 0xA0A0A0);
+        graphics.drawString(font, lines.isEmpty() ? Component.translatableWithFallback(KEY + "no_timetable", "No timetable is run: all the track")
+            : Component.translatableWithFallback(KEY + "lines", "Lines (none: all the track)"), right, top - 2, 0xA0A0A0);
+        if (lines.size() > MOST_LINES)
+            graphics.drawString(font, Component.translatableWithFallback(KEY + "more_lines", "and %1$s more", lines.size() - MOST_LINES),
+                right, top + 12 + MOST_LINES * 22, 0xA0A0A0);
+    }
+
+    @Override
+    public boolean isPauseScreen() {
+        return false;
+    }
+}
