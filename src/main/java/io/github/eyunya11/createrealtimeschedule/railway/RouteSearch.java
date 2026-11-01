@@ -449,13 +449,27 @@ public final class RouteSearch {
             return tagged.isEmpty() ? next : tagged;
         }
 
-        /** Whether the track from the start of {@code edge} to the next junction, or its end, has a section with the tag. */
+        /**
+         * Whether the track from the start of {@code edge} to the next junction, or its end, comes to a
+         * section with the tag before anything that does not let the train through: a stretch closed to
+         * the tag, or a point such as a signal facing the other way. A way where the tag lies only past
+         * such a point is no way to it.
+         */
         private boolean comesToTheTag(int edge) {
             TagSections sections = network.tagSections();
             Set<Integer> passed = new HashSet<>();
             for (int at = edge; passed.add(at); ) {
-                if (sections.hasTag(at, tag.getAsInt()))
+                double tagged = sections.tagFrom(at, tag.getAsInt());
+                double barrier = Double.POSITIVE_INFINITY;
+                for (Item item : items(at))
+                    if (item.kind() == Item.Kind.BARRIER) {
+                        barrier = item.position();
+                        break;
+                    }
+                if (tagged < barrier)
                     return true;
+                if (barrier < Double.POSITIVE_INFINITY)
+                    return false;
                 List<Integer> next = network.edges().get(at).next();
                 if (next.size() != 1)
                     return false;

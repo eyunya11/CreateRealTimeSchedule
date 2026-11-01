@@ -369,7 +369,8 @@
     const track = network === null ? null
       : { platforms: station => rt.network.platforms(network, station), way: (platform, station, tag) => rt.network.way(network, platform, station, tag) };
     const noWays = track === null ? [] : rt.edit.noWay(state.timetable, track);
-    const unknown = network === null ? [] : rt.edit.tagsOf(state.timetable).filter(tag => !network.tags.includes(tag));
+    // A network of before the tags (version 2 and older) cannot say which tags the world has.
+    const unknown = network === null || !network.tagged ? [] : rt.edit.tagsOf(state.timetable).filter(tag => !network.tags.includes(tag));
     const tagProblems = network === null ? [] : network.tagProblems;
     const notes = fast.length + noWays.length + unknown.length + tagProblems.length;
     $('problems-title').textContent = (found.length === 0 ? t('noProblems') : t('problemCount', found.length))
@@ -384,7 +385,7 @@
       list.append(h('li', { class: 'warning' }, t('unknownTag', tag)));
     for (const way of noWays)
       list.append(h('li', { class: 'warning', onclick: () => select({ kind: 'train', number: way.train }) },
-        t('noWay', way.train, way.from, way.to, way.tag)));
+        t('noWay', way.train, way.from, way.stop + 1, way.to, way.tag)));
     for (const way of fast)
       list.append(h('li', { class: 'warning', onclick: () => select({ kind: 'train', number: way.number }) },
         t('tooFast', way.number, way.from, way.to, way.given, way.needed)));

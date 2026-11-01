@@ -113,6 +113,40 @@ class ForcedTagSearchTest {
         assertEquals(List.of(0, 1, 3, 5), express.edges(), "a train of a tag no way has goes either way, but not into the siding");
     }
 
+    /**
+     * A junction whose one way has the express's section and then the local's, and whose other way,
+     * longer, has no section; both come to B. The local's section lies past the express's, which the
+     * local may not run into, so the first way is no way to it: the local takes the other.
+     */
+    @Test
+    void aWayWhoseTagLiesPastAStretchClosedToItIsNotTakenAtAJunction() {
+        List<Edge> edges = List.of(edge(10, 0, 1, 1, 2), edge(50, 1, 2, 3), edge(60, 1, 3, 4), edge(10, 2, 4, 5), edge(10, 3, 4, 5),
+            edge(40, 4, 5));
+        List<Marker> markers = List.of(block(1, 5, false, 1), block(1, 30, false, 2), block(3, 5, false));
+        RailNetwork network = new RailNetwork(edges, List.of(new Station("Depot", 0, 0, 0), new Station("B", 5, 30, 1)), List.of(), markers);
+        assertEquals(List.of(), network.tagSections().problems());
+        Route local = from(network, new Start(0, 0), "B", LOCAL);
+        assertNotNull(local, "the local has a way round the other side");
+        assertEquals(List.of(0, 2, 4, 5), local.edges());
+        // The express's section comes first on that way, so the express takes it, and the local's closes it further on.
+        assertNull(from(network, new Start(0, 0), "B", EXPRESS), "at a junction a train takes the way with its tag, even with no way on");
+    }
+
+    /**
+     * With the siding's blocks one-way, A on the siding running west has no section, and so is open to
+     * any tag, while both A running east are in sections. A set that came to A running east on another
+     * tag is still timed on to B from there, as no A open to the tag has a way to B.
+     */
+    @Test
+    void aLegIsTimedFromAPlatformClosedToTheTagWhereNoOpenOneHasAWay() {
+        RailNetwork network = siding(true);
+        Leg unknown = network.legs(List.of("A", "B"), UNKNOWN).getFirst();
+        assertEquals(List.of("A", "B", 60.0), List.of(unknown.from(), unknown.to(), unknown.distance()));
+        RailNetwork.Routes both = network.routes(List.of("Depot", "A", "B"), LOCAL);
+        assertEquals(network.legs(List.of("Depot", "A", "B"), LOCAL), both.legs());
+        assertEquals(network.ways(List.of("Depot", "A", "B"), LOCAL), both.ways());
+    }
+
     @Test
     void aTrainHeldToATagNoSectionHasRunsOnTrackWithNoSectionOnly() {
         RailNetwork network = siding(false);

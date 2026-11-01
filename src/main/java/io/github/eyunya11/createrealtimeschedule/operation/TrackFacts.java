@@ -105,18 +105,19 @@ public final class TrackFacts {
         RailNetwork network = CreateNetwork.read(graphs);
         Set<String> stations = stationsOf(timetable);
         // The axes are drawn from the ways of no tag.
-        List<Leg> legs = network.legs(stations);
-        Map<String, LineAxis> axes = new LinkedHashMap<>();
-        for (Line line : timetable.lines())
-            axes.put(line.id(), LineAxis.of(line, legs));
-        Map<List<String>, Leg> byEnds = new HashMap<>();
-        for (Leg leg : legs)
-            byEnds.putIfAbsent(List.of(leg.from(), leg.to(), ""), leg);
+        Map<String, RailNetwork.Routes> routes = new LinkedHashMap<>();
+        routes.put("", network.routes(stations, OptionalInt.empty()));
         TrackTags tags = TrackTagData.current();
         for (String tag : TagWays.tags(timetable))
-            for (Leg leg : network.legs(stations, tags.held(tag)))
-                byEnds.putIfAbsent(List.of(leg.from(), leg.to(), tag), leg);
-        data.track(axes, byEnds, TagWays.of(timetable, track(network, stations, tags)), TagWays.unknown(timetable, tags.names().values()));
+            routes.put(tag, network.routes(stations, tags.held(tag)));
+        Map<String, LineAxis> axes = new LinkedHashMap<>();
+        for (Line line : timetable.lines())
+            axes.put(line.id(), LineAxis.of(line, routes.get("").legs()));
+        Map<List<String>, Leg> byEnds = new HashMap<>();
+        for (Map.Entry<String, RailNetwork.Routes> tag : routes.entrySet())
+            for (Leg leg : tag.getValue().legs())
+                byEnds.putIfAbsent(List.of(leg.from(), leg.to(), tag.getKey()), leg);
+        data.track(axes, byEnds, TagWays.of(timetable, track(network, routes)), TagWays.unknown(timetable, tags.names().values()));
         data.trackWatch().workedOut(print);
         // The end of a train copied on an edge that is gone is not run on from; it is taken again from where the train is.
         data.tails().entrySet().removeIf(entry -> {
@@ -125,28 +126,27 @@ public final class TrackFacts {
         });
     }
 
-    /** The platforms of {@code network} and the ways from each, on each tag, worked out when first asked for. */
-    private static TagWays.Track track(RailNetwork network, Set<String> stations, TrackTags tags) {
+    /** The platforms of {@code network} and the ways from each, on each tag of {@code routes}. */
+    private static TagWays.Track track(RailNetwork network, Map<String, RailNetwork.Routes> routes) {
+        Map<String, List<Integer>> platforms = new HashMap<>();
+        for (int i = 0; i < network.stations().size(); i++)
+            platforms.computeIfAbsent(network.stations().get(i).name(), name -> new ArrayList<>()).add(i);
         Map<String, Map<Integer, Map<String, Integer>>> byTag = new HashMap<>();
+        for (Map.Entry<String, RailNetwork.Routes> tag : routes.entrySet()) {
+            Map<Integer, Map<String, Integer>> from = new HashMap<>();
+            for (RailNetwork.Way way : tag.getValue().ways())
+                from.computeIfAbsent(way.from(), f -> new HashMap<>()).put(way.to(), way.station());
+            byTag.put(tag.getKey(), from);
+        }
         return new TagWays.Track() {
             @Override
             public List<Integer> platforms(String station) {
-                List<Integer> found = new ArrayList<>();
-                for (int i = 0; i < network.stations().size(); i++)
-                    if (network.stations().get(i).name().equals(station))
-                        found.add(i);
-                return found;
+                return platforms.getOrDefault(station, List.of());
             }
 
             @Override
             public int way(int platform, String station, String tag) {
-                Map<Integer, Map<String, Integer>> ways = byTag.computeIfAbsent(tag, t -> {
-                    Map<Integer, Map<String, Integer>> from = new HashMap<>();
-                    for (RailNetwork.Way way : network.ways(stations, tags.held(t)))
-                        from.computeIfAbsent(way.from(), f -> new HashMap<>()).put(way.to(), way.station());
-                    return from;
-                });
-                return ways.getOrDefault(platform, Map.of()).getOrDefault(station, -1);
+                return byTag.getOrDefault(tag, Map.of()).getOrDefault(platform, Map.of()).getOrDefault(station, -1);
             }
         };
     }

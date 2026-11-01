@@ -9,6 +9,7 @@ const { script, RESOURCES } = require('./editor.js');
 const edit = script('edit');
 const network = script('network');
 const timetable = script('timetable');
+const problems = script('problems');
 
 const WAYS = path.join(RESOURCES, 'operation', 'ways');
 
@@ -55,6 +56,14 @@ test('a train and a stop are given a tag, and lose it for none', () => {
   assert.equal('tag' in edit.setTrain(tt, '3', { tag: '' }).trains[0], false);
   assert.equal(edit.copy(stop).trains[0].stops[0].tag, 'main', 'a copy keeps the tags');
   assert.equal(edit.copy(stop).trains[0].tag, 'local');
+});
+
+test('a stop that comes to be the last loses its tag, as the last stop cannot have one', () => {
+  const { tt } = tagged();
+  const withTag = edit.setStopTag(tt, '3', 1, 'main');
+  const cut = edit.removeStop(withTag, '3', 2);
+  assert.equal('tag' in cut.trains[0].stops[1], false);
+  assert.deepEqual(problems.problems(cut).filter(problem => problem.includes('track tag')), []);
 });
 
 test('a way is timed on the tag a train runs it on', () => {

@@ -167,8 +167,8 @@ class TagSectionsTest {
         assertEquals(List.of(40.0), sections.closedTo(2, 2, Set.of()), "the westward section ends 10 short of node 2 on edge 2");
         assertEquals(List.of(false, true, true), List.of(sections.allows(0, 10, 1), sections.allows(0, 30, 1), sections.allows(0, 30, 2)));
         assertEquals(Set.of(0, 1), sections.markersAt(0, 20));
-        assertEquals(List.of(true, true), List.of(sections.hasTag(0, 1), sections.hasTag(0, 2)));
+        assertEquals(List.of(20.0, 0.0), List.of(sections.tagFrom(0, 1), sections.tagFrom(0, 2)), "where the first section with each tag starts");
         TagSections none = TagSections.of(new RailNetwork(line(), List.of(), List.of(), List.of()));
-        assertEquals(List.of(true, false), List.of(none.allows(0, 10, 1), none.hasTag(0, 1)));
+        assertEquals(List.of(true, Double.POSITIVE_INFINITY), List.of(none.allows(0, 10, 1), none.tagFrom(0, 1)));
     }
 }

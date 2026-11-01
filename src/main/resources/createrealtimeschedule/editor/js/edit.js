@@ -663,7 +663,7 @@
 
   /**
    * Takes a stop out of a train; the stops at the ends lose the time an end does not have, and the
-   * last what a stop the train does not leave cannot have: a minimum stop, a type and waits. A change
+   * last what a stop the train does not leave cannot have: a minimum stop, a type, a track tag and waits. A change
    * of type at the stop taken out moves on to the stop after it, unless that one has its own, so that
    * the rest of the train keeps its type.
    */
@@ -678,6 +678,7 @@
       stops[stops.length - 1].depart = NONE;
       delete stops[stops.length - 1].minimumStop;
       delete stops[stops.length - 1].type;
+      delete stops[stops.length - 1].tag;
       delete stops[stops.length - 1].waits;
     }
     return next;

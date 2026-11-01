@@ -49,25 +49,31 @@ public final class NetworkJson {
         MapNode root = head(2, names, spec, throttle);
         ListNode list = new ListNode();
         for (Leg leg : legs)
-            list.add(leg(leg, "", spec, throttle));
+            list.add(leg(leg, Held.NONE, spec, throttle));
         root.put("legs", list);
         return JsonOutput.render(root);
+    }
+
+    /** {@link #write(RailNetwork, RailNetwork.Routes, TrackTags, TrainSpec, double)} with the routes of no tag worked out here. */
+    public static String write(RailNetwork network, TrackTags tags, TrainSpec spec, double throttle) {
+        return write(network, network.routes(network.names(), OptionalInt.empty()), tags, spec, throttle);
     }
 
     /**
      * {@code network} with the world's track tags {@code tags}: as version 3 if there are tags or tag
      * blocks, and else as {@link #write(List, List, TrainSpec, double)} writes it.
+     *
+     * @param untagged the legs and ways of {@code network} for a train held to no tag, between all its names
      */
-    public static String write(RailNetwork network, TrackTags tags, TrainSpec spec, double throttle) {
+    public static String write(RailNetwork network, RailNetwork.Routes untagged, TrackTags tags, TrainSpec spec, double throttle) {
         List<String> names = network.names();
         if (tags.names().isEmpty() && network.markers().isEmpty())
-            return write(names, network.legs(), spec, throttle);
-        // Each tag by its name, and then a tag the world has none of, by null.
-        Map<String, OptionalInt> held = new LinkedHashMap<>();
-        held.put("", OptionalInt.empty());
+            return write(names, untagged.legs(), spec, throttle);
+        List<Held> held = new ArrayList<>();
+        held.add(Held.NONE);
         for (Map.Entry<Integer, String> tag : tags.names().entrySet())
-            held.putIfAbsent(tag.getValue(), OptionalInt.of(tag.getKey()));
-        held.put(null, OptionalInt.of(TrackTags.UNKNOWN));
+            held.add(new Held(tag.getValue(), OptionalInt.of(tag.getKey()), false));
+        held.add(new Held("", OptionalInt.of(TrackTags.UNKNOWN), true));
 
         MapNode root = head(3, names, spec, throttle);
         root.put("tags", JsonOutput.texts(new ArrayList<>(tags.names().values())));
@@ -91,15 +97,16 @@ public final class NetworkJson {
 
         ListNode legs = new ListNode();
         ListNode ways = new ListNode();
-        for (Map.Entry<String, OptionalInt> tag : held.entrySet()) {
-            for (Leg leg : network.legs(names, tag.getValue()))
-                legs.add(leg(leg, tag.getKey(), spec, throttle));
+        for (Held tag : held) {
+            RailNetwork.Routes routes = tag == Held.NONE ? untagged : network.routes(names, tag.id());
+            for (Leg leg : routes.legs())
+                legs.add(leg(leg, tag, spec, throttle));
             Map<Integer, MapNode> from = new LinkedHashMap<>();
-            for (RailNetwork.Way way : network.ways(names, tag.getValue()))
+            for (RailNetwork.Way way : routes.ways())
                 from.computeIfAbsent(way.from(), f -> new MapNode()).put(way.to(), JsonOutput.raw(Integer.toString(way.station())));
             for (Map.Entry<Integer, MapNode> each : from.entrySet()) {
                 MapNode node = new MapNode().put("from", JsonOutput.raw(Integer.toString(each.getKey())));
-                tagged(node, tag.getKey());
+                tagged(node, tag);
                 ways.add(JsonOutput.inline(node.put("to", JsonOutput.inline(each.getValue()))));
             }
         }
@@ -122,20 +129,32 @@ public final class NetworkJson {
         return root;
     }
 
-    /** Says which tag {@code node} is for: none for {@code ""}, the name, or for null a tag the world has none of. */
-    private static void tagged(MapNode node, String tag) {
-        if (tag == null)
+    /**
+     * The track tag a train is held to, as the network writes it.
+     *
+     * @param name  the tag's name; empty for none, and for a tag the world has none of
+     * @param id    the id the search holds the train to ({@link TrackTags#held})
+     * @param other whether it is a tag the world has none of, written {@code "otherTag": true}
+     */
+    private record Held(String name, OptionalInt id, boolean other) {
+        /** No tag. */
+        static final Held NONE = new Held("", OptionalInt.empty(), false);
+    }
+
+    /** Says which tag {@code node} is for: nothing for no tag, the tag's name, or {@code otherTag}. */
+    private static void tagged(MapNode node, Held tag) {
+        if (tag.other())
             node.put("otherTag", JsonOutput.raw("true"));
-        else if (!tag.isEmpty())
-            node.put("tag", JsonOutput.text(tag));
+        else if (!tag.name().isEmpty())
+            node.put("tag", JsonOutput.text(tag.name()));
     }
 
     private static JsonOutput.Leaf place(RailNetwork.Place place) {
         return JsonOutput.inline(new ListNode().add(number(place.x())).add(number(place.y())).add(number(place.z())));
     }
 
-    /** A leg, for a train held to {@code tag} as {@link #tagged} says it. */
-    private static MapNode leg(Leg leg, String tag, TrainSpec spec, double throttle) {
+    /** A leg, for a train held to {@code tag}. */
+    private static MapNode leg(Leg leg, Held tag, TrainSpec spec, double throttle) {
         MapNode node = new MapNode();
         node.put("from", JsonOutput.text(leg.from()));
         node.put("to", JsonOutput.text(leg.to()));

@@ -317,55 +317,68 @@ public final class RailNetwork {
 
     /**
      * The legs of {@link #legs(Collection)} for a train held to the track tag {@code tag}, if any
-     * ({@link RouteSearch}). Such a train is searched from only the stations of a name it can come to:
-     * those where the track is open to it, if the name has any. It may leave a section without its tag
-     * that it stands in, but a train of its tag would not be standing there.
+     * ({@link RouteSearch}); see {@link #routes}.
      */
     public List<Leg> legs(Collection<String> among, OptionalInt tag) {
-        Set<String> wanted = Set.copyOf(among);
-        Set<String> open = new HashSet<>();
-        for (int i = 0; i < stations.size(); i++)
-            if (opensTo(i, tag))
-                open.add(stations.get(i).name());
-        Map<List<String>, Leg> best = new LinkedHashMap<>();
-        for (int i = 0; i < stations.size(); i++) {
-            int source = i;
-            Station start = stations.get(source);
-            if (!wanted.contains(start.name()) || !opensTo(source, tag) && open.contains(start.name()))
-                continue;
-            Map<String, RouteSearch.Route> routes = routesFrom(source, wanted, tag);
-            for (RouteSearch.Route route : routes.values()) {
-                List<String> key = List.of(start.name(), stations.get(route.station()).name());
-                Leg known = best.get(key);
-                if (known == null || route.distance() < known.distance())
-                    best.put(key, leg(source, route));
-            }
-        }
-        List<String> names = names();
-        List<Leg> legs = new ArrayList<>(best.values());
-        legs.sort(Comparator.<Leg>comparingInt(leg -> names.indexOf(leg.from())).thenComparingInt(leg -> names.indexOf(leg.to())));
-        return legs;
+        return routes(among, tag).legs();
+    }
+
+    /** The ways of {@link #routes}: where a train held to {@code tag}, if any, comes to from each station. */
+    public List<Way> ways(Collection<String> among, OptionalInt tag) {
+        return routes(among, tag).ways();
     }
 
     /**
-     * Where a train held to the track tag {@code tag}, if any, goes from each station of the given
-     * names when it is sent to each other of them: to the station it comes to, by the station it starts
-     * from and then by the order of {@link #names()}. A name it cannot get to from a station has no way.
+     * The legs and the ways between the stations of the given names, for a train held to the track tag
+     * {@code tag}, if any, from one search from each station.
+     *
+     * @param legs the legs, as {@link #legs(Collection)} has them. For a train held to a tag, a leg is
+     *             timed from the stations of its first name where the track is open to the tag, where
+     *             any of them has a way to the other name: a train of the tag may leave a section
+     *             without its tag that it stands in, but would not be standing there. From the others
+     *             only where none of those has a way, as a set that came there on another tag
+     * @param ways where a train standing at each station goes when it is sent to each other name: to
+     *             the station it comes to, by the station it starts from and then by the order of
+     *             {@link #names()}. A name it cannot get to from a station has no way
      */
-    public List<Way> ways(Collection<String> among, OptionalInt tag) {
+    public record Routes(List<Leg> legs, List<Way> ways) {
+        public Routes {
+            legs = List.copyOf(legs);
+            ways = List.copyOf(ways);
+        }
+    }
+
+    /** See {@link Routes}. */
+    public Routes routes(Collection<String> among, OptionalInt tag) {
         Set<String> wanted = Set.copyOf(among);
         List<String> names = names();
+        Map<List<String>, Leg> best = new LinkedHashMap<>();
+        Set<List<String>> bestOpen = new HashSet<>();
         List<Way> ways = new ArrayList<>();
         for (int i = 0; i < stations.size(); i++) {
-            if (!wanted.contains(stations.get(i).name()))
+            int source = i;
+            Station start = stations.get(source);
+            if (!wanted.contains(start.name()))
                 continue;
+            boolean open = opensTo(source, tag);
             List<Way> from = new ArrayList<>();
-            for (RouteSearch.Route route : routesFrom(i, wanted, tag).values())
-                from.add(new Way(i, stations.get(route.station()).name(), route.station()));
+            for (RouteSearch.Route route : routesFrom(source, wanted, tag).values()) {
+                from.add(new Way(source, stations.get(route.station()).name(), route.station()));
+                List<String> key = List.of(start.name(), stations.get(route.station()).name());
+                Leg known = best.get(key);
+                boolean knownOpen = bestOpen.contains(key);
+                if (known == null || open && !knownOpen || open == knownOpen && route.distance() < known.distance()) {
+                    best.put(key, leg(source, route));
+                    if (open)
+                        bestOpen.add(key);
+                }
+            }
             from.sort(Comparator.comparingInt(way -> names.indexOf(way.to())));
             ways.addAll(from);
         }
-        return ways;
+        List<Leg> legs = new ArrayList<>(best.values());
+        legs.sort(Comparator.<Leg>comparingInt(leg -> names.indexOf(leg.from())).thenComparingInt(leg -> names.indexOf(leg.to())));
+        return new Routes(legs, ways);
     }
 
     /** Whether the track at station {@code station} is open to a train held to {@code tag}, if any. */

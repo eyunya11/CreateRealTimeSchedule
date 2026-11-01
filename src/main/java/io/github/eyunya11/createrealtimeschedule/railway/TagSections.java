@@ -115,12 +115,13 @@ public final class TagSections {
         return !covered;
     }
 
-    /** Whether a section with {@code tag} lies on {@code edge}, anywhere along it. */
-    public boolean hasTag(int edge, int tag) {
+    /** Where on {@code edge} the first section with {@code tag} starts; infinity if none lies on it. */
+    public double tagFrom(int edge, int tag) {
+        double from = Double.POSITIVE_INFINITY;
         for (Span span : spans.get(edge))
             if (span.tags().contains(tag))
-                return true;
-        return false;
+                from = Math.min(from, span.from());
+        return from;
     }
 
     /**
