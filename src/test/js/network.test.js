@@ -38,10 +38,10 @@ test('a leg with no ticks has no running time', () => {
 
 test('something that is not a network of this mod, or a newer one, is not read', () => {
   assert.equal(network.read('{"format": "createrealtimeschedule.timetable", "version": 2}').network, null);
-  const newer = network.read('{"format": "createrealtimeschedule.network", "version": 3}');
+  const newer = network.read('{"format": "createrealtimeschedule.network", "version": 4}');
   assert.equal(newer.network, null);
   assert.deepEqual(newer.problems,
-    ['version: is 3, but this editor reads networks up to version 2; the editor needs updating to read this one']);
+    ['version: is 4, but this editor reads networks up to version 3; the editor needs updating to read this one']);
   const bad = network.read(JSON.stringify({ format: 'createrealtimeschedule.network', version: 1, stations: ['A'], legs: [{ from: 'A' }] }));
   assert.equal(bad.network, null);
   assert.deepEqual(bad.problems, ['legs[0]: from and to must be strings', 'legs[0].distance: must be a number, 0 or more']);
