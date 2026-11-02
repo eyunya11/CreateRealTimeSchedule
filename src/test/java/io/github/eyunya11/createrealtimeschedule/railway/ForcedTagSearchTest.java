@@ -113,6 +113,45 @@ class ForcedTagSearchTest {
         assertEquals(List.of(0, 1, 3, 5), express.edges(), "a train of a tag no way has goes either way, but not into the siding");
     }
 
+    /** Weights by which a train cannot run on {@code edge}, as on a track type its bogeys do not fit. */
+    private static Weights notOn(int edge) {
+        return new Weights() {
+            @Override
+            public boolean canUse(int each) {
+                return each != edge;
+            }
+        };
+    }
+
+    /**
+     * The siding has the local's tag, but is track the local cannot run on: at the junction it takes
+     * the main line, which is open to it.
+     */
+    @Test
+    void atAJunctionATrainHeldToATagTakesAWayWithItOnlyWhereItCanRunOnIt() {
+        RailNetwork network = siding(false, false);
+        Route local = RouteSearch.first(network, new Start(0, 0), named(network, "B"), notOn(2), LOCAL);
+        assertNotNull(local, "the main line is open to the local");
+        assertEquals(List.of(0, 1, 3, 5), local.edges());
+    }
+
+    /**
+     * A junction whose one way, edge 2, runs on to edge 4, which has the local's section; the other has
+     * no section. Where the local cannot run on edge 4, the first way does not come to its tag, and it
+     * takes the other.
+     */
+    @Test
+    void aWayWhoseTagLiesOnTrackTheTrainCannotRunOnIsNotTakenAtAJunction() {
+        List<Edge> edges = List.of(edge(10, 0, 1, 1, 2), edge(50, 1, 2, 3), edge(20, 1, 3, 4), edge(10, 2, 4, 5), edge(10, 3, 4, 5),
+            edge(40, 4, 5));
+        List<Marker> markers = List.of(block(4, 2, false, 2), block(4, 8, false));
+        RailNetwork network = new RailNetwork(edges, List.of(new Station("Depot", 0, 0, 0), new Station("B", 5, 30, 1)), List.of(), markers);
+        assertEquals(List.of(0, 2, 4, 5), RouteSearch.first(network, new Start(0, 0), named(network, "B"), EMPTY, LOCAL).edges());
+        Route local = RouteSearch.first(network, new Start(0, 0), named(network, "B"), notOn(4), LOCAL);
+        assertNotNull(local, "the local has a way on the other side");
+        assertEquals(List.of(0, 1, 3, 5), local.edges());
+    }
+
     /**
      * A junction whose one way has the express's section and then the local's, and whose other way,
      * longer, has no section; both come to B. The local's section lies past the express's, which the

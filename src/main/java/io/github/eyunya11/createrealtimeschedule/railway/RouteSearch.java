@@ -436,15 +436,15 @@ public final class RouteSearch {
         }
 
         /**
-         * The ways of a junction a train held to a tag takes: those that come to a section with the tag
-         * before the next junction, if any do, and otherwise all of them, as for any train.
+         * The ways of a junction a train held to a tag takes: those it can run on that come to a section
+         * with the tag before the next junction, if any do, and otherwise all of them, as for any train.
          */
         private List<Integer> taken(List<Integer> next) {
             if (tag.isEmpty() || next.size() < 2)
                 return next;
             List<Integer> tagged = new ArrayList<>();
             for (int target : next)
-                if (comesToTheTag(target))
+                if (weights.canUse(target) && comesToTheTag(target))
                     tagged.add(target);
             return tagged.isEmpty() ? next : tagged;
         }
@@ -452,8 +452,8 @@ public final class RouteSearch {
         /**
          * Whether the track from the start of {@code edge} to the next junction, or its end, comes to a
          * section with the tag before anything that does not let the train through: a stretch closed to
-         * the tag, or a point such as a signal facing the other way. A way where the tag lies only past
-         * such a point is no way to it.
+         * the tag, a point such as a signal facing the other way, or track the train cannot run on. A way
+         * where the tag lies only past such a point is no way to it.
          */
         private boolean comesToTheTag(int edge) {
             TagSections sections = network.tagSections();
@@ -471,7 +471,7 @@ public final class RouteSearch {
                 if (barrier < Double.POSITIVE_INFINITY)
                     return false;
                 List<Integer> next = network.edges().get(at).next();
-                if (next.size() != 1)
+                if (next.size() != 1 || !weights.canUse(next.getFirst()))
                     return false;
                 at = next.getFirst();
             }
