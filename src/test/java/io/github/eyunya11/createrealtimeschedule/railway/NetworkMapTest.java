@@ -8,7 +8,9 @@ import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
+import io.github.eyunya11.createrealtimeschedule.json.JsonOutput;
 import io.github.eyunya11.createrealtimeschedule.map.TrackMap;
+import io.github.eyunya11.createrealtimeschedule.map.TrackMapJson;
 import io.github.eyunya11.createrealtimeschedule.map.TrackMap.Spot;
 import io.github.eyunya11.createrealtimeschedule.map.TrackMap.TagPiece;
 import io.github.eyunya11.createrealtimeschedule.map.TrackMap.Track;
@@ -82,5 +84,17 @@ class NetworkMapTest {
         assertTrue(json.contains("\"tagColours\": {\"Local\": \"" + tags.colour(1) + "\", \"Rapid\": \"#123456\"}"), json);
         assertTrue(json.contains("\"points\": [0, 0, 50, 0], \"tags\": [{\"from\": 0.4, \"to\": 1, \"tags\": [\"Local\"]}]}"), json);
         assertTrue(json.contains("\"points\": [50, 0, 100, 0], \"tags\": [{\"from\": 0, \"to\": 1, \"tags\": [\"Local\"]}]}"), json);
+    }
+
+    /** A train on the map lists the track tags it runs on in its duty; one that runs none, none. */
+    @Test
+    void aTrainListsTheTagsItRunsOn() {
+        TrackMap.Carriage carriage = new TrackMap.Carriage(new Spot(10, 0), new Spot(5, 0), 0, 0);
+        TrackMap map = new TrackMap(List.of("minecraft:overworld"), List.of(new Track("a", 0, List.of(new Spot(0, 0), new Spot(50, 0)))),
+            List.of(), List.of(), List.of(), List.of(new TrackMap.TrainMark("One", List.of(carriage), List.of("Local", "")),
+                new TrackMap.TrainMark("Two", List.of(carriage))));
+        String json = JsonOutput.render(TrackMapJson.write(map));
+        assertTrue(json.contains("{\"name\": \"One\", \"carriages\": [{\"points\": [10, 0, 5, 0], \"tracks\": [0, 0]}], \"tags\": [\"Local\", \"\"]}"), json);
+        assertTrue(json.contains("{\"name\": \"Two\", \"carriages\": [{\"points\": [10, 0, 5, 0], \"tracks\": [0, 0]}]}"), json);
     }
 }

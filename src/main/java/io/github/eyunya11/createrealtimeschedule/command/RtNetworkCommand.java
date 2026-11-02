@@ -14,6 +14,7 @@ import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.context.CommandContext;
 import com.simibubi.create.Create;
 
+import io.github.eyunya11.createrealtimeschedule.operation.OperationData;
 import io.github.eyunya11.createrealtimeschedule.railway.CreateMap;
 import io.github.eyunya11.createrealtimeschedule.railway.CreateNetwork;
 import io.github.eyunya11.createrealtimeschedule.railway.NetworkJson;
@@ -91,8 +92,9 @@ public final class RtNetworkCommand {
 
     /** The map of the track now, and which track of it each edge of the network is. */
     private static NetworkMap map(CommandSourceStack source, CreateNetwork.All all) {
+        OperationData operation = OperationData.get(source.getServer());
         CreateMap.Read read = CreateMap.read(Create.RAILWAYS.trackNetworks.values(), Create.RAILWAYS.trains.values(),
-            source.getServer()::getLevel);
+            source.getServer()::getLevel, train -> operation.tagsOf(train.id));
         return NetworkMap.of(read.map(), all.edges(), read.trackOf(), read.backward());
     }
 

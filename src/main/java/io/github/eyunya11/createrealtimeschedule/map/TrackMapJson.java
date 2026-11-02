@@ -119,9 +119,12 @@ public final class TrackMapJson {
                         .add(place(carriage.back().x())).add(place(carriage.back().z()))))
                     .put("tracks", JsonOutput.inline(new ListNode()
                         .add(whole(carriage.frontTrack())).add(whole(carriage.backTrack()))))));
-            trains.add(JsonOutput.inline(new MapNode()
+            MapNode entry = new MapNode()
                 .put("name", JsonOutput.text(train.name()))
-                .put("carriages", JsonOutput.inline(carriages))));
+                .put("carriages", JsonOutput.inline(carriages));
+            if (!train.tags().isEmpty())
+                entry.put("tags", JsonOutput.inline(JsonOutput.texts(train.tags())));
+            trains.add(JsonOutput.inline(entry));
         }
         node.put("trains", trains);
         return node;

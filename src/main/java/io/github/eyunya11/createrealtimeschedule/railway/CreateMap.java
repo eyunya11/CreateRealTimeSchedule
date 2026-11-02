@@ -12,6 +12,7 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.WeakHashMap;
+import java.util.function.Function;
 
 import org.jetbrains.annotations.Nullable;
 
@@ -89,6 +90,16 @@ public final class CreateMap {
      *               Create's state or the look last read
      */
     public static Read read(Collection<TrackGraph> graphs, Collection<Train> trains, @Nullable Levels levels) {
+        return read(graphs, trains, levels, train -> List.of());
+    }
+
+    /**
+     * {@link #read(Collection, Collection, Levels)}, with the track tags each train runs on.
+     *
+     * @param tagsOf the track tags a train runs on in its duty ({@link TrainMark#tags})
+     */
+    public static Read read(Collection<TrackGraph> graphs, Collection<Train> trains, @Nullable Levels levels,
+        Function<Train, List<String>> tagsOf) {
         // The tracks, by key: sorted, the map comes out the same whatever order the game holds them in.
         TreeMap<String, Found> found = new TreeMap<>();
         for (TrackGraph graph : graphs)
@@ -181,7 +192,7 @@ public final class CreateMap {
                     carriages.add(new TrackMap.Carriage(front.spot(), back.spot(), front.track(), back.track()));
             }
             if (!carriages.isEmpty())
-                trainMarks.add(new TrainMark(train.name == null ? "" : train.name.getString(), carriages));
+                trainMarks.add(new TrainMark(train.name == null ? "" : train.name.getString(), carriages, tagsOf.apply(train)));
         }
         trainMarks.sort(Comparator.comparing(TrainMark::name));
 

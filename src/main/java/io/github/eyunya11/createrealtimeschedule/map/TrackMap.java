@@ -137,11 +137,19 @@ public record TrackMap(List<String> dimensions, List<Track> tracks, List<Station
     /**
      * @param name      what the train is called
      * @param carriages its carriages, each from one end to the other
+     * @param tags      the track tags it runs on in the duty it runs, each once, empty for the ways it
+     *                  runs on none; none if it runs no duty
      */
-    public record TrainMark(String name, List<Carriage> carriages) {
+    public record TrainMark(String name, List<Carriage> carriages, List<String> tags) {
         public TrainMark {
             Objects.requireNonNull(name, "name");
             carriages = List.copyOf(carriages);
+            tags = List.copyOf(tags);
+        }
+
+        /** A train that runs no duty. */
+        public TrainMark(String name, List<Carriage> carriages) {
+            this(name, carriages, List.of());
         }
     }
 

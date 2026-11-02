@@ -152,7 +152,12 @@
         }
         return { points: carriage.points.slice(), tracks: carriage.tracks.slice() };
       });
-      return { name: train.name, carriages };
+      // The track tags it runs on in its duty, '' for the ways on none; none if it runs no duty.
+      if (train.tags !== undefined && !isStrings(train.tags)) {
+        problems.push(at + '.tags: must be an array of strings');
+        return null;
+      }
+      return { name: train.name, carriages, tags: train.tags === undefined ? [] : train.tags.slice() };
     });
     if (problems.length > before)
       return null;

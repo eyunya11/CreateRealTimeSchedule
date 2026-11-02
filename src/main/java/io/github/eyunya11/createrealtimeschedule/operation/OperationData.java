@@ -355,6 +355,17 @@ public final class OperationData extends SavedData {
         return runs;
     }
 
+    /**
+     * The track tags the train {@code train} runs on in the duty it runs, each once, in the order it
+     * comes to them, empty for the ways it runs on none; none if it runs no duty.
+     */
+    public List<String> tagsOf(UUID train) {
+        DutyRun run = runs.get(train);
+        if (run == null)
+            return List.of();
+        return run.calls().stream().filter(call -> !call.leavingTrain().isEmpty()).map(Call::tag).distinct().toList();
+    }
+
     public Optional<UUID> trainOf(String duty) {
         return runs.entrySet().stream().filter(entry -> entry.getValue().duty().equals(duty)).map(Map.Entry::getKey).findFirst();
     }

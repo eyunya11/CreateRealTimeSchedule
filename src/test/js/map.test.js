@@ -121,15 +121,20 @@ test('the stretches of the tracks that track tags are on, and the colours of the
   root.tags = ['Local', 'Rapid'];
   root.tagColours = { Local: '#3b7dd8', Rapid: '#123456' };
   root.map.tracks[0].tags = [{ from: 0, to: 0.5, tags: ['Local'] }, { from: 0.5, to: 1, tags: ['Local', 'Rapid'] }];
+  root.map.trains[0].tags = ['Local', ''];
   const result = network.read(JSON.stringify(root));
   assert.deepEqual(result.problems, []);
   assert.deepEqual(result.network.tagColours, { Local: '#3b7dd8', Rapid: '#123456' });
   assert.deepEqual(result.network.map.tracks[0].tags, root.map.tracks[0].tags);
   assert.deepEqual(result.network.map.tracks[1].tags, [], 'a track with no tags has none');
+  assert.deepEqual(result.network.map.trains[0].tags, ['Local', '']);
+  assert.deepEqual(network.read(EXAMPLE_MAP).network.map.trains[0].tags, [], 'a train that runs no duty runs on no tag');
   root.map.tracks[1].tags = [{ from: 0.5, to: 0.2, tags: ['Local'] }];
   root.tagColours.Rapid = 'red';
+  root.map.trains[0].tags = 'Local';
   assert.deepEqual(network.read(JSON.stringify(root)).problems, [
     'map.tracks[1].tags: must be an array of stretches, each with a from and a to between 0 and 1 and its tags',
+    'map.trains[0].tags: must be an array of strings',
     'tagColours: must be an object of colours, #rrggbb, by the tags\' names',
   ]);
 });
