@@ -5,6 +5,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 
 import org.jetbrains.annotations.Nullable;
 
@@ -16,6 +17,10 @@ import io.github.eyunya11.createrealtimeschedule.railway.CreateNetwork;
 import io.github.eyunya11.createrealtimeschedule.railway.Leg;
 import io.github.eyunya11.createrealtimeschedule.railway.NetworkJson;
 import io.github.eyunya11.createrealtimeschedule.railway.RailNetwork;
+import io.github.eyunya11.createrealtimeschedule.railway.TagSections;
+import io.github.eyunya11.createrealtimeschedule.tag.TrackTagData;
+import io.github.eyunya11.createrealtimeschedule.tag.TrackTagService;
+import io.github.eyunya11.createrealtimeschedule.tag.TrackTags;
 import io.github.eyunya11.createrealtimeschedule.travel.TrainSpec;
 import io.github.eyunya11.createrealtimeschedule.travel.TrainSpecs;
 import net.minecraft.commands.CommandSourceStack;
@@ -29,6 +34,8 @@ import net.minecraft.world.level.storage.LevelResource;
  *
  * <ul>
  * <li>{@code export} writes it to {@code createrealtimeschedule/network.json} in the world folder.</li>
+ * <li>{@code tags} lists the world's track tags, how many blocks on the track have each, and what is
+ * wrong with the blocks' sections ({@link TagSections}).</li>
  * </ul>
  *
  * <p>{@code /rteditor copy network}, a command of the client, puts it on the player's clipboard (see
@@ -47,7 +54,9 @@ public final class RtNetworkCommand {
         dispatcher.register(Commands.literal("rtnetwork")
             .requires(source -> source.hasPermission(2))
             .then(Commands.literal("export")
-                .executes(RtNetworkCommand::export)));
+                .executes(RtNetworkCommand::export))
+            .then(Commands.literal("tags")
+                .executes(RtNetworkCommand::tags)));
     }
 
     /** The network as JSON, with how many stations and legs it has. */
@@ -67,6 +76,26 @@ public final class RtNetworkCommand {
         List<String> names = network.names();
         List<Leg> legs = network.legs();
         return new Written(NetworkJson.write(names, legs, spec, 1.0), names.size(), legs.size());
+    }
+
+    private static int tags(CommandContext<CommandSourceStack> context) {
+        CommandSourceStack source = context.getSource();
+        TrackTags tags = TrackTagData.get(source.getServer()).tags();
+        RailNetwork network = CreateNetwork.read(Create.RAILWAYS.trackNetworks.values());
+        List<RailNetwork.Marker> markers = network.markers();
+        List<TagSections.Problem> problems = TagSections.of(network).problems();
+        long oneWay = markers.stream().filter(RailNetwork.Marker::oneWay).count();
+        source.sendSuccess(() -> Component.translatableWithFallback(KEY + "tags",
+            "%1$s track tags; on the track, %2$s tag blocks for both ways and %3$s one-way ones; %4$s problems",
+            tags.names().size(), markers.size() - oneWay, oneWay, problems.size()), false);
+        for (Map.Entry<Integer, String> tag : tags.names().entrySet()) {
+            long blocks = markers.stream().filter(marker -> marker.tags().contains(tag.getKey())).count();
+            source.sendSuccess(() -> Component.translatableWithFallback(KEY + "tag", "%1$s: %2$s blocks", tag.getValue(), blocks), false);
+        }
+        for (TagSections.Problem problem : problems)
+            source.sendFailure(Component.translatableWithFallback(KEY + "tag_problem", "The tag block at %1$s: %2$s",
+                TrackTagService.where(markers.get(problem.marker()).block()), TrackTagService.describe(problem, problem.marker(), markers)));
+        return problems.size();
     }
 
     private static int export(CommandContext<CommandSourceStack> context) {
