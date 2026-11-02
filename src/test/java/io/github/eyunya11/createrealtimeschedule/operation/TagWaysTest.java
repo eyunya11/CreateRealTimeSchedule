@@ -91,7 +91,8 @@ class TagWaysTest {
 
     @Test
     void theTagsATimetableHoldsTrainsToAreThoseOfTheWaysTheyRun() throws IOException, URISyntaxException {
-        JsonObject kase = JsonParser.parseString(Files.readString(cases().getFirst(), StandardCharsets.UTF_8)).getAsJsonObject();
+        Path siding = cases().stream().filter(file -> file.getFileName().toString().equals("siding.json")).findFirst().orElseThrow();
+        JsonObject kase = JsonParser.parseString(Files.readString(siding, StandardCharsets.UTF_8)).getAsJsonObject();
         Timetable timetable = TimetableJson.parse(kase.get("timetable").toString()).timetable();
         assertEquals(List.of("local", "express", "freight"), TagWays.tags(timetable));
         assertEquals(List.of("freight"), TagWays.unknown(timetable, List.of("express", "local")));

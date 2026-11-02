@@ -1,0 +1,75 @@
+{
+  "about": "A duty of three trains, listed in the timetable out of the duty's order. T1 brings the set to A on the siding, as the local's tag takes it. T2, held to the express's tag, gets from the siding to B, but its stop at B holds it to the local's tag on to C, which has no way there; it is then taken to come to C at any platform. T3, of the local's tag, has no way from C to B, and goes on from every platform of B. The ways with none come in the timetable's order of trains.",
+  "network": {
+    "tags": ["express", "local"],
+    "platforms": [{"station": "Depot"}, {"station": "A"}, {"station": "A"}, {"station": "B"}, {"station": "C"}],
+    "ways": [
+      {"from": 0, "to": {"A": 1, "B": 3, "C": 4}},
+      {"from": 1, "to": {"B": 3, "C": 4, "Depot": 0}},
+      {"from": 2, "to": {"B": 3}},
+      {"from": 3, "to": {"A": 1, "C": 4, "Depot": 0}},
+      {"from": 4, "to": {"A": 1, "B": 3, "Depot": 0}},
+      {"from": 0, "tag": "express", "to": {"A": 1, "B": 3, "C": 4}},
+      {"from": 1, "tag": "express", "to": {"B": 3, "C": 4, "Depot": 0}},
+      {"from": 2, "tag": "express", "to": {"B": 3}},
+      {"from": 3, "tag": "express", "to": {"A": 1, "C": 4, "Depot": 0}},
+      {"from": 4, "tag": "express", "to": {"A": 1, "B": 3, "Depot": 0}},
+      {"from": 0, "tag": "local", "to": {"A": 2, "B": 3}},
+      {"from": 1, "tag": "local", "to": {"B": 3}},
+      {"from": 2, "tag": "local", "to": {"B": 3}},
+      {"from": 3, "tag": "local", "to": {"A": 2, "Depot": 0}},
+      {"from": 4, "tag": "local", "to": {"Depot": 0}}
+    ]
+  },
+  "timetable": {
+    "format": "createrealtimeschedule.timetable",
+    "version": 7,
+    "name": "",
+    "lines": [
+      {
+        "id": "l",
+        "name": "L",
+        "stations": ["Depot", "A", "B", "C"]
+      }
+    ],
+    "trains": [
+      {
+        "number": "T3",
+        "line": "l",
+        "tag": "local",
+        "stops": [
+          {"station": "C", "depart": "08:30"},
+          {"station": "B", "arrive": "08:35", "depart": "08:36"},
+          {"station": "Depot", "arrive": "08:45"}
+        ]
+      },
+      {
+        "number": "T1",
+        "line": "l",
+        "tag": "local",
+        "deadhead": true,
+        "stops": [
+          {"station": "Depot", "depart": "08:00"},
+          {"station": "A", "arrive": "08:05"}
+        ]
+      },
+      {
+        "number": "T2",
+        "line": "l",
+        "tag": "express",
+        "stops": [
+          {"station": "A", "depart": "08:10"},
+          {"station": "B", "arrive": "08:15", "depart": "08:16", "tag": "local"},
+          {"station": "C", "arrive": "08:20"}
+        ]
+      }
+    ],
+    "duties": [
+      {"id": "d1", "depot": "Depot", "trains": ["T1", "T2", "T3"]}
+    ]
+  },
+  "noWays": [
+    {"train": "T3", "stop": 0, "from": "C", "to": "B", "tag": "local"},
+    {"train": "T2", "stop": 1, "from": "B", "to": "C", "tag": "local"}
+  ]
+}

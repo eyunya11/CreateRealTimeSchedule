@@ -1,0 +1,78 @@
+{
+  "about": "The depot has no platform on the track. D1, held to the local's tag, has no way out of it, and its set is taken to come to A at any platform, from which 1 has its way. D2 has no way back to the depot either, but holds to no tag, so it is no matter of the tags. Of the trains in no duty, 6, held to a tag, has no way out of the depot, and 5, of none, is no matter.",
+  "network": {
+    "tags": ["local"],
+    "platforms": [{"station": "A"}, {"station": "B"}],
+    "ways": [
+      {"from": 0, "to": {"B": 1}},
+      {"from": 1, "to": {"A": 0}},
+      {"from": 0, "tag": "local", "to": {"B": 1}},
+      {"from": 1, "tag": "local", "to": {"A": 0}}
+    ]
+  },
+  "timetable": {
+    "format": "createrealtimeschedule.timetable",
+    "version": 7,
+    "name": "",
+    "lines": [
+      {
+        "id": "l",
+        "name": "L",
+        "stations": ["Depot", "A", "B"]
+      }
+    ],
+    "trains": [
+      {
+        "number": "D1",
+        "line": "l",
+        "tag": "local",
+        "deadhead": true,
+        "stops": [
+          {"station": "Depot", "depart": "08:00"},
+          {"station": "A", "arrive": "08:05"}
+        ]
+      },
+      {
+        "number": "1",
+        "line": "l",
+        "tag": "local",
+        "stops": [
+          {"station": "A", "depart": "08:10"},
+          {"station": "B", "arrive": "08:20"}
+        ]
+      },
+      {
+        "number": "D2",
+        "line": "l",
+        "deadhead": true,
+        "stops": [
+          {"station": "B", "depart": "08:30"},
+          {"station": "Depot", "arrive": "08:40"}
+        ]
+      },
+      {
+        "number": "5",
+        "line": "l",
+        "stops": [
+          {"station": "Depot", "depart": "09:00"},
+          {"station": "A", "arrive": "09:05"}
+        ]
+      },
+      {
+        "number": "6",
+        "line": "l",
+        "stops": [
+          {"station": "Depot", "depart": "10:00", "tag": "local"},
+          {"station": "A", "arrive": "10:05"}
+        ]
+      }
+    ],
+    "duties": [
+      {"id": "d1", "depot": "Depot", "trains": ["D1", "1", "D2"]}
+    ]
+  },
+  "noWays": [
+    {"train": "D1", "stop": 0, "from": "Depot", "to": "A", "tag": "local"},
+    {"train": "6", "stop": 0, "from": "Depot", "to": "A", "tag": "local"}
+  ]
+}
