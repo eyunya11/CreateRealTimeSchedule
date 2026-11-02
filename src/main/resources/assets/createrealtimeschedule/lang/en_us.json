@@ -82,6 +82,8 @@
   "createrealtimeschedule.track_tag.taken": "There is a tag named %1$s already",
   "createrealtimeschedule.track_tag.unknown": "There is no such tag; it may have been deleted",
   "createrealtimeschedule.track_tag.in_use": "A tag block has the tag %1$s, so it cannot be deleted",
+  "createrealtimeschedule.track_tag.control": "A tag's name cannot have a control character, such as a line break",
+  "createrealtimeschedule.track_tag.too_far": "That tag block is too far away to change",
   "createrealtimeschedule.track_tag.no_track": "It points at no track yet",
   "createrealtimeschedule.track_tag.junction": "Its section comes to a junction at %1$s before the next tag block of its kind facing the same way",
   "createrealtimeschedule.track_tag.mixed": "It is mixed with the tag block of the other kind at %1$s: their sections overlap, or one is in the other's section",

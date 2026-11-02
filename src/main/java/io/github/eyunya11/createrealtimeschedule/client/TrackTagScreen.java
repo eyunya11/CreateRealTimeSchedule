@@ -44,6 +44,8 @@ public final class TrackTagScreen extends Screen {
     private int selected;
     private int scroll;
     private String typed = "";
+    /** The name last asked to be made or given, kept in the box until the list has it: a refused one stays to be put right. */
+    private @Nullable String asked;
     private @Nullable Button rename;
     private @Nullable Button create;
 
@@ -68,8 +70,12 @@ public final class TrackTagScreen extends Screen {
             rebuildWidgets();
     }
 
-    /** The list of tags has changed, perhaps by another player. */
+    /** The list of tags has changed, perhaps by another player, or to have the name asked for. */
     void listChanged() {
+        if (asked != null && TrackTagClient.names().containsValue(asked)) {
+            typed = "";
+            asked = null;
+        }
         rebuildWidgets();
     }
 
@@ -141,7 +147,7 @@ public final class TrackTagScreen extends Screen {
     private void send(Action action, int id) {
         PacketDistributor.sendToServer(new TrackTagEditPayload(pos, action, id, typed));
         if (action == Action.CREATE || action == Action.RENAME)
-            typed = "";
+            asked = typed.strip();
     }
 
     @Override

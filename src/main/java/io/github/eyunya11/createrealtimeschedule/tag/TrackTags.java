@@ -25,7 +25,9 @@ public final class TrackTags {
 
     /** Why the list was not changed. */
     public enum Refusal {
-        BLANK, TOO_LONG, TAKEN, UNKNOWN, IN_USE
+        BLANK, TOO_LONG, TAKEN, UNKNOWN, IN_USE,
+        /** The name has a control character, such as a line break, which a timetable's text cannot have. */
+        CONTROL
     }
 
     /** What {@link #create} did: the new tag's id, or why there is none. */
@@ -108,6 +110,8 @@ public final class TrackTags {
             return Refusal.BLANK;
         if (name.length() > MAX_NAME_LENGTH)
             return Refusal.TOO_LONG;
+        if (name.codePoints().anyMatch(Character::isISOControl))
+            return Refusal.CONTROL;
         for (Map.Entry<Integer, String> entry : names.entrySet())
             if (entry.getKey() != id && entry.getValue().equals(name))
                 return Refusal.TAKEN;

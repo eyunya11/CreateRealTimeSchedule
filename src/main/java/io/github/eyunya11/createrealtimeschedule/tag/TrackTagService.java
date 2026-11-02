@@ -61,8 +61,12 @@ public final class TrackTagService {
         BlockPos pos = edit.pos();
         Level level = player.level();
         if (!level.isLoaded(pos) || player.distanceToSqr(Vec3.atCenterOf(pos)) > REACH * REACH
-            || !(level.getBlockEntity(pos) instanceof TrackTagBlockEntity entity))
+            || !(level.getBlockEntity(pos) instanceof TrackTagBlockEntity entity)) {
+            // A screen left open as the player walked away: say so, rather than seem to do nothing.
+            player.displayClientMessage(Component.translatableWithFallback(KEY + "too_far",
+                "That tag block is too far away to change"), true);
             return;
+        }
         TrackTagData data = TrackTagData.get(player.server);
         TrackTags tags = data.tags();
         String before = tags.name(edit.tag());
@@ -130,6 +134,7 @@ public final class TrackTagService {
             case TAKEN -> Component.translatableWithFallback(KEY + "taken", "There is a tag named %1$s already", shown);
             case UNKNOWN -> Component.translatableWithFallback(KEY + "unknown", "There is no such tag; it may have been deleted");
             case IN_USE -> Component.translatableWithFallback(KEY + "in_use", "A tag block has the tag %1$s, so it cannot be deleted", shown);
+            case CONTROL -> Component.translatableWithFallback(KEY + "control", "A tag's name cannot have a control character, such as a line break");
         };
     }
 
@@ -147,11 +152,17 @@ public final class TrackTagService {
         return count;
     }
 
-    /** What is wrong with the section of {@code entity}'s block, in the words the screen shows. */
-    private static List<Component> problems(TrackTagBlockEntity entity) {
-        if (entity.edgePoint.getEdgePoint() == null)
+    /**
+     * What is wrong with the section of {@code entity}'s block, in the words the screen shows. Only the
+     * track graph of the block's point is read: it is all a section can run on, and a block of another
+     * graph, in another dimension, may stand at the same place.
+     */
+    public static List<Component> problems(TrackTagBlockEntity entity) {
+        TrackTagEdgePoint point = entity.edgePoint.getEdgePoint();
+        TrackGraph graph = point == null ? null : graphOf(point);
+        if (graph == null)
             return List.of(Component.translatableWithFallback(KEY + "no_track", "It points at no track yet"));
-        RailNetwork network = CreateNetwork.read(Create.RAILWAYS.trackNetworks.values());
+        RailNetwork network = CreateNetwork.read(List.of(graph));
         TagSections sections = TagSections.of(network);
         BlockPos pos = entity.getBlockPos();
         List<RailNetwork.Marker> markers = network.markers();
@@ -163,6 +174,14 @@ public final class TrackTagService {
                 said.add(describe(problem, i, markers));
         }
         return said;
+    }
+
+    /** The track graph that has {@code point}, or null if none has it. */
+    private static @Nullable TrackGraph graphOf(TrackTagEdgePoint point) {
+        for (TrackGraph graph : Create.RAILWAYS.trackNetworks.values())
+            if (graph.getPoint(TrackTagEdgePoint.type(), point.getId()) == point)
+                return graph;
+        return null;
     }
 
     /** {@code problem} as the player is told it, for the block {@code self}. */

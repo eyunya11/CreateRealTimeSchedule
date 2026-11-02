@@ -174,6 +174,9 @@ public class TrackTagTests {
             helper.assertTrue(node != null && Math.abs(node.x() - junctionX) <= 1.5,
                 "the junction is where the branch turns off, at x = " + junctionX + ", not " + node);
             assertLength(helper, sections, network, 0, 2 * (BRANCH.fromX() - 30), "the section up to the junction");
+            // The block's screen tells of it, from the block's own track graph.
+            List<Component> said = TrackTagService.problems(block[0]);
+            helper.assertTrue(said.size() == 1 && said.get(0).getString().contains("junction"), "the screen says " + said);
             startLooking(helper, looked, block);
         });
     }

@@ -54,6 +54,18 @@ class TrackTagsTest {
         assertEquals(Refusal.UNKNOWN, tags.delete(TrackTags.NONE, false));
     }
 
+    /** A name a timetable could not hold, with a control character in it, is refused, to make or to rename to. */
+    @Test
+    void aNameWithAControlCharacterIsRefused() {
+        TrackTags tags = new TrackTags();
+        assertEquals(new TrackTags.Created(TrackTags.NONE, Refusal.CONTROL), tags.create("Lo\ncal"));
+        assertEquals(new TrackTags.Created(TrackTags.NONE, Refusal.CONTROL), tags.create("Local\u0007"));
+        assertEquals(1, tags.create("Local").id());
+        assertEquals(Refusal.CONTROL, tags.rename(1, "Lo\tcal"));
+        assertEquals("Local", tags.name(1));
+        assertEquals(2, tags.create("Local 2").id(), "a space is no control character");
+    }
+
     @Test
     void aKeptListGoesOnFromItsNextId() {
         TrackTags kept = new TrackTags(Map.of(1, "Local", 4, "Rapid"), 2);

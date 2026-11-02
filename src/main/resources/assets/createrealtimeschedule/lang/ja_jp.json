@@ -82,6 +82,8 @@
   "createrealtimeschedule.track_tag.taken": "%1$s という名前のタグはもうあります",
   "createrealtimeschedule.track_tag.unknown": "そのタグはありません。消されたのかもしれません",
   "createrealtimeschedule.track_tag.in_use": "タグ %1$s を持つブロックがあるので、消せません",
+  "createrealtimeschedule.track_tag.control": "タグの名前には、改行などの制御文字を使えません",
+  "createrealtimeschedule.track_tag.too_far": "そのタグのブロックは遠すぎて、変えられません",
   "createrealtimeschedule.track_tag.no_track": "まだ線路を指していません",
   "createrealtimeschedule.track_tag.junction": "区間が、同じ種類で同じ向きの次のタグのブロックより手前で、%1$s の分岐に着きます",
   "createrealtimeschedule.track_tag.mixed": "%1$s にある、種類の違うタグのブロックと混ざっています。区間が重なっているか、片方がもう片方の区間の中にあります",
