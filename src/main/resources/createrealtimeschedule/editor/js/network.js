@@ -81,6 +81,8 @@
         problems.push(at + '.ticks: must be a whole number, 0 or more');
       if (leg.tag !== undefined && typeof leg.tag !== 'string')
         problems.push(at + '.tag: must be a string');
+      if (leg.otherTag !== undefined && typeof leg.otherTag !== 'boolean')
+        problems.push(at + '.otherTag: must be true or false');
       const made = {
         from: leg.from,
         to: leg.to,
@@ -116,15 +118,19 @@
     const ways = [];
     if (!Array.isArray(root.ways))
       problems.push('ways: must be an array');
+    // A platform is a number of one of platforms, from 0.
+    const count = Array.isArray(root.platforms) ? root.platforms.length : 0;
+    const isPlatform = platform => Number.isInteger(platform) && platform >= 0 && platform < count;
     (Array.isArray(root.ways) ? root.ways : []).forEach((way, i) => {
       const at = 'ways[' + i + ']';
-      if (!isObject(way) || !Number.isInteger(way.from) || !isObject(way.to)
-        || !Object.values(way.to).every(platform => Number.isInteger(platform)))
-        problems.push(at + ': must have a platform from and the platforms it comes to');
+      if (!isObject(way) || !isPlatform(way.from) || !isObject(way.to) || !Object.values(way.to).every(isPlatform))
+        problems.push(at + ': must have a platform from and the platforms it comes to, each one of platforms');
       else if (way.tag !== undefined && typeof way.tag !== 'string')
         problems.push(at + '.tag: must be a string');
+      else if (way.otherTag !== undefined && typeof way.otherTag !== 'boolean')
+        problems.push(at + '.otherTag: must be true or false');
       else
-        ways.push(tagged({ from: way.from, to: Object.assign({}, way.to) }, way));
+        ways.push(tagged({ from: way.from, to: Object.fromEntries(Object.entries(way.to)) }, way));
     });
     if (problems.length > 0)
       return { network: null, problems };

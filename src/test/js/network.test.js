@@ -75,3 +75,16 @@ test('something that is not a network of this mod, or a newer one, is not read',
   assert.equal(bad.network, null);
   assert.deepEqual(bad.problems, ['legs[0]: from and to must be strings', 'legs[0].distance: must be a number, 0 or more']);
 });
+
+test('a network with track tags whose ways come to no platform it has is not read', () => {
+  const root = JSON.parse(TAGGED);
+  const count = root.platforms.length;
+  const read = changed => network.read(JSON.stringify(Object.assign({}, root, changed))).problems;
+  assert.deepEqual(read({ ways: [{ from: count, to: { A: 1 } }] }),
+    ['ways[0]: must have a platform from and the platforms it comes to, each one of platforms']);
+  assert.deepEqual(read({ ways: [{ from: 0, to: { A: count } }, { from: 0, to: { A: -1 } }, { from: 0, to: { A: 1.5 } }] }), [0, 1, 2].map(i =>
+    'ways[' + i + ']: must have a platform from and the platforms it comes to, each one of platforms'));
+  assert.deepEqual(read({ ways: [{ from: 0, to: { A: count - 1 } }] }), []);
+  assert.deepEqual(read({ ways: [{ from: 0, otherTag: 'yes', to: { A: 1 } }] }), ['ways[0].otherTag: must be true or false']);
+  assert.deepEqual(read({ legs: [{ from: 'A', to: 'B', distance: 1, otherTag: 1 }] }), ['legs[0].otherTag: must be true or false']);
+});
