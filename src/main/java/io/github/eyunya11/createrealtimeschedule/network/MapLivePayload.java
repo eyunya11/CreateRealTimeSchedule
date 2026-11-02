@@ -20,6 +20,8 @@ public record MapLivePayload(LiveMap live) implements CustomPacketPayload {
     /** The most signals and trains sent, and carriages of a train. */
     public static final int MAX_THINGS = 20_000;
     public static final int MAX_CARRIAGES = 256;
+    /** The most track tags a train is sent with: those it runs on in its duty. */
+    public static final int MAX_TAGS = 64;
 
     public static final Type<MapLivePayload> TYPE =
         new Type<>(ResourceLocation.fromNamespaceAndPath(Createrealtimeschedule.MODID, "map_live"));
@@ -56,6 +58,10 @@ public record MapLivePayload(LiveMap live) implements CustomPacketPayload {
                 out.writeUtf(carriage.frontTrack(), 512);
                 out.writeUtf(carriage.backTrack(), 512);
             }
+            List<String> tags = train.tags().subList(0, Math.min(MAX_TAGS, train.tags().size()));
+            out.writeVarInt(tags.size());
+            for (String tag : tags)
+                out.writeUtf(tag, 256);
         }
     }
 
@@ -86,7 +92,11 @@ public record MapLivePayload(LiveMap live) implements CustomPacketPayload {
             List<LiveMap.Carriage> carriages = new ArrayList<>();
             for (int j = 0; j < carriageCount; j++)
                 carriages.add(new LiveMap.Carriage(spot(in), spot(in), in.readUtf(512), in.readUtf(512)));
-            trains.add(new LiveMap.Train(name, carriages));
+            int tagCount = count(in, MAX_TAGS);
+            List<String> tags = new ArrayList<>();
+            for (int j = 0; j < tagCount; j++)
+                tags.add(in.readUtf(256));
+            trains.add(new LiveMap.Train(name, carriages, tags));
         }
         return new LiveMap(signals, trains);
     }

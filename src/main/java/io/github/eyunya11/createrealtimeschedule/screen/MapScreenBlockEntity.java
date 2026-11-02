@@ -67,6 +67,7 @@ public class MapScreenBlockEntity extends BlockEntity {
         tag.putDouble("Scale", settings.scale());
         tag.put("Lines", strings(settings.lines()));
         tag.put("Hidden", strings(new ArrayList<>(settings.hidden())));
+        tag.put("TagsOff", strings(new ArrayList<>(settings.tagsOff())));
         tag.putLong("Stamp", settings.stamp());
     }
 
@@ -78,7 +79,7 @@ public class MapScreenBlockEntity extends BlockEntity {
         place = new Place(tag.getInt("Column"), tag.getInt("Row"), Math.max(1, tag.getInt("Width")), Math.max(1, tag.getInt("Height")));
         settings = new ScreenSettings(tag.getDouble("X"), tag.getDouble("Z"), tag.getDouble("Scale"),
             strings(tag.getList("Lines", Tag.TAG_STRING)), new HashSet<>(strings(tag.getList("Hidden", Tag.TAG_STRING))),
-            tag.getLong("Stamp"));
+            new HashSet<>(strings(tag.getList("TagsOff", Tag.TAG_STRING))), tag.getLong("Stamp"));
     }
 
     private static ListTag strings(List<String> values) {

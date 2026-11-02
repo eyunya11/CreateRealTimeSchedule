@@ -12,9 +12,12 @@ import io.github.eyunya11.createrealtimeschedule.map.LiveMap;
 import io.github.eyunya11.createrealtimeschedule.map.ScreenLayout.Place;
 import io.github.eyunya11.createrealtimeschedule.map.ScreenSettings;
 import io.github.eyunya11.createrealtimeschedule.map.TrackMap;
+import io.github.eyunya11.createrealtimeschedule.network.MapViewPayload;
 import io.github.eyunya11.createrealtimeschedule.railway.CreateMap;
 import io.github.eyunya11.createrealtimeschedule.screen.MapScreenBlockEntity;
+import io.github.eyunya11.createrealtimeschedule.screen.MapScreenService;
 import io.github.eyunya11.createrealtimeschedule.screen.ScreenGroup;
+import io.github.eyunya11.createrealtimeschedule.tag.TrackTagBlockEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.gametest.framework.GameTest;
@@ -119,5 +122,56 @@ public class ScreenTests {
             helper.assertTrue(elsewhere.signals().isEmpty() && elsewhere.trains().isEmpty(), "the end has the overworld's signals or trains");
             helper.succeed();
         });
+    }
+
+    /**
+     * A line with a block for both ways at x = 20 facing east, with a tag: a screen is sent the stretch
+     * from there to the end of the line in the tag, and, with the tag turned off, not shown.
+     */
+    @GameTest(template = "track_turn", batch = "realtimescreen_tags", timeoutTicks = 1500)
+    public static void aScreenIsSentTheStretchesOfTheTagsAsTheyAreTurnedOnAndOff(GameTestHelper helper) {
+        TrackLine line = new TrackLine(helper, 80, new int[] {5, 75}, new String[] {"A", "B"});
+        line.cleanUpWhenTheTestEnds();
+        TrackTagBlockEntity[] block = new TrackTagBlockEntity[1];
+        helper.onEachTick(() -> {
+            if (!line.setUp())
+                return;
+            if (block[0] == null) {
+                block[0] = line.placeTag(20, true, false, line.makeTag("Screen (test)"));
+                return;
+            }
+            if (block[0].edgePoint.getEdgePoint() == null)
+                return;
+            var server = helper.getLevel().getServer();
+            String tag = line.madeTag(0);
+            Set<String> keys = Set.copyOf(CreateMap.read(Create.RAILWAYS.trackNetworks.values(), List.of(), null).map().tracks().stream()
+                .map(TrackMap.Track::key).toList());
+            MapViewPayload on = MapScreenService.view(server, List.of(), List.of());
+            List<MapViewPayload.Stretch> tagged = on.stretches().stream().filter(track -> keys.contains(track.key()))
+                .flatMap(track -> track.stretches().stream()).filter(stretch -> stretch.tags().contains(tag)).toList();
+            helper.assertTrue(!tagged.isEmpty() && tagged.stream().allMatch(MapViewPayload.Stretch::shown),
+                "the stretches in " + tag + " are sent shown: " + on.stretches());
+            double length = 0;
+            for (MapViewPayload.TrackStretches track : on.stretches())
+                for (MapViewPayload.Stretch stretch : track.stretches())
+                    if (stretch.tags().contains(tag))
+                        length += (stretch.to() - stretch.from()) * trackLength(track.key());
+            helper.assertTrue(Math.abs(length - (80 - 20)) <= 2, "the stretches in " + tag + " are 60 blocks long, not " + length);
+
+            MapViewPayload off = MapScreenService.view(server, List.of(), List.of(tag));
+            List<MapViewPayload.Stretch> hidden = off.stretches().stream().flatMap(track -> track.stretches().stream())
+                .filter(stretch -> !stretch.shown()).toList();
+            helper.assertTrue(!hidden.isEmpty() && off.stretches().stream().flatMap(track -> track.stretches().stream())
+                .noneMatch(stretch -> stretch.tags().contains(tag)), "with " + tag + " off, its stretches are sent not shown: " + off.stretches());
+            helper.succeed();
+        });
+    }
+
+    /** The length of a straight track by its key, from its two ends. */
+    private static double trackLength(String key) {
+        String[] parts = key.split(" ");
+        String[] a = parts[1].split(",");
+        String[] b = parts[2].split(",");
+        return Math.hypot(Double.parseDouble(b[0]) - Double.parseDouble(a[0]), Double.parseDouble(b[2]) - Double.parseDouble(a[2]));
     }
 }

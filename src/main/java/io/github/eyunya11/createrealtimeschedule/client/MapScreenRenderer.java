@@ -1,7 +1,7 @@
 package io.github.eyunya11.createrealtimeschedule.client;
 
 import java.util.ArrayList;
-import java.util.HashSet;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -19,6 +19,7 @@ import io.github.eyunya11.createrealtimeschedule.map.MapProjection;
 import io.github.eyunya11.createrealtimeschedule.map.MapProjection.Box;
 import io.github.eyunya11.createrealtimeschedule.map.ScreenLayout.Place;
 import io.github.eyunya11.createrealtimeschedule.map.ScreenSettings;
+import io.github.eyunya11.createrealtimeschedule.map.TagView;
 import io.github.eyunya11.createrealtimeschedule.map.TrackMap;
 import io.github.eyunya11.createrealtimeschedule.map.TrackMap.Lamp;
 import io.github.eyunya11.createrealtimeschedule.map.TrackMap.SignalSide;
@@ -26,6 +27,7 @@ import io.github.eyunya11.createrealtimeschedule.map.TrackMap.Spot;
 import io.github.eyunya11.createrealtimeschedule.network.MapViewPayload;
 import io.github.eyunya11.createrealtimeschedule.screen.MapScreenBlock;
 import io.github.eyunya11.createrealtimeschedule.screen.MapScreenBlockEntity;
+import io.github.eyunya11.createrealtimeschedule.timetable.TypeColours;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
@@ -39,8 +41,10 @@ import net.minecraft.world.level.block.state.BlockState;
 /**
  * Draws a block's part of a map screen: the part of the world {@link MapProjection#tile} gives it, on
  * the front of the panel, north up. The track, the stations and the signs change only when the track,
- * the lines' tracks or the settings do, and are worked out then; the signals and the trains are drawn
- * as the server last said. Sizes are in blocks of the screen, so that a screen shows the same however
+ * the lines' tracks, the tags' colours or the settings do, and are worked out then; the signals and
+ * the trains are drawn as the server last said. A stretch of track shown is drawn in the colours of its
+ * track tags that are on, a dash each in turn for more than one, or light grey with no tag; track not
+ * shown, by the lines or by the tags, is drawn faint, in no tag's colour, with nothing on it. Sizes are in blocks of the screen, so that a screen shows the same however
  * much of the world it covers.
  */
 public class MapScreenRenderer implements BlockEntityRenderer<MapScreenBlockEntity> {
@@ -52,6 +56,7 @@ public class MapScreenRenderer implements BlockEntityRenderer<MapScreenBlockEnti
 
     private static final int BACKGROUND = 0xFF161B22;
     private static final int TRACK = 0xFFC9D1D9;
+    private static final int FAINT = 0xFF30363D;
     private static final int STATION = 0xFFFFFFFF;
     private static final int STATION_EDGE = 0xFF161B22;
     private static final int TRAIN = 0xFFFF7A1A;
@@ -63,6 +68,8 @@ public class MapScreenRenderer implements BlockEntityRenderer<MapScreenBlockEnti
     private static final int SIGN_TEXT = 0xFF161B22;
 
     private static final float TRACK_WIDTH = 0.022f;
+    /** How long a dash of a stretch with more than one tag is, in blocks of the screen. */
+    private static final double DASH = 0.08;
     private static final float TRAIN_WIDTH = 0.05f;
     private static final float STATION_SIZE = 0.045f;
     private static final float LAMP_SIZE = 0.022f;
@@ -82,8 +89,23 @@ public class MapScreenRenderer implements BlockEntityRenderer<MapScreenBlockEnti
     /** A label: its text, where it starts on the tile, its size and colour. */
     private record Label(String text, float u, float v, float scale, int colour, boolean centred) {}
 
-    /** The quads of a tile (u, v of four corners, then a colour, each), its labels, and the keys of the tracks shown. */
-    private record Drawing(Object key, float[] quads, List<Label> labels, Set<String> shownKeys) {}
+    /**
+     * The quads of a tile (u, v of four corners, then a colour, each), its labels, and the tracks shown,
+     * with their stretches if not all of each is shown.
+     */
+    private record Drawing(Object key, float[] quads, List<Label> labels, Shown shown) {}
+
+    /** The tracks a screen shows by their indexes, and the stretches of those not all shown with no tag. */
+    private record Shown(Set<Integer> tracks, Map<Integer, List<TagView.Segment>> stretches) {
+
+        /** Whether the place {@code at} on track {@code index} is on a stretch shown. */
+        boolean at(int index, Spot at) {
+            if (index < 0 || !tracks.contains(index))
+                return false;
+            List<TagView.Segment> segments = stretches.get(index);
+            return segments == null || TagView.shownAt(segments, TagView.shareOf(MapClient.map().tracks().get(index).points(), at));
+        }
+    }
 
     @Override
     public int getViewDistance() {
@@ -98,7 +120,7 @@ public class MapScreenRenderer implements BlockEntityRenderer<MapScreenBlockEnti
         Direction facing = state.getValue(HorizontalDirectionalBlock.FACING);
         Place place = entity.place();
         ScreenSettings settings = entity.settings();
-        MapClient.drawn(settings.lines());
+        MapClient.drawn(settings);
         Box box = settings.projection(place.width(), place.height()).tile(place.column(), place.row());
 
         pose.pushPose();
@@ -117,7 +139,7 @@ public class MapScreenRenderer implements BlockEntityRenderer<MapScreenBlockEnti
                 quad(quads, matrix, q[i], q[i + 1], q[i + 2], q[i + 3], q[i + 4], q[i + 5], q[i + 6], q[i + 7], (int) q[i + 8],
                     Float.floatToRawIntBits(q[i + 9]));
             List<Label> labels = new ArrayList<>(drawing.labels());
-            live(quads, matrix, settings, box, drawing.shownKeys());
+            live(quads, matrix, settings, box, drawing.shown());
             for (Label label : labels)
                 label(pose, buffers, label);
         }
@@ -126,34 +148,49 @@ public class MapScreenRenderer implements BlockEntityRenderer<MapScreenBlockEnti
 
     /** The track, stations and signs of the tile, worked out again only when something they come from has changed. */
     private Drawing drawing(MapScreenBlockEntity entity, ScreenSettings settings, Place place, Box box, int dimension) {
-        MapViewPayload view = MapClient.view(settings.lines());
-        Object key = List.of(MapClient.version(), view == null ? 0L : view.revision(), settings, place, dimension);
+        MapViewPayload view = MapClient.view(settings);
+        Object key = List.of(MapClient.version(), view == null ? 0L : view.revision(), settings, place, dimension,
+            TrackTagClient.names(), TrackTagClient.colours());
         Drawing known = drawings.get(entity);
         if (known != null && known.key().equals(key))
             return known;
 
         TrackMap map = MapClient.map();
-        Set<Integer> shown = MapClient.shown(settings.lines());
-        Set<String> shownKeys = new HashSet<>();
+        Shown shown = new Shown(MapClient.shown(settings), MapClient.stretches(settings));
+        Map<String, Integer> colours = tagColours();
         Quads out = new Quads();
         double scale = settings.scale();
-        for (int index : shown) {
+        for (int index = 0; index < map.tracks().size(); index++) {
             TrackMap.Track track = map.tracks().get(index);
             if (track.dimension() != dimension)
                 continue;
-            shownKeys.add(track.key());
-            List<Spot> points = track.points();
-            for (int i = 1; i < points.size(); i++) {
-                double[] cut = MapProjection.clip(points.get(i - 1).x(), points.get(i - 1).z(), points.get(i).x(), points.get(i).z(), box);
-                if (cut != null)
-                    out.line(u(cut[0], box, scale), v(cut[1], box, scale), u(cut[2], box, scale), v(cut[3], box, scale), TRACK_WIDTH, 1, TRACK);
+            if (!shown.tracks().contains(index)) {
+                lines(out, track.points(), box, scale, 1, FAINT);
+                continue;
+            }
+            List<TagView.Segment> segments = shown.stretches().get(index);
+            if (segments == null) {
+                lines(out, track.points(), box, scale, 2, TRACK);
+                continue;
+            }
+            for (TagView.Segment segment : segments) {
+                List<Spot> piece = TagView.piece(track.points(), segment.from(), segment.to());
+                if (!segment.shown()) {
+                    lines(out, piece, box, scale, 1, FAINT);
+                } else if (segment.tags().isEmpty()) {
+                    lines(out, piece, box, scale, 2, TRACK);
+                } else {
+                    List<List<Spot>> dashes = segment.tags().size() == 1 ? List.of(piece) : TagView.dashes(piece, DASH * scale);
+                    for (int k = 0; k < dashes.size(); k++)
+                        lines(out, dashes.get(k), box, scale, 2, colours.getOrDefault(segment.tags().get(k % segment.tags().size()), TRACK));
+                }
             }
         }
 
         List<Label> labels = new ArrayList<>();
         if (settings.shows("speedLimits"))
             for (TrackMap.SpeedMark sign : map.speedLimits())
-                if (shown.contains(sign.track()) && box.contains(sign.at().x(), sign.at().z())) {
+                if (shown.at(sign.track(), sign.at()) && box.contains(sign.at().x(), sign.at().z())) {
                     float[] at = beside(sign.at(), sign.direction(), box, scale, BESIDE * 1.4f);
                     out.square(at[0], at[1], SIGN_SIZE, 3, sign.release() ? RELEASE_EDGE : SIGN_EDGE);
                     out.square(at[0], at[1], SIGN_SIZE * 0.78f, 4, SIGN);
@@ -168,7 +205,7 @@ public class MapScreenRenderer implements BlockEntityRenderer<MapScreenBlockEnti
             // A name once, in the middle of its markers on the tracks shown, by the tile that has that middle.
             Map<String, double[]> middles = new LinkedHashMap<>();
             for (TrackMap.StationMark station : map.stations()) {
-                if (!shown.contains(station.track()) || map.tracks().get(station.track()).dimension() != dimension)
+                if (!shown.at(station.track(), station.at()) || map.tracks().get(station.track()).dimension() != dimension)
                     continue;
                 double[] sum = middles.computeIfAbsent(station.name(), unused -> new double[3]);
                 sum[0] += station.at().x();
@@ -190,19 +227,39 @@ public class MapScreenRenderer implements BlockEntityRenderer<MapScreenBlockEnti
                             NAME_SCALE, TEXT, false));
                 }
         }
-        Drawing drawing = new Drawing(key, out.toArray(), labels, shownKeys);
+        Drawing drawing = new Drawing(key, out.toArray(), labels, shown);
         drawings.put(entity, drawing);
         return drawing;
     }
 
-    /** The signals and the trains, as the server last said, on the tracks shown. */
-    private void live(VertexConsumer quads, Matrix4f matrix, ScreenSettings settings, Box box, Set<String> shownKeys) {
+    /** The lines through {@code points}, cut to the tile, at {@code layer} in {@code colour}. */
+    private static void lines(Quads out, List<Spot> points, Box box, double scale, int layer, int colour) {
+        for (int i = 1; i < points.size(); i++) {
+            double[] cut = MapProjection.clip(points.get(i - 1).x(), points.get(i - 1).z(), points.get(i).x(), points.get(i).z(), box);
+            if (cut != null)
+                out.line(u(cut[0], box, scale), v(cut[1], box, scale), u(cut[2], box, scale), v(cut[3], box, scale), TRACK_WIDTH, layer, colour);
+        }
+    }
+
+    /** The colours of the world's track tags, by their names. */
+    private static Map<String, Integer> tagColours() {
+        Map<String, Integer> colours = new HashMap<>();
+        for (Map.Entry<Integer, String> tag : TrackTagClient.names().entrySet()) {
+            String colour = TrackTagClient.colours().get(tag.getKey());
+            colours.put(tag.getValue(), colour != null && TypeColours.isColour(colour) ? TypeColours.argb(colour)
+                : TypeColours.argb(TypeColours.byName(tag.getValue())));
+        }
+        return colours;
+    }
+
+    /** The signals and the trains, as the server last said, on the stretches shown; a train only if a tag it runs on is on. */
+    private void live(VertexConsumer quads, Matrix4f matrix, ScreenSettings settings, Box box, Shown shown) {
         LiveMap live = MapClient.live();
         double scale = settings.scale();
         Quads out = new Quads();
         if (settings.shows("signals"))
             for (LiveMap.Signal signal : live.signals()) {
-                if (!shownKeys.contains(signal.track()) || !box.contains(signal.at().x(), signal.at().z()))
+                if (!shown.at(MapClient.indexOf(signal.track()), signal.at()) || !box.contains(signal.at().x(), signal.at().z()))
                     continue;
                 for (SignalSide side : signal.sides()) {
                     float[] at = beside(signal.at(), side.direction(), box, scale, BESIDE);
@@ -219,15 +276,19 @@ public class MapScreenRenderer implements BlockEntityRenderer<MapScreenBlockEnti
                 }
             }
         if (settings.shows("trains"))
-            for (LiveMap.Train train : live.trains())
+            for (LiveMap.Train train : live.trains()) {
+                if (!TagView.trainShown(train.tags(), settings.tagsOff()))
+                    continue;
                 for (LiveMap.Carriage carriage : train.carriages()) {
-                    if (!shownKeys.contains(carriage.frontTrack()) && !shownKeys.contains(carriage.backTrack()))
+                    if (!shown.at(MapClient.indexOf(carriage.frontTrack()), carriage.front())
+                        && !shown.at(MapClient.indexOf(carriage.backTrack()), carriage.back()))
                         continue;
                     double[] cut = MapProjection.clip(carriage.front().x(), carriage.front().z(), carriage.back().x(), carriage.back().z(), box);
                     if (cut != null)
                         out.line(u(cut[0], box, scale), v(cut[1], box, scale), u(cut[2], box, scale), v(cut[3], box, scale), TRAIN_WIDTH,
                             10, TRAIN);
                 }
+            }
         float[] q = out.toArray();
         for (int i = 0; i < q.length; i += 10)
             quad(quads, matrix, q[i], q[i + 1], q[i + 2], q[i + 3], q[i + 4], q[i + 5], q[i + 6], q[i + 7], (int) q[i + 8],

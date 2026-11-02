@@ -2,16 +2,20 @@ package io.github.eyunya11.createrealtimeschedule.client;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 import io.github.eyunya11.createrealtimeschedule.map.MapProjection;
 import io.github.eyunya11.createrealtimeschedule.map.ScreenLayout.Place;
 import io.github.eyunya11.createrealtimeschedule.map.ScreenSettings;
+import io.github.eyunya11.createrealtimeschedule.map.TagView;
 import io.github.eyunya11.createrealtimeschedule.network.MapScreenEditPayload;
 import io.github.eyunya11.createrealtimeschedule.network.MapScreenOpenPayload;
 import io.github.eyunya11.createrealtimeschedule.screen.MapScreenBlockEntity;
+import io.github.eyunya11.createrealtimeschedule.timetable.TypeColours;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.Checkbox;
@@ -43,6 +47,11 @@ public class MapScreenEditor extends Screen {
     private EditBox scale;
     private final Map<String, Checkbox> lineBoxes = new LinkedHashMap<>();
     private final Map<String, Checkbox> layerBoxes = new LinkedHashMap<>();
+    /** The track tags listed, "no tag" first, by their names; those that do not fit keep what they had. */
+    private final Map<String, Checkbox> tagBoxes = new LinkedHashMap<>();
+    /** Where the tags are listed from, and how many there are to list. */
+    private int tagsTop;
+    private int tagCount;
 
     public MapScreenEditor(MapScreenBlockEntity entity, List<MapScreenOpenPayload.Line> lines) {
         super(Component.translatableWithFallback(KEY + "title", "Map screen"));
@@ -76,6 +85,28 @@ public class MapScreenEditor extends Screen {
             Checkbox box = Checkbox.builder(Component.literal(line.name()), font).pos(right, y).selected(settings.lines().contains(line.id()))
                 .build();
             lineBoxes.put(line.id(), addRenderableWidget(box));
+            y += 22;
+        }
+
+        // The track tags under the lines, as many as fit above the buttons.
+        tagsTop = y + (lines.size() > MOST_LINES ? 12 : 0) + 6;
+        List<String> tags = new ArrayList<>();
+        tags.add(TagView.NO_TAG);
+        tags.addAll(TrackTagClient.names().values());
+        tagCount = tags.size();
+        Map<String, Integer> colours = new LinkedHashMap<>();
+        TrackTagClient.names().forEach((id, name) -> {
+            String colour = TrackTagClient.colours().get(id);
+            colours.put(name, colour != null && TypeColours.isColour(colour) ? TypeColours.argb(colour) : TypeColours.argb(TypeColours.byName(name)));
+        });
+        y = tagsTop + 12;
+        for (String tag : tags) {
+            if (y + 20 > height - 36)
+                break;
+            Component label = tag.equals(TagView.NO_TAG) ? Component.translatableWithFallback(KEY + "no_tag", "No tag")
+                : Component.literal(tag).withColor(colours.get(tag) & 0xFFFFFF);
+            Checkbox box = Checkbox.builder(label, font).pos(right, y).selected(!settings.tagsOff().contains(tag)).build();
+            tagBoxes.put(tag, addRenderableWidget(box));
             y += 22;
         }
 
@@ -129,8 +160,16 @@ public class MapScreenEditor extends Screen {
             if (!box.selected())
                 hidden.add(layer);
         });
+        // A tag not listed, or one the world no longer has, keeps what it had.
+        Set<String> tagsOff = new LinkedHashSet<>(settings.tagsOff());
+        tagBoxes.forEach((tag, box) -> {
+            if (box.selected())
+                tagsOff.remove(tag);
+            else
+                tagsOff.add(tag);
+        });
         PacketDistributor.sendToServer(new MapScreenEditPayload(entity.getBlockPos(), read(x, settings.centreX()), read(z, settings.centreZ()),
-            MapProjection.clampScale(read(scale, settings.scale())), chosen, hidden));
+            MapProjection.clampScale(read(scale, settings.scale())), chosen, hidden, new ArrayList<>(tagsOff)));
         onClose();
     }
 
@@ -152,6 +191,11 @@ public class MapScreenEditor extends Screen {
         if (lines.size() > MOST_LINES)
             graphics.drawString(font, Component.translatableWithFallback(KEY + "more_lines", "and %1$s more", lines.size() - MOST_LINES),
                 right, top + 12 + MOST_LINES * 22, 0xA0A0A0);
+        Component tags = Component.translatableWithFallback(KEY + "tags", "Track tags (off: grey)");
+        if (tagBoxes.size() < tagCount)
+            tags = Component.empty().append(tags).append(" ")
+                .append(Component.translatableWithFallback(KEY + "more_tags", "and %1$s more", tagCount - tagBoxes.size()));
+        graphics.drawString(font, tags, right, tagsTop, 0xA0A0A0);
     }
 
     @Override

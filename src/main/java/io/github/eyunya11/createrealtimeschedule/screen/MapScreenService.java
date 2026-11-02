@@ -6,6 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalInt;
 import java.util.Set;
 
 import com.simibubi.create.Create;
@@ -14,6 +15,8 @@ import io.github.eyunya11.createrealtimeschedule.diagram.RequestLimit;
 import io.github.eyunya11.createrealtimeschedule.map.LiveMap;
 import io.github.eyunya11.createrealtimeschedule.map.MapSelection;
 import io.github.eyunya11.createrealtimeschedule.map.ScreenSettings;
+import io.github.eyunya11.createrealtimeschedule.map.TagView;
+import io.github.eyunya11.createrealtimeschedule.map.TrackMap;
 import io.github.eyunya11.createrealtimeschedule.network.MapLivePayload;
 import io.github.eyunya11.createrealtimeschedule.network.MapLiveRequestPayload;
 import io.github.eyunya11.createrealtimeschedule.network.MapScreenEditPayload;
@@ -21,10 +24,14 @@ import io.github.eyunya11.createrealtimeschedule.network.MapScreenOpenPayload;
 import io.github.eyunya11.createrealtimeschedule.network.MapViewPayload;
 import io.github.eyunya11.createrealtimeschedule.network.MapViewRequestPayload;
 import io.github.eyunya11.createrealtimeschedule.operation.OperationData;
+import io.github.eyunya11.createrealtimeschedule.operation.TagWays;
 import io.github.eyunya11.createrealtimeschedule.railway.CreateMap;
 import io.github.eyunya11.createrealtimeschedule.railway.CreateNetwork;
 import io.github.eyunya11.createrealtimeschedule.railway.Leg;
 import io.github.eyunya11.createrealtimeschedule.railway.NetworkMap;
+import io.github.eyunya11.createrealtimeschedule.railway.RailNetwork;
+import io.github.eyunya11.createrealtimeschedule.tag.TrackTagData;
+import io.github.eyunya11.createrealtimeschedule.tag.TrackTags;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
@@ -84,7 +91,9 @@ public final class MapScreenService {
         Set<String> hidden = new HashSet<>(edit.hidden());
         hidden.retainAll(ScreenSettings.LAYERS);
         List<String> lines = new ArrayList<>(new LinkedHashSet<>(edit.lines()));
-        ScreenGroup.change(level, pos, settings -> new ScreenSettings(edit.centreX(), edit.centreZ(), edit.scale(), lines, hidden, 0));
+        // A tag the world does not have may be turned off: it is kept, and hides its stretches once there are any.
+        Set<String> tagsOff = new HashSet<>(edit.tagsOff());
+        ScreenGroup.change(level, pos, settings -> new ScreenSettings(edit.centreX(), edit.centreZ(), edit.scale(), lines, hidden, tagsOff, 0));
     }
 
     /** A client asks which tracks a screen showing some lines shows; it is answered if its answer is not the one now. */
@@ -92,7 +101,7 @@ public final class MapScreenService {
         if (!(context.player() instanceof ServerPlayer player)
             || !VIEW_LIMIT.allow(player.getUUID(), player.server.overworld().getGameTime()))
             return;
-        MapViewPayload view = view(player.server, request.lines());
+        MapViewPayload view = view(player.server, request.lines(), request.tagsOff());
         if (view.revision() != request.revision())
             PacketDistributor.sendToPlayer(player, view);
     }
@@ -102,8 +111,9 @@ public final class MapScreenService {
         if (!(context.player() instanceof ServerPlayer player)
             || !LIVE_LIMIT.allow(player.getUUID(), player.server.overworld().getGameTime()))
             return;
+        OperationData operation = OperationData.get(player.server);
         LiveMap live = CreateMap.live(Create.RAILWAYS.trackNetworks.values(), Create.RAILWAYS.trains.values(), player.server::getLevel,
-            player.level().dimension().location().toString());
+            player.level().dimension().location().toString(), train -> operation.tagsOf(train.id));
         PacketDistributor.sendToPlayer(player, new MapLivePayload(live));
     }
 
@@ -113,46 +123,74 @@ public final class MapScreenService {
         LIVE_LIMIT.forget(player.getUUID());
     }
 
-    /** Which tracks a screen showing {@code lines} shows now. */
-    static MapViewPayload view(MinecraftServer server, List<String> lines) {
+    /** Which tracks a screen showing {@code lines} shows now, and which stretches of them with the tags {@code tagsOff} turned off. */
+    public static MapViewPayload view(MinecraftServer server, List<String> lines, List<String> tagsOff) {
         OperationData data = OperationData.get(server);
         Timetable timetable = data.timetable();
-        long print = CreateNetwork.fingerprint(Create.RAILWAYS.trackNetworks.values());
-        // Never 0, which a client that has no answer says it has.
-        long revision = (print * 31 + data.revision()) * 31 + (timetable == null ? 0 : 1) | 1;
-        List<Object> key = List.of(List.copyOf(lines), revision);
+        TrackTags tags = TrackTagData.get(server).tags();
+        var graphs = Create.RAILWAYS.trackNetworks.values();
+        long print = CreateNetwork.fingerprint(graphs);
+        // Never 0, which a client that has no answer says it has. The colours of the tags are not in it: a client has them.
+        long revision = ((print * 31 + data.revision()) * 31 + tags.names().hashCode()) * 31 + (timetable == null ? 0 : 1) | 1;
+        List<Object> key = List.of(List.copyOf(lines), List.copyOf(tagsOff), revision);
         MapViewPayload known = VIEWS.get(key);
         if (known != null)
             return known;
+        CreateNetwork.All all = CreateNetwork.readAll(graphs);
+        CreateMap.Read read = CreateMap.read(graphs, List.of(), null);
+        NetworkMap map = NetworkMap.of(read.map(), all.edges(), read.trackOf(), read.backward());
+        List<String> keys = read.map().tracks().stream().map(track -> track.key()).toList();
+        List<MapViewPayload.TrackStretches> stretches = stretches(keys, map.tagPieces(all.network(), tags), Set.copyOf(tagsOff));
         MapViewPayload view;
         if (timetable == null)
-            view = new MapViewPayload(lines, revision, true, List.of());
+            view = new MapViewPayload(lines, tagsOff, revision, true, List.of(), stretches);
         else if (lines.isEmpty())
-            view = new MapViewPayload(lines, revision, true, timetable.mapHidden());
+            view = new MapViewPayload(lines, tagsOff, revision, true, timetable.mapHidden(), stretches);
         else
-            view = new MapViewPayload(lines, revision, false, shown(timetable, lines));
+            view = new MapViewPayload(lines, tagsOff, revision, false, shown(timetable, lines, all.network(), map, keys, tags), stretches);
         VIEWS.put(key, view);
         return view;
     }
 
-    /** The keys of the tracks the lines' trains run along, with those the lines add and without those they take away and the timetable hides. */
-    private static List<String> shown(Timetable timetable, List<String> lines) {
+    /**
+     * The keys of the tracks the lines' trains run along, on the ways of the track tags they are held
+     * to too, with those the lines add and without those they take away and the timetable hides.
+     */
+    private static List<String> shown(Timetable timetable, List<String> lines, RailNetwork network, NetworkMap map, List<String> keys,
+        TrackTags tags) {
         Set<String> wanted = Set.copyOf(lines);
         Set<String> stations = new LinkedHashSet<>();
         for (Timetable.Line line : timetable.lines())
             if (wanted.contains(line.id()))
                 stations.addAll(line.stations());
-        var graphs = Create.RAILWAYS.trackNetworks.values();
-        CreateNetwork.All all = CreateNetwork.readAll(graphs);
-        CreateMap.Read read = CreateMap.read(graphs, List.of(), null);
-        NetworkMap map = NetworkMap.of(read.map(), all.edges(), read.trackOf(), read.backward());
         List<MapSelection.LegTracks> legs = new ArrayList<>();
-        for (Leg leg : all.network().legs(stations))
+        for (Leg leg : network.legs(stations))
             legs.add(new MapSelection.LegTracks(leg.from(), leg.to(), map.tracks(leg)));
-        List<String> keys = read.map().tracks().stream().map(track -> track.key()).toList();
+        for (String tag : TagWays.tags(timetable)) {
+            OptionalInt held = tags.held(tag);
+            boolean other = held.isPresent() && held.getAsInt() == TrackTags.UNKNOWN;
+            for (Leg leg : network.legs(stations, held))
+                legs.add(new MapSelection.LegTracks(leg.from(), leg.to(), tag, other, map.tracks(leg)));
+        }
         List<String> shown = new ArrayList<>();
         for (int track : MapSelection.visible(keys, legs, timetable, lines))
             shown.add(keys.get(track));
         return shown;
+    }
+
+    /** The stretches of the tracks that are not all shown with no tag ({@link TagView}), by their keys. */
+    private static List<MapViewPayload.TrackStretches> stretches(List<String> keys, List<List<TrackMap.TagPiece>> pieces, Set<String> off) {
+        List<MapViewPayload.TrackStretches> stretches = new ArrayList<>();
+        List<List<TagView.Segment>> segments = TagView.segments(keys, pieces, off);
+        for (int track = 0; track < keys.size(); track++) {
+            List<TagView.Segment> ofTrack = segments.get(track);
+            if (ofTrack.size() == 1 && ofTrack.getFirst().shown() && !ofTrack.getFirst().tagged())
+                continue;
+            List<MapViewPayload.Stretch> sent = new ArrayList<>();
+            for (TagView.Segment segment : ofTrack)
+                sent.add(new MapViewPayload.Stretch((float) segment.from(), (float) segment.to(), segment.shown(), segment.tags()));
+            stretches.add(new MapViewPayload.TrackStretches(keys.get(track), sent));
+        }
+        return stretches;
     }
 }

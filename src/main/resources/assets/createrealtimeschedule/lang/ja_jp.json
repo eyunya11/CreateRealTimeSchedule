@@ -113,5 +113,8 @@
   "gui.createrealtimeschedule.map_screen.layer.trains": "列車",
   "gui.createrealtimeschedule.map_screen.lines": "路線(選ばなければ全部の線路)",
   "gui.createrealtimeschedule.map_screen.no_timetable": "ダイヤで運行していないので、全部の線路を出します",
-  "gui.createrealtimeschedule.map_screen.more_lines": "ほか %1$s 路線"
+  "gui.createrealtimeschedule.map_screen.more_lines": "ほか %1$s 路線",
+  "gui.createrealtimeschedule.map_screen.tags": "線路のタグ(オフは灰色)",
+  "gui.createrealtimeschedule.map_screen.more_tags": "ほか %1$s 個",
+  "gui.createrealtimeschedule.map_screen.no_tag": "タグなし"
 }

@@ -92,7 +92,8 @@ public final class ScreenGroup {
         long now = level.getGameTime();
         apply(level, cells, settings -> {
             ScreenSettings changed = change.apply(settings);
-            return new ScreenSettings(changed.centreX(), changed.centreZ(), changed.scale(), changed.lines(), changed.hidden(), now);
+            return new ScreenSettings(changed.centreX(), changed.centreZ(), changed.scale(), changed.lines(), changed.hidden(),
+                changed.tagsOff(), now);
         });
         return true;
     }

@@ -1,5 +1,6 @@
 package io.github.eyunya11.createrealtimeschedule.client;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -12,6 +13,8 @@ import com.simibubi.create.CreateClient;
 
 import io.github.eyunya11.createrealtimeschedule.map.LiveMap;
 import io.github.eyunya11.createrealtimeschedule.map.MapProjection;
+import io.github.eyunya11.createrealtimeschedule.map.ScreenSettings;
+import io.github.eyunya11.createrealtimeschedule.map.TagView;
 import io.github.eyunya11.createrealtimeschedule.map.TrackMap;
 import io.github.eyunya11.createrealtimeschedule.network.MapLivePayload;
 import io.github.eyunya11.createrealtimeschedule.network.MapLiveRequestPayload;
@@ -26,8 +29,9 @@ import net.neoforged.neoforge.network.PacketDistributor;
 /**
  * What the client's map screens draw. The track, the stations and the speed-limit signs are read from
  * the track graphs Create sends every client ({@link CreateMap}), again a second after they change.
- * Which tracks a screen showing some lines shows, what the signals show and where the trains are, the
- * server is asked for while a screen is drawn ({@code MapScreenService}), and not while none is.
+ * Which tracks a screen showing some lines shows, and which stretches of them for the track tags it
+ * has turned off, what the signals show and where the trains are, the server is asked for while a
+ * screen is drawn ({@code MapScreenService}), and not while none is.
  */
 public final class MapClient {
 
@@ -43,9 +47,10 @@ public final class MapClient {
     private static int seenRailways = Integer.MIN_VALUE;
     private static int changedAt = -1;
 
-    private static final Map<List<String>, MapViewPayload> VIEWS = new HashMap<>();
-    /** The lines of each screen drawn lately, with the tick it was last drawn in. */
-    private static final Map<List<String>, Integer> WANTED = new HashMap<>();
+    /** The answers, by the lines and the tags turned off ({@link #wanted}). */
+    private static final Map<List<List<String>>, MapViewPayload> VIEWS = new HashMap<>();
+    /** The lines and the tags turned off of each screen drawn lately, with the tick it was last drawn in. */
+    private static final Map<List<List<String>>, Integer> WANTED = new HashMap<>();
     private static LiveMap live = LiveMap.EMPTY;
     private static int liveWantedAt = Integer.MIN_VALUE;
     private static int ticks;
@@ -74,18 +79,23 @@ public final class MapClient {
         return map.dimensions().indexOf(name);
     }
 
-    /** Says that a screen showing {@code lines} is being drawn, so that what it needs is asked for. */
-    public static void drawn(List<String> lines) {
-        WANTED.put(lines, ticks);
+    /** What a screen of {@code settings} is asked about by: its lines, and the tags it has turned off, in order. */
+    private static List<List<String>> wanted(ScreenSettings settings) {
+        return List.of(settings.lines(), settings.tagsOff().stream().sorted().toList());
+    }
+
+    /** Says that a screen of {@code settings} is being drawn, so that what it needs is asked for. */
+    public static void drawn(ScreenSettings settings) {
+        WANTED.put(wanted(settings), ticks);
         liveWantedAt = ticks;
     }
 
     /**
-     * The answer to which tracks a screen showing {@code lines} shows, or null if there is none yet; a
-     * screen without one shows all the track.
+     * The answer to which tracks a screen of {@code settings} shows, or null if there is none yet; a
+     * screen without one shows all the track, with no tag.
      */
-    public static @Nullable MapViewPayload view(List<String> lines) {
-        return VIEWS.get(lines);
+    public static @Nullable MapViewPayload view(ScreenSettings settings) {
+        return VIEWS.get(wanted(settings));
     }
 
     /** The box round the tracks of a dimension, or null if it has none. */
@@ -121,9 +131,9 @@ public final class MapClient {
         WANTED.values().removeIf(at -> ticks - at > KEEP_ASKING);
         VIEWS.keySet().retainAll(WANTED.keySet());
         if (ticks % VIEW_EVERY == 0)
-            for (List<String> lines : WANTED.keySet()) {
-                MapViewPayload known = VIEWS.get(lines);
-                PacketDistributor.sendToServer(new MapViewRequestPayload(lines, known == null ? 0 : known.revision()));
+            for (List<List<String>> wanted : WANTED.keySet()) {
+                MapViewPayload known = VIEWS.get(wanted);
+                PacketDistributor.sendToServer(new MapViewRequestPayload(wanted.get(0), wanted.get(1), known == null ? 0 : known.revision()));
             }
         if (ticks % LIVE_EVERY == 0 && ticks - liveWantedAt <= KEEP_ASKING)
             PacketDistributor.sendToServer(MapLiveRequestPayload.INSTANCE);
@@ -139,7 +149,7 @@ public final class MapClient {
     }
 
     public static void onView(MapViewPayload view) {
-        VIEWS.put(view.lines(), view);
+        VIEWS.put(List.of(view.lines(), view.tagsOff()), view);
     }
 
     public static void onLive(MapLivePayload payload) {
@@ -152,9 +162,9 @@ public final class MapClient {
             minecraft.setScreen(new MapScreenEditor(entity, open.lines()));
     }
 
-    /** Which of the map's tracks a screen showing {@code lines} shows: by their indexes. */
-    public static Set<Integer> shown(List<String> lines) {
-        MapViewPayload view = VIEWS.get(lines);
+    /** Which of the map's tracks a screen of {@code settings} shows: by their indexes. */
+    public static Set<Integer> shown(ScreenSettings settings) {
+        MapViewPayload view = view(settings);
         Set<Integer> shown = new HashSet<>();
         if (view == null || view.except()) {
             for (int i = 0; i < map.tracks().size(); i++)
@@ -170,6 +180,26 @@ public final class MapClient {
             }
         }
         return shown;
+    }
+
+    /**
+     * The stretches of the tracks a screen of {@code settings} shows that are not all shown with no tag,
+     * by the tracks' indexes; a track not here is all shown with no tag, if it is shown.
+     */
+    public static Map<Integer, List<TagView.Segment>> stretches(ScreenSettings settings) {
+        MapViewPayload view = view(settings);
+        Map<Integer, List<TagView.Segment>> stretches = new HashMap<>();
+        if (view != null)
+            for (MapViewPayload.TrackStretches track : view.stretches()) {
+                int index = indexOf(track.key());
+                if (index < 0)
+                    continue;
+                List<TagView.Segment> segments = new ArrayList<>();
+                for (MapViewPayload.Stretch stretch : track.stretches())
+                    segments.add(new TagView.Segment(stretch.from(), stretch.to(), !stretch.tags().isEmpty(), stretch.shown(), stretch.tags()));
+                stretches.put(index, segments);
+            }
+        return stretches;
     }
 
     static void reset() {

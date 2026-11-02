@@ -113,5 +113,8 @@
   "gui.createrealtimeschedule.map_screen.layer.trains": "Trains",
   "gui.createrealtimeschedule.map_screen.lines": "Lines (none: all the track)",
   "gui.createrealtimeschedule.map_screen.no_timetable": "No timetable is run: all the track is shown",
-  "gui.createrealtimeschedule.map_screen.more_lines": "and %1$s more"
+  "gui.createrealtimeschedule.map_screen.more_lines": "and %1$s more",
+  "gui.createrealtimeschedule.map_screen.tags": "Track tags (off: grey)",
+  "gui.createrealtimeschedule.map_screen.more_tags": "and %1$s more",
+  "gui.createrealtimeschedule.map_screen.no_tag": "No tag"
 }

@@ -210,6 +210,57 @@ public final class TagView {
         return total == 0 ? 0 : bestAlong / total;
     }
 
+    /** The part of a line through {@code points} from the share {@code from} of its length to {@code to}. */
+    public static List<Spot> piece(List<Spot> points, double from, double to) {
+        double[] lengths = new double[points.size()];
+        for (int i = 1; i < points.size(); i++)
+            lengths[i] = lengths[i - 1] + distance(points.get(i - 1), points.get(i));
+        double total = lengths[lengths.length - 1];
+        List<Spot> piece = new ArrayList<>();
+        piece.add(at(points, lengths, from * total));
+        for (int i = 1; i + 1 < points.size(); i++)
+            if (lengths[i] > from * total && lengths[i] < to * total)
+                piece.add(points.get(i));
+        piece.add(at(points, lengths, to * total));
+        return piece;
+    }
+
+    /**
+     * A line through {@code points} cut into dashes {@code dash} long, from its first point; the last
+     * may be shorter. A stretch with more than one tag is drawn in their colours a dash each in turn.
+     */
+    public static List<List<Spot>> dashes(List<Spot> points, double dash) {
+        List<List<Spot>> dashes = new ArrayList<>();
+        double total = 0;
+        for (int i = 1; i < points.size(); i++)
+            total += distance(points.get(i - 1), points.get(i));
+        if (!(dash > 0) || total <= dash) {
+            dashes.add(List.copyOf(points));
+            return dashes;
+        }
+        int count = (int) Math.ceil(total / dash - EPSILON);
+        for (int k = 0; k < count; k++)
+            dashes.add(piece(points, k * dash / total, Math.min(1, (k + 1) * dash / total)));
+        return dashes;
+    }
+
+    private static double distance(Spot a, Spot b) {
+        return Math.hypot(b.x() - a.x(), b.z() - a.z());
+    }
+
+    /** The place {@code along} the line from its first point, with {@code lengths} the length to each point. */
+    private static Spot at(List<Spot> points, double[] lengths, double along) {
+        for (int i = 1; i < points.size(); i++)
+            if (along <= lengths[i] || i == points.size() - 1) {
+                double span = lengths[i] - lengths[i - 1];
+                double t = span == 0 ? 0 : Math.max(0, Math.min(1, (along - lengths[i - 1]) / span));
+                Spot a = points.get(i - 1);
+                Spot b = points.get(i);
+                return new Spot(a.x() + (b.x() - a.x()) * t, a.z() + (b.z() - a.z()) * t);
+            }
+        return points.getFirst();
+    }
+
     /** Whether a train that runs on {@code tags} is shown: one of them on, {@link #NO_TAG} for none. */
     public static boolean trainShown(List<String> tags, Set<String> off) {
         if (tags.isEmpty())
