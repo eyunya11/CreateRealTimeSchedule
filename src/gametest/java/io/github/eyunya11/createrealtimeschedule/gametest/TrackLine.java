@@ -34,9 +34,14 @@ import com.simibubi.create.content.trains.track.TrackShape;
 import com.simibubi.create.content.trains.track.TrackTargetingBehaviour;
 import com.simibubi.create.foundation.blockEntity.behaviour.BlockEntityBehaviour;
 
+import io.github.eyunya11.createrealtimeschedule.ModRegistry;
 import io.github.eyunya11.createrealtimeschedule.clock.ClockService;
 import io.github.eyunya11.createrealtimeschedule.clock.RealClock;
 import io.github.eyunya11.createrealtimeschedule.schedule.TrainSlotMemory;
+import io.github.eyunya11.createrealtimeschedule.tag.TrackTagBlockEntity;
+import io.github.eyunya11.createrealtimeschedule.tag.TrackTagData;
+import io.github.eyunya11.createrealtimeschedule.tag.TrackTagService;
+import io.github.eyunya11.createrealtimeschedule.tag.TrackTags;
 import net.createmod.catnip.data.Couple;
 import net.createmod.catnip.platform.CatnipServices;
 import net.minecraft.core.BlockPos;
@@ -226,6 +231,14 @@ final class TrackLine {
     /** The stations a train is parked at, besides the first; see {@link #parkATrainAt}. */
     private final List<Integer> parkedAt = new ArrayList<>();
     private final List<Train> parked = new ArrayList<>();
+    /** The track tag blocks put beside the line, and the tags made for them; see {@link #placeTag}. */
+    private final List<BlockPos> tagBlocks = new ArrayList<>();
+    private final List<Integer> tagsMade = new ArrayList<>();
+    /** The track tag blocks to put when the stations are; see {@link #withTag}. */
+    private final List<PendingTag> pendingTags = new ArrayList<>();
+
+    /** A block of {@link #withTag}. */
+    private record PendingTag(int x, int z, boolean eastward, boolean oneWay, int[] tags) {}
 
     /** A line that leaves the clock alone, for a test that does not read it. */
     TrackLine(GameTestHelper helper, int lastX, int[] stationX, String[] names) {
@@ -435,6 +448,62 @@ final class TrackLine {
         return (bend == null || x <= bend.fromX() || x >= bend.toX()) && (loop == null || x >= loop.firstRowX());
     }
 
+    /**
+     * A tag in the world's list, named {@code name}, which is taken out again when the test ends. Where
+     * the name is taken, as by a run of the same test that is still going on a client, or that was left
+     * off before it could clean up, a number is put after it.
+     */
+    int makeTag(String name) {
+        TrackTags tags = TrackTagData.get(server).tags();
+        TrackTags.Created created = tags.create(name);
+        for (int n = 2; created.refusal() == TrackTags.Refusal.TAKEN && n < 100; n++)
+            created = tags.create(name + " " + n);
+        if (created.refusal() != null)
+            helper.fail("could not make the tag " + name + ": " + created.refusal());
+        tagsMade.add(created.id());
+        TrackTagService.listChanged(server);
+        return created.id();
+    }
+
+    /** The name of the {@code index}-th tag {@link #makeTag} made, as the world's list has it. */
+    String madeTag(int index) {
+        return TrackTagData.get(server).tags().name(tagsMade.get(index));
+    }
+
+    /**
+     * Has the block of {@link #placeTag(int, int, boolean, boolean, int...)} put when the stations are,
+     * once the track graph is there: for a test that loads a timetable before the line is set up.
+     */
+    TrackLine withTag(int x, int z, boolean eastward, boolean oneWay, int... tags) {
+        pendingTags.add(new PendingTag(x, z, eastward, oneWay, tags));
+        return this;
+    }
+
+    /**
+     * Does what placing a track tag block's item does, as for a signal: the block two north of the track
+     * at {@code x} (clear of a signal's), pointing at it, of the one-way kind or the one for both ways,
+     * with the tags {@code tags}, its section running east, or west with {@code eastward} false. It makes
+     * its point on the graph on its first tick.
+     */
+    TrackTagBlockEntity placeTag(int x, boolean eastward, boolean oneWay, int... tags) {
+        return placeTag(x, Signal.FIRST_ROW, eastward, oneWay, tags);
+    }
+
+    /** {@link #placeTag(int, boolean, boolean, int...)} beside the track of the row at {@code z}, or of the first row for {@link Signal#FIRST_ROW}. */
+    TrackTagBlockEntity placeTag(int x, int z, boolean eastward, boolean oneWay, int... tags) {
+        BlockPos trackPos = helper.absolutePos(z == Signal.FIRST_ROW ? track(x) : new BlockPos(x, TRACK_Y, z));
+        BlockPos at = trackPos.north(2);
+        level.setBlock(at, (oneWay ? ModRegistry.TRACK_TAG_ONE_WAY : ModRegistry.TRACK_TAG).get().defaultBlockState(), 3);
+        CompoundTag data = new CompoundTag();
+        data.put("TargetTrack", NbtUtils.writeBlockPos(trackPos.subtract(at)));
+        data.putBoolean("TargetDirection", !eastward);
+        data.putIntArray("Tags", tags);
+        TrackTagBlockEntity entity = (TrackTagBlockEntity) level.getBlockEntity(at);
+        entity.loadCustomOnly(data, level.registryAccess());
+        tagBlocks.add(at);
+        return entity;
+    }
+
     /** Sets the clock to read {@code clock} on the next tick. The game test runs at the end of a tick, after the level and its trains, so the next thing to read the clock is the next tick's. */
     void clockOnNextTick(long clock) {
         long next = server.overworld().getGameTime() + 1;
@@ -583,6 +652,8 @@ final class TrackLine {
             placeStation(i);
         for (Signal signal : signals)
             placeSignal(signal);
+        for (PendingTag tag : pendingTags)
+            placeTag(tag.x(), tag.z(), tag.eastward(), tag.oneWay(), tag.tags());
         enter(Phase.WAIT_FOR_STATIONS);
     }
 
@@ -752,6 +823,14 @@ final class TrackLine {
                 level.setBlock(helper.absolutePos(stationBlock(i)), Blocks.AIR.defaultBlockState(), 3);
             for (Signal signal : signals)
                 level.setBlock(helper.absolutePos(signalBlock(signal)), Blocks.AIR.defaultBlockState(), 3);
+            for (BlockPos block : tagBlocks)
+                level.setBlock(block, Blocks.AIR.defaultBlockState(), 3);
+            if (!tagsMade.isEmpty()) {
+                TrackTagData tagData = TrackTagData.get(server);
+                for (int id : tagsMade)
+                    tagData.tags().delete(id, false);
+                TrackTagService.listChanged(server);
+            }
             List<Integer> assembledAt = new ArrayList<>(parkedAt);
             assembledAt.add(0);
             for (int index : assembledAt)

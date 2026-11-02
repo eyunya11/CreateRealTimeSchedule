@@ -21,6 +21,9 @@ import io.github.eyunya11.createrealtimeschedule.clock.RealClock;
 import io.github.eyunya11.createrealtimeschedule.diagram.LineAxis;
 import io.github.eyunya11.createrealtimeschedule.railway.CreateNetwork;
 import io.github.eyunya11.createrealtimeschedule.railway.Leg;
+import io.github.eyunya11.createrealtimeschedule.railway.RailNetwork;
+import io.github.eyunya11.createrealtimeschedule.tag.TrackTagData;
+import io.github.eyunya11.createrealtimeschedule.tag.TrackTags;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Line;
 import io.github.eyunya11.createrealtimeschedule.travel.TrainSpec;
@@ -46,7 +49,10 @@ public final class TrackFacts {
         return data.axes();
     }
 
-    /** The ways between the timetable's stations, by their two ends, from and to. */
+    /**
+     * The ways between the timetable's stations, by their two ends, from and to, and the track tag a
+     * train is held to on them ({@code ""} for none): for each tag the timetable holds a train to.
+     */
     public static Map<List<String>, Leg> legs(OperationData data, Timetable timetable) {
         workOut(data, timetable);
         return data.legs();
@@ -96,20 +102,53 @@ public final class TrackFacts {
     private static void read(OperationData data, Timetable timetable) {
         List<TrackGraph> graphs = graphsOf(timetable);
         long print = CreateNetwork.fingerprint(graphs);
-        List<Leg> legs = CreateNetwork.read(graphs).legs(stationsOf(timetable));
+        RailNetwork network = CreateNetwork.read(graphs);
+        Set<String> stations = stationsOf(timetable);
+        // The axes are drawn from the ways of no tag.
+        Map<String, RailNetwork.Routes> routes = new LinkedHashMap<>();
+        routes.put("", network.routes(stations, OptionalInt.empty()));
+        TrackTags tags = TrackTagData.current();
+        for (String tag : TagWays.tags(timetable))
+            routes.put(tag, network.routes(stations, tags.held(tag)));
         Map<String, LineAxis> axes = new LinkedHashMap<>();
         for (Line line : timetable.lines())
-            axes.put(line.id(), LineAxis.of(line, legs));
+            axes.put(line.id(), LineAxis.of(line, routes.get("").legs()));
         Map<List<String>, Leg> byEnds = new HashMap<>();
-        for (Leg leg : legs)
-            byEnds.putIfAbsent(List.of(leg.from(), leg.to()), leg);
-        data.track(axes, byEnds);
+        for (Map.Entry<String, RailNetwork.Routes> tag : routes.entrySet())
+            for (Leg leg : tag.getValue().legs())
+                byEnds.putIfAbsent(List.of(leg.from(), leg.to(), tag.getKey()), leg);
+        data.track(axes, byEnds, TagWays.of(timetable, track(network, routes)), TagWays.unknown(timetable, tags.names().values()));
         data.trackWatch().workedOut(print);
         // The end of a train copied on an edge that is gone is not run on from; it is taken again from where the train is.
         data.tails().entrySet().removeIf(entry -> {
             Train train = Create.RAILWAYS.trains.get(entry.getKey());
             return train == null || !PassWatch.stillOn(entry.getValue(), train.graph);
         });
+    }
+
+    /** The platforms of {@code network} and the ways from each, on each tag of {@code routes}. */
+    private static TagWays.Track track(RailNetwork network, Map<String, RailNetwork.Routes> routes) {
+        Map<String, List<Integer>> platforms = new HashMap<>();
+        for (int i = 0; i < network.stations().size(); i++)
+            platforms.computeIfAbsent(network.stations().get(i).name(), name -> new ArrayList<>()).add(i);
+        Map<String, Map<Integer, Map<String, Integer>>> byTag = new HashMap<>();
+        for (Map.Entry<String, RailNetwork.Routes> tag : routes.entrySet()) {
+            Map<Integer, Map<String, Integer>> from = new HashMap<>();
+            for (RailNetwork.Way way : tag.getValue().ways())
+                from.computeIfAbsent(way.from(), f -> new HashMap<>()).put(way.to(), way.station());
+            byTag.put(tag.getKey(), from);
+        }
+        return new TagWays.Track() {
+            @Override
+            public List<Integer> platforms(String station) {
+                return platforms.getOrDefault(station, List.of());
+            }
+
+            @Override
+            public int way(int platform, String station, String tag) {
+                return byTag.getOrDefault(tag, Map.of()).getOrDefault(platform, Map.of()).getOrDefault(station, -1);
+            }
+        };
     }
 
     /**
@@ -142,10 +181,13 @@ public final class TrackFacts {
         }
     }
 
-    /** How long the track takes between two stations of {@code legs}, for a train of {@code spec} at {@code throttle}. */
+    /**
+     * How long the track takes between two stations of {@code legs} (by their two ends and the track
+     * tag, as {@link #legs} has them), for a train of {@code spec} at {@code throttle}.
+     */
     public static RunTimes runTimes(Map<List<String>, Leg> legs, TrainSpec spec, double throttle) {
-        return (from, to) -> {
-            Leg leg = legs.get(List.of(from, to));
+        return (from, to, tag) -> {
+            Leg leg = legs.get(List.of(from, to, tag));
             if (leg == null)
                 return OptionalLong.empty();
             OptionalInt ticks = leg.ticks(spec, throttle);

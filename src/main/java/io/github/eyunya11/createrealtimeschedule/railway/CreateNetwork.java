@@ -26,8 +26,10 @@ import com.simibubi.create.content.trains.station.GlobalStation;
 import io.github.eyunya11.createrealtimeschedule.railway.RailNetwork.Edge;
 import io.github.eyunya11.createrealtimeschedule.railway.RailNetwork.Point;
 import io.github.eyunya11.createrealtimeschedule.railway.RailNetwork.Station;
+import io.github.eyunya11.createrealtimeschedule.tag.TrackTagEdgePoint;
 import io.github.eyunya11.createrealtimeschedule.travel.SpeedSign;
 import net.createmod.catnip.data.Couple;
+import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.Vec3;
 
@@ -48,6 +50,7 @@ import net.minecraft.world.phys.Vec3;
  *
  * <p>The speed-limit signs of Create Train Next are read too, where that mod is there, without
  * depending on it: the kind of edge point is looked up by name, and the limit is read by reflection.
+ * So are this mod's track tag blocks, which {@link TagSections} makes the tagged stretches of.
  */
 public final class CreateNetwork {
 
@@ -130,6 +133,7 @@ public final class CreateNetwork {
         final List<SignalSide> signals = new ArrayList<>();
         final Unreadable unreadable = new Unreadable();
         final List<RailNetwork.Place> places = new ArrayList<>();
+        final List<RailNetwork.Marker> markers = new ArrayList<>();
 
         RailNetwork network() {
             if (unreadable.count > 0)
@@ -138,7 +142,7 @@ public final class CreateNetwork {
             // The graphs are held in a hash map; sorted by name, the export comes out the same every time.
             List<Station> sorted = new ArrayList<>(stations);
             sorted.sort(Comparator.comparing(Station::name).thenComparingInt(Station::edge).thenComparingDouble(Station::offset));
-            return new RailNetwork(edges, sorted, places);
+            return new RailNetwork(edges, sorted, places, markers);
         }
 
         int platform(GlobalStation station) {
@@ -151,7 +155,8 @@ public final class CreateNetwork {
 
     /**
      * A number that changes when the track changes in a way {@link #read} sees: a node, an edge or a
-     * point on one (a station and its name, a signal, a sign and its limit) put in, taken out or moved;
+     * point on one (a station and its name, a signal, a sign and its limit, a tag block and its tag) put
+     * in, taken out or moved;
      * an edge laid again or of another kind of track; or a point that lets trains through one way
      * where it did not (a station being assembled, a signal given another side).
      * The same track gives the same number whatever order the game holds it in, and working it out
@@ -183,6 +188,8 @@ public final class CreateNetwork {
                             hash = 31 * hash + Boolean.hashCode(point.canNavigateVia(edge.node2));
                             if (point instanceof GlobalStation station)
                                 hash = 31 * hash + Objects.hashCode(station.name) + Boolean.hashCode(station.canApproachFrom(edge.node2));
+                            else if (point instanceof TrackTagEdgePoint tag)
+                                hash = 31 * hash + tag.tags().hashCode() + Boolean.hashCode(tag.oneWay());
                             else if (signType != null && point.getType() == signType)
                                 hash = 31 * hash + Objects.hashCode(sign(point, 0, unreadable));
                         }
@@ -258,6 +265,32 @@ public final class CreateNetwork {
             edges.add(new Edge(edge.getLength(), edge.isTurn(), next, signs.getOrDefault(edge, List.of()), barriers(edge),
                 unsteered, points(edge, index.get(edge), reading), nodeNumber.getOrDefault(edge.node1, -1),
                 nodeNumber.getOrDefault(edge.node2, -1)));
+        }
+        markers(graph, index, reading);
+    }
+
+    /**
+     * The track tag blocks on {@code graph}, each on the edge it faces along: its point's location runs
+     * from the node behind it to the node it faces, as a station's does.
+     */
+    private static void markers(TrackGraph graph, Map<TrackEdge, Integer> index, Reading reading) {
+        EdgePointType<TrackTagEdgePoint> type = TrackTagEdgePoint.type();
+        if (type == null)
+            return;
+        for (TrackTagEdgePoint point : graph.getPoints(type)) {
+            if (point.edgeLocation == null)
+                continue;
+            TrackNode first = graph.locateNode(point.edgeLocation.getFirst());
+            TrackNode second = graph.locateNode(point.edgeLocation.getSecond());
+            TrackEdge edge = first == null || second == null ? null : graph.getConnection(Couple.create(first, second));
+            Integer at = edge == null ? null : index.get(edge);
+            if (at == null)
+                continue;
+            double offset = Math.max(0, Math.min(edge.getLength(), point.getLocationOn(edge)));
+            BlockPos block = point.getBlockEntityPos();
+            RailNetwork.Place place = block == null ? new RailNetwork.Place(Double.NaN, Double.NaN, Double.NaN)
+                : new RailNetwork.Place(block.getX(), block.getY(), block.getZ());
+            reading.markers.add(new RailNetwork.Marker(at, offset, point.tags(), point.oneWay(), place));
         }
     }
 

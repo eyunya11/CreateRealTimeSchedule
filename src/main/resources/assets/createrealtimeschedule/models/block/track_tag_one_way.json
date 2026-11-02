@@ -1,0 +1,9 @@
+{
+  "parent": "minecraft:block/cube_bottom_top",
+  "textures": {
+    "side": "create:block/railway_casing",
+    "top": "create:block/observer_box",
+    "bottom": "create:block/observer_box",
+    "particle": "create:block/railway_casing"
+  }
+}

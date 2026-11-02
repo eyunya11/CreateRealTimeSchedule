@@ -60,12 +60,12 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
      * The newest version of the JSON this mod reads. Version 2 added deadhead trains, version 3 the
      * stations' times and the stops' minimum stops, version 4 the trains that are never cancelled to
      * get a late set back on time, version 5 the trains a stop waits for, and version 6 the types'
-     * colours and the stops that change a train's type, and version 7 the tracks a map shows and hides
-     * for a line, and hides for all. A timetable is written in the oldest version
-     * that holds it ({@link #version()}), so that a mod that reads only version 2 still takes one that
-     * has none of what the later versions added.
+     * colours and the stops that change a train's type, version 7 the track tags trains run on, and
+     * version 8 the tracks a map shows and hides for a line, and hides for all. A timetable is written
+     * in the oldest version that holds it ({@link #version()}), so that a mod that reads only version 2
+     * still takes one that has none of what the later versions added.
      */
-    public static final int VERSION = 7;
+    public static final int VERSION = 8;
 
     /** The longest line id, train number or duty id. */
     public static final int MAX_ID_LENGTH = 32;
@@ -164,13 +164,21 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
      * @param deadhead whether it runs empty, such as from the depot to where the duty starts
      * @param keep     whether it must run even when its set is late: it is never cancelled to get the
      *                 set back on time, such as the last train of the day
+     * @param tag      the track tag it runs on between its stops, unless a stop says another (see
+     *                 {@link #tagAt}); empty for none, when it runs wherever the track takes it
      */
-    public record Train(String number, String line, String type, List<Stop> stops, boolean deadhead, boolean keep) {
+    public record Train(String number, String line, String type, List<Stop> stops, boolean deadhead, boolean keep, String tag) {
         public Train {
             Objects.requireNonNull(number, "number");
             Objects.requireNonNull(line, "line");
             Objects.requireNonNull(type, "type");
+            Objects.requireNonNull(tag, "tag");
             stops = List.copyOf(stops);
+        }
+
+        /** A train that runs on no track tag of its own. */
+        public Train(String number, String line, String type, List<Stop> stops, boolean deadhead, boolean keep) {
+            this(number, line, type, stops, deadhead, keep, "");
         }
 
         /** A train that may be cancelled to get a late set back on time. */
@@ -192,6 +200,15 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
                 if (stops.get(s).changesType())
                     return stops.get(s).type();
             return type;
+        }
+
+        /**
+         * The track tag the train runs on from stop {@code k} to the next: the stop's own, or else the
+         * train's; empty for none. Unlike a type, a stop's tag holds for the way on from it only.
+         */
+        public String tagAt(int k) {
+            String own = stops.get(k).tag();
+            return own.isEmpty() ? tag : own;
         }
     }
 
@@ -223,8 +240,10 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
      * @param type        the type the train has from here on (see {@link Train#typeAt}), or empty for
      *                    the one it has already
      * @param waits       the trains it waits for here before it leaves, in order
+     * @param tag         the track tag the train runs on from here to the next stop, or empty for the
+     *                    train's own (see {@link Train#tagAt})
      */
-    public record Stop(String station, int arrive, int depart, int minimumStop, String type, List<Wait> waits) {
+    public record Stop(String station, int arrive, int depart, int minimumStop, String type, List<Wait> waits, String tag) {
 
         /** The time of a stop that has no such time. */
         public static final int NONE = -1;
@@ -232,7 +251,13 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
         public Stop {
             Objects.requireNonNull(station, "station");
             Objects.requireNonNull(type, "type");
+            Objects.requireNonNull(tag, "tag");
             waits = List.copyOf(waits);
+        }
+
+        /** A stop from which the train runs on its own track tag. */
+        public Stop(String station, int arrive, int depart, int minimumStop, String type, List<Wait> waits) {
+            this(station, arrive, depart, minimumStop, type, waits, "");
         }
 
         /** A stop that leaves the train's type as it is. */
@@ -257,6 +282,11 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
         /** Whether the train has another type from here on. */
         public boolean changesType() {
             return !type.isEmpty();
+        }
+
+        /** Whether the train runs on a track tag of the stop's own from here. */
+        public boolean hasTag() {
+            return !tag.isEmpty();
         }
 
         /** The first stop of a train, or a stop it passes through without a time of arrival. */
@@ -367,13 +397,15 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
     }
 
     /**
-     * The oldest version of the JSON that holds this timetable: 7 if it adds a track to a map, takes one
-     * away or hides one, else 6 if it gives a type a colour or a stop
-     * changes a train's type, else 5 if a stop waits for a train, else 4 if it has a train that is never
-     * cancelled, else 3 if it has anything version 3 added, else 2.
+     * The oldest version of the JSON that holds this timetable: 8 if it adds a track to a map, takes one
+     * away or hides one, else 7 if a train or a stop has a track tag, else 6 if it gives a type a colour
+     * or a stop changes a train's type, else 5 if a stop waits for a train, else 4 if it has a train
+     * that is never cancelled, else 3 if it has anything version 3 added, else 2.
      */
     public int version() {
         if (!mapHidden.isEmpty() || lines.stream().anyMatch(line -> !line.mapAdd().isEmpty() || !line.mapRemove().isEmpty()))
+            return 8;
+        if (trains.stream().anyMatch(train -> !train.tag().isEmpty() || train.stops().stream().anyMatch(Stop::hasTag)))
             return 7;
         if (!types.isEmpty() || trains.stream().anyMatch(train -> train.stops().stream().anyMatch(Stop::changesType)))
             return 6;
@@ -393,8 +425,8 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
      * trains or duties with the same id; a train on a line that is not there, or stopping at a station
      * that is not on its line; stops that are not in order along a line, or the same station twice in a
      * row; times that are missing where they are needed, out of range, or not in order; dwells and
-     * minimum stops out of range, a station given times twice or that no line has, and a minimum stop
-     * or a change of type at a train's last stop, which it does not leave; a type given a colour twice,
+     * minimum stops out of range, a station given times twice or that no line has, and a minimum stop,
+     * a change of type or a track tag at a train's last stop, which it does not leave; a type given a colour twice,
      * or a colour that is not {@code #rrggbb}; and duties that name a train that is not there,
      * use a train twice, string trains together that do not meet (the next starts somewhere else, or
      * before the one before has arrived), or do not start and end at their depot. A train waited for at
@@ -464,8 +496,6 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
         }
     }
 
-    // ------------------------------------------------------------------ types
-
     // ------------------------------------------------------------------ the map
 
     private void checkMap(List<String> problems) {
@@ -524,6 +554,8 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
                 problems.add(label + ": another train has the same number");
             if (!train.type().isEmpty() && !isText(train.type()))
                 problems.add(label + ": the type must not start or end with a space or contain a control character");
+            if (!train.tag().isEmpty() && !isText(train.tag()))
+                problems.add(label + ": the track tag must not start or end with a space or contain a control character");
             Line line = lineById.get(train.line());
             if (line == null)
                 problems.add(label + ": there is no line \"" + train.line() + "\"");
@@ -577,6 +609,10 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
                 problems.add(where + ": is the last stop, which the train does not leave, so it changes no type");
             else if (stop.changesType() && !isText(stop.type()))
                 problems.add(where + ": the type must not start or end with a space or contain a control character");
+            if (stop.hasTag() && k == lastIndex)
+                problems.add(where + ": is the last stop, which the train does not leave, so it has no track tag");
+            else if (stop.hasTag() && !isText(stop.tag()))
+                problems.add(where + ": the track tag must not start or end with a space or contain a control character");
 
             // the times in order
             if (stop.hasArrive() && previousDeparture != Stop.NONE && stop.arrive() <= previousDeparture)

@@ -4,6 +4,7 @@ import static io.github.eyunya11.createrealtimeschedule.operation.OperationTimet
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
@@ -11,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Duty;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Stop;
+import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Train;
 
 class DutyPlanTest {
 
@@ -25,6 +27,33 @@ class DutyPlanTest {
             new Call("A", t("08:25"), t("08:30"), "2", "D2"),
             new Call("Depot", t("08:35"), Stop.NONE, "D2", "")),
             DutyPlan.calls(timetable, timetable.duties().getFirst()));
+    }
+
+    /**
+     * Each call has the track tag the set leaves it on: that of the train it leaves as, or of the stop
+     * where the stop has one, which holds for the way on from there only; none at the last.
+     */
+    @Test
+    void aCallHasTheTrackTagOfTheWayOnFromIt() {
+        Timetable shuttle = OperationTimetables.shuttle();
+        List<Train> trains = shuttle.trains().stream().map(train -> switch (train.number()) {
+            case "D1" -> withTag(train, "depot");
+            case "1" -> {
+                List<Stop> stops = new ArrayList<>(train.stops());
+                Stop m = stops.get(1);
+                stops.set(1, new Stop(m.station(), m.arrive(), m.depart(), m.minimumStop(), m.type(), m.waits(), "main"));
+                yield withTag(new Train(train.number(), train.line(), train.type(), stops), "local");
+            }
+            default -> train;
+        }).toList();
+        Timetable timetable = new Timetable("", shuttle.lines(), trains, shuttle.duties());
+        assertEquals(List.of(), timetable.problems());
+        assertEquals(List.of("depot", "local", "main", "", "", ""),
+            DutyPlan.calls(timetable, timetable.duties().getFirst()).stream().map(Call::tag).toList());
+    }
+
+    private static Train withTag(Train train, String tag) {
+        return new Train(train.number(), train.line(), train.type(), train.stops(), train.deadhead(), train.keep(), tag);
     }
 
     /** Held at A from call 1 to call 4, the set does not run A to M to B (train 1) nor B to A (train 2). */

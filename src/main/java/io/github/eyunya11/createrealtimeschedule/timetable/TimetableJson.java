@@ -230,11 +230,12 @@ public final class TimetableJson {
         String type = orEmpty(f.string("type", false));
         boolean deadhead = f.bool("deadhead", false);
         boolean keep = f.bool("keep", false);
+        String tag = orEmpty(f.string("tag", false));
         List<Timetable.Stop> stops = new ArrayList<>();
         for (Fields stop : f.objects("stops", true))
             stops.add(readStop(stop));
         f.finish();
-        return new Timetable.Train(number, line, type, stops, deadhead, keep);
+        return new Timetable.Train(number, line, type, stops, deadhead, keep, tag);
     }
 
     private static Timetable.Stop readStop(Fields f) {
@@ -246,8 +247,9 @@ public final class TimetableJson {
         List<Timetable.Wait> waits = new ArrayList<>();
         for (Fields wait : f.objects("wait_for", false))
             waits.add(readWait(wait));
+        String tag = orEmpty(f.string("tag", false));
         f.finish();
-        return new Timetable.Stop(station, arrive, depart, minimumStop, type, waits);
+        return new Timetable.Stop(station, arrive, depart, minimumStop, type, waits, tag);
     }
 
     private static Timetable.Wait readWait(Fields f) {
@@ -443,7 +445,7 @@ public final class TimetableJson {
      * The timetable as JSON, laid out the same way every time: two spaces of indent, the members in a
      * fixed order, and a stop or a list of names on one line, in the oldest version that holds it
      * ({@link Timetable#version()}). Members that have their default value ({@code loop},
-     * {@code deadhead} and {@code keep} false, {@code type} empty, a time or a minimum stop a stop does not have, no
+     * {@code deadhead} and {@code keep} false, {@code type} and {@code tag} empty, a time or a minimum stop a stop does not have, no
      * stations with times of their own, no types with colours) are left out. A timetable that
      * {@link Timetable#problems()} finds fault with is written as it is, and is refused when read back;
      * a time outside the service day is written as {@link ServiceTime#show} has it, which is no time.
@@ -502,6 +504,8 @@ public final class TimetableJson {
             node.put("line", text(train.line()));
             if (!train.type().isEmpty())
                 node.put("type", text(train.type()));
+            if (!train.tag().isEmpty())
+                node.put("tag", text(train.tag()));
             if (train.deadhead())
                 node.put("deadhead", raw("true"));
             if (train.keep())
@@ -518,6 +522,8 @@ public final class TimetableJson {
                     stopNode.put("minimum_stop", raw(Integer.toString(stop.minimumStop())));
                 if (stop.changesType())
                     stopNode.put("type", text(stop.type()));
+                if (stop.hasTag())
+                    stopNode.put("tag", text(stop.tag()));
                 if (!stop.waits().isEmpty()) {
                     ListNode waits = new ListNode();
                     for (Timetable.Wait wait : stop.waits()) {

@@ -1,5 +1,5 @@
 /*
- * The map of the track, as network.js reads it from a network of version 3: which tracks it shows
+ * The map of the track, as network.js reads it from a network of version 4: which tracks it shows
  * (MapSelection in the mod, rule for rule, held to the same results by shared cases), and a view of it
  * that zooms and pans both ways. The map is the world seen from above: X to the right and Z down, as
  * Minecraft's own maps have it, so north is up.

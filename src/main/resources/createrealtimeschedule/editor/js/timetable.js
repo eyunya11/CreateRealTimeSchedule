@@ -26,11 +26,12 @@
    * The newest version of the JSON the editor reads. Version 3 added the stations' times and the
    * stops' minimum stops, version 4 the trains that are never cancelled to get a late set back on time
    * (keep), version 5 the trains a stop waits for (waits), version 6 the types' colours (types) and
-   * the stops that change a train's type, and version 7 the tracks a map shows and hides for a line
-   * (mapAdd, mapRemove) and hides for all (mapHidden); a timetable is written in the oldest version that holds it
-   * (version()), so that a mod that reads only version 2 still takes one that has none of them.
+   * the stops that change a train's type, version 7 the track tags trains run on (tag), and version 8
+   * the tracks a map shows and hides for a line (mapAdd, mapRemove) and hides for all (mapHidden); a
+   * timetable is written in the oldest version that holds it (version()), so that a mod that reads
+   * only version 2 still takes one that has none of them.
    */
-  const VERSION = 7;
+  const VERSION = 8;
 
   /**
    * The colours of the types of train, in the order they are offered: TypeColours.TEMPLATE of the mod.
@@ -249,7 +250,7 @@
 
   /**
    * A stop; it has a minimumStop only when it has one of its own, a type only when it changes the
-   * train's, and waits only when it waits for a train.
+   * train's, a tag only when it has a track tag of its own, and waits only when it waits for a train.
    */
   function readStop(f) {
     const station = orEmpty(f.string('station', true));
@@ -258,12 +259,15 @@
     const minimumStop = f.seconds('minimum_stop', check.MAX_STOP_SECONDS);
     const type = orEmpty(f.string('type', false));
     const waits = f.objects('wait_for', false).map(readWait);
+    const tag = orEmpty(f.string('tag', false));
     f.finish();
     const stop = { station, arrive, depart };
     if (minimumStop !== NONE)
       stop.minimumStop = minimumStop;
     if (type !== '')
       stop.type = type;
+    if (tag !== '')
+      stop.tag = tag;
     if (waits.length > 0)
       stop.waits = waits;
     return stop;
@@ -291,11 +295,14 @@
     const type = orEmpty(f.string('type', false));
     const deadhead = f.bool('deadhead', false);
     const keep = f.bool('keep', false);
+    const tag = orEmpty(f.string('tag', false));
     const stops = f.objects('stops', true).map(readStop);
     f.finish();
     const train = { number, line, type, stops, deadhead };
     if (keep)
       train.keep = true;
+    if (tag !== '')
+      train.tag = tag;
     return train;
   }
 
@@ -365,6 +372,21 @@
     return timetable.types === undefined ? [] : timetable.types;
   }
 
+  /** Whether a train or a stop has a track tag of its own. */
+  function hasTag(item) {
+    return item.tag !== undefined && item.tag !== '';
+  }
+
+  /**
+   * The track tag train runs on from stop k to the next: the stop's own, or else the train's; '' for
+   * none (Train.tagAt of the mod).
+   */
+  function tagAt(train, k) {
+    if (hasTag(train.stops[k]))
+      return train.stops[k].tag;
+    return hasTag(train) ? train.tag : '';
+  }
+
   /** Whether the train has another type from stop on. */
   function changesType(stop) {
     return stop.type !== undefined && stop.type !== '';
@@ -413,13 +435,15 @@
   }
 
   /**
-   * The oldest version of the JSON that holds the timetable: 7 if it adds a track to a map, takes one
-   * away or hides one, else 6 if it gives a type a colour or a stop
-   * changes a train's type, else 5 if a stop waits for a train, else 4 if it has a train that is never
-   * cancelled, else 3 if it has anything version 3 added, else 2.
+   * The oldest version of the JSON that holds the timetable: 8 if it adds a track to a map, takes one
+   * away or hides one, else 7 if a train or a stop has a track tag, else 6 if it gives a type a colour
+   * or a stop changes a train's type, else 5 if a stop waits for a train, else 4 if it has a train
+   * that is never cancelled, else 3 if it has anything version 3 added, else 2.
    */
   function version(timetable) {
     if (mapHidden(timetable).length > 0 || timetable.lines.some(line => mapAdd(line).length > 0 || mapRemove(line).length > 0))
+      return 8;
+    if (timetable.trains.some(train => hasTag(train) || train.stops.some(hasTag)))
       return 7;
     if (typesOf(timetable).length > 0 || timetable.trains.some(train => train.stops.some(changesType)))
       return 6;
@@ -433,7 +457,7 @@
 
   /**
    * The timetable as JSON, laid out as the mod lays it out, in the oldest version that holds it:
-   * members with their default value (loop, deadhead and keep false, type empty, a time or a minimum
+   * members with their default value (loop, deadhead and keep false, type and tag empty, a time or a minimum
    * stop a stop does not have, no stations with times of their own, no types with colours) are left out.
    */
   function write(timetable) {
@@ -459,6 +483,8 @@
       const entries = [['number', out.text(train.number)], ['line', out.text(train.line)]];
       if (train.type !== '')
         entries.push(['type', out.text(train.type)]);
+      if (hasTag(train))
+        entries.push(['tag', out.text(train.tag)]);
       if (train.deadhead)
         entries.push(['deadhead', out.raw('true')]);
       if (train.keep === true)
@@ -473,6 +499,8 @@
           stopEntries.push(['minimum_stop', out.raw(String(stop.minimumStop))]);
         if (changesType(stop))
           stopEntries.push(['type', out.text(stop.type)]);
+        if (hasTag(stop))
+          stopEntries.push(['tag', out.text(stop.tag)]);
         if (stop.waits !== undefined && stop.waits.length > 0)
           stopEntries.push(['wait_for', out.list(stop.waits.map(wait => {
             const waitEntries = [['train', out.text(wait.train)]];
@@ -511,5 +539,5 @@
     return { name: '', lines: [], stations: [], types: [], trains: [], duties: [], mapHidden: [] };
   }
 
-  return { FORMAT, VERSION, NONE, TYPE_COLOURS, read, write, empty, version, typeAt, colourByName, colour, mapAdd, mapRemove, mapHidden };
+  return { FORMAT, VERSION, NONE, TYPE_COLOURS, read, write, empty, version, typeAt, tagAt, colourByName, colour, mapAdd, mapRemove, mapHidden };
 });

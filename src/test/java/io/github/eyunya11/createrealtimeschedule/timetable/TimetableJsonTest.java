@@ -285,21 +285,44 @@ class TimetableJsonTest {
             "a stop that changes the type is version 6");
     }
 
-    /** The tracks a map shows and hides, which version 7 added; the example the editor's tests read too. */
+    /** The tracks a map shows and hides, which version 8 added; the example the editor's tests read too. */
     @Test
-    void readsAndWritesTheTracksOfTheMapAsVersionSeven() {
+    void readsAndWritesTheTracksOfTheMapAsVersionEight() {
         String text = resource("example-map.json");
         Timetable timetable = accepted(text);
         Timetable.Line line = timetable.lines().getFirst();
         assertEquals(List.of("minecraft:overworld 60.5,2,3.5 70.5,2,13.5"), line.mapAdd());
         assertEquals(List.of("minecraft:overworld 0.5,2,3.5 60.5,2,3.5"), line.mapRemove());
         assertEquals(List.of("minecraft:overworld 60.5,2,3.5 70.5,2,13.5"), timetable.mapHidden());
-        assertEquals(7, timetable.version());
+        assertEquals(8, timetable.version());
         assertEquals(text, TimetableJson.write(timetable));
         Timetable none = new Timetable(timetable.name(), List.of(new Timetable.Line(line.id(), line.name(), line.stations(), false)),
             timetable.stations(), timetable.types(), timetable.trains(), timetable.duties());
-        assertEquals(2, none.version(), "a timetable that shows and hides no track is no version 7");
+        assertEquals(2, none.version(), "a timetable that shows and hides no track is no version 8");
         assertFalse(TimetableJson.write(none).contains("map_"), "a timetable that shows and hides no track says nothing of the map");
+    }
+
+    /** The track tags of trains and stops, which version 7 added; the example the editor's tests read too. */
+    @Test
+    void readsAndWritesTheTrackTagsAsVersionSeven() {
+        String text = resource("example-tags.json");
+        Timetable timetable = accepted(text);
+        Train local = timetable.train("1").orElseThrow();
+        assertEquals("local", local.tag());
+        assertEquals(List.of("", "main", ""), local.stops().stream().map(Stop::tag).toList());
+        assertEquals(List.of("local", "main"), List.of(local.tagAt(0), local.tagAt(1)), "a stop's tag holds for the way on from it only");
+        Train rapid = timetable.train("2").orElseThrow();
+        assertEquals("", rapid.tag());
+        assertEquals("express", rapid.tagAt(0));
+        assertEquals(7, timetable.version());
+        assertEquals(text, TimetableJson.write(timetable));
+        Timetable types = accepted(resource("example-types.json"));
+        assertEquals(6, types.version(), "a timetable with no tags is no version 7");
+        Train first = types.trains().getFirst();
+        List<Train> trains = new ArrayList<>(types.trains());
+        trains.set(0, new Train(first.number(), first.line(), first.type(), first.stops(), first.deadhead(), first.keep(), "local"));
+        assertEquals(7, new Timetable(types.name(), types.lines(), types.stations(), types.types(), trains, types.duties()).version(),
+            "a train with a tag is version 7");
     }
 
     /** The example the editor's tests read too (src/test/js), which both have to write back as it is. */
@@ -500,8 +523,8 @@ class TimetableJsonTest {
         for (String version : List.of("0", "-1"))
             assertOnlyProblem("{\"format\": \"createrealtimeschedule.timetable\", \"version\": " + version + "}", "version: must be 1 or more");
         // A newer version may have members this one has never heard of; they are not worth listing.
-        assertOnlyProblem("{\"format\": \"createrealtimeschedule.timetable\", \"version\": 8, \"colours\": [1, 2]}",
-            "version: is 8, but this mod reads timetables up to version 7");
+        assertOnlyProblem("{\"format\": \"createrealtimeschedule.timetable\", \"version\": 9, \"colours\": [1, 2]}",
+            "version: is 9, but this mod reads timetables up to version 8");
     }
 
     @Test

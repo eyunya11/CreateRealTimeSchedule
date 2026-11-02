@@ -312,6 +312,14 @@ public final class DutyRun {
         return calls.get(phase == Phase.STANDING || phase == Phase.DEPARTING ? nextMade(call) : call).station();
     }
 
+    /**
+     * The track tag the set runs on to {@link #nextStation()}: that of the call it stands at, or of the
+     * one it left for the call it is running to; empty for none.
+     */
+    public String nextTag() {
+        return calls.get(phase == Phase.STANDING || phase == Phase.DEPARTING ? call : previousMade(call)).tag();
+    }
+
     /** The set has run through {@code station} on the way from call {@code way} at {@code now}; once is enough. */
     public void passed(int way, String station, long now) {
         if (!passedBy(way, station))

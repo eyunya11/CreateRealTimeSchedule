@@ -13,24 +13,30 @@ import java.util.OptionalLong;
 public interface RunTimes {
 
     /** Nothing is known of the track: the timetable's own running times are taken. */
-    RunTimes NONE = (from, to) -> OptionalLong.empty();
+    RunTimes NONE = (from, to, tag) -> OptionalLong.empty();
 
     /**
-     * The least ticks a train takes on the track from a station named {@code from} to one named
-     * {@code to}, with nothing in its way; empty if that is not known.
+     * The least ticks a train held to the track tag {@code tag} (empty for none) takes on the track
+     * from a station named {@code from} to one named {@code to}, with nothing in its way; empty if that
+     * is not known.
      */
-    OptionalLong ticks(String from, String to);
+    OptionalLong ticks(String from, String to, String tag);
 
-    /** What {@code times} says, worked out once for each two stations and then remembered. */
+    /** {@link #ticks(String, String, String)} for a train held to no track tag. */
+    default OptionalLong ticks(String from, String to) {
+        return ticks(from, to, "");
+    }
+
+    /** What {@code times} says, worked out once for each two stations and tag and then remembered. */
     static RunTimes remembered(RunTimes times) {
         Map<List<String>, OptionalLong> known = new HashMap<>();
-        return (from, to) -> known.computeIfAbsent(List.of(from, to), ends -> times.ticks(from, to));
+        return (from, to, tag) -> known.computeIfAbsent(List.of(from, to, tag), ends -> times.ticks(from, to, tag));
     }
 
     /** The least that any of {@code times} says, between each two stations: the fastest of them; empty where none knows. */
     static RunTimes fastest(List<RunTimes> times) {
         List<RunTimes> each = List.copyOf(times);
-        return (from, to) -> each.stream().map(one -> one.ticks(from, to)).filter(OptionalLong::isPresent)
+        return (from, to, tag) -> each.stream().map(one -> one.ticks(from, to, tag)).filter(OptionalLong::isPresent)
             .mapToLong(OptionalLong::getAsLong).min();
     }
 }

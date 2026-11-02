@@ -4,8 +4,10 @@ import io.github.eyunya11.createrealtimeschedule.Createrealtimeschedule;
 import io.github.eyunya11.createrealtimeschedule.client.ClientClock;
 import io.github.eyunya11.createrealtimeschedule.client.ClipboardClient;
 import io.github.eyunya11.createrealtimeschedule.client.DiagramClient;
+import io.github.eyunya11.createrealtimeschedule.client.TrackTagClient;
 import io.github.eyunya11.createrealtimeschedule.command.ClipboardService;
 import io.github.eyunya11.createrealtimeschedule.diagram.DiagramService;
+import io.github.eyunya11.createrealtimeschedule.tag.TrackTagService;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
@@ -18,11 +20,12 @@ public final class ModNetwork {
      * leaves out, and 5 since the timetable in the diagram's payload may be of version 5 (the trains a
      * stop waits for), which a client of before cannot read: it would show the diagram as of no
      * timetable, where this keeps it off the server with a message saying why. 6 since a duty's times
-     * in the diagram's payload carry the stations it ran through, 7 since the timetable may be of
-     * version 6 (the types' colours and the stops that change a train's type), and 8 since it may be of
-     * version 7 (the tracks a map shows and hides).
+     * in the diagram's payload carry the stations it ran through, and 7 since the timetable may be of
+     * version 6 (the types' colours and the stops that change a train's type), 8 since the track
+     * tags' payloads came in, 9 since the timetable may be of version 7 (the track tags trains run
+     * on), and 10 since it may be of version 8 (the tracks a map shows and hides).
      */
-    private static final String PROTOCOL_VERSION = "8";
+    private static final String PROTOCOL_VERSION = "10";
 
     private ModNetwork() {}
 
@@ -31,7 +34,7 @@ public final class ModNetwork {
         // Not optional: the real_time_of_day condition is saved in schedules and sent to clients, and a
         // client that does not know it cannot read the schedules that hold it. Leaving the channel
         // required keeps a client without this mod off a server that has it, with a message saying why.
-        // The client handlers of the diagram and the clipboard are lambdas, so that the classes they
+        // The client handlers of the diagram, the clipboard and the tags are lambdas, so that the classes they
         // call, which use client classes, are loaded only when a payload comes, which is never on a
         // dedicated server.
         event.registrar(PROTOCOL_VERSION)
@@ -42,6 +45,9 @@ public final class ModNetwork {
             .playToServer(DiagramRequestPayload.TYPE, DiagramRequestPayload.STREAM_CODEC, DiagramService::onRequest)
             .playToServer(ClipboardRequestPayload.TYPE, ClipboardRequestPayload.STREAM_CODEC, ClipboardService::onRequest)
             .playToClient(ClipboardPayload.TYPE, ClipboardPayload.STREAM_CODEC, (payload, context) -> ClipboardClient.onClipboard(payload))
-            .playToServer(TimetablePastePayload.TYPE, TimetablePastePayload.STREAM_CODEC, ClipboardService::onPaste);
+            .playToServer(TimetablePastePayload.TYPE, TimetablePastePayload.STREAM_CODEC, ClipboardService::onPaste)
+            .playToClient(TrackTagListPayload.TYPE, TrackTagListPayload.STREAM_CODEC, (payload, context) -> TrackTagClient.onList(payload))
+            .playToClient(TrackTagOpenPayload.TYPE, TrackTagOpenPayload.STREAM_CODEC, (payload, context) -> TrackTagClient.onOpen(payload))
+            .playToServer(TrackTagEditPayload.TYPE, TrackTagEditPayload.STREAM_CODEC, TrackTagService::onEdit);
     }
 }

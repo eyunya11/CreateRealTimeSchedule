@@ -1,8 +1,8 @@
 {
-  "about": "The map (version 7): a track a line adds twice, one it both adds and takes away, a key that is no key, and a track the timetable hides twice.",
+  "about": "The map (version 8): a track a line adds twice, one it both adds and takes away, a key that is no key, and a track the timetable hides twice.",
   "timetable": {
     "format": "createrealtimeschedule.timetable",
-    "version": 7,
+    "version": 8,
     "name": "",
     "lines": [
       {

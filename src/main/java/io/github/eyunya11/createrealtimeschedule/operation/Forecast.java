@@ -34,11 +34,14 @@ public final class Forecast {
         return leaves;
     }
 
-    /** The ticks a set takes from call {@code from} to the next: the track's least, or else the timetable's. */
+    /**
+     * The ticks a set takes from call {@code from} to the next, on the track tag it leaves on: the
+     * track's least, or else the timetable's.
+     */
     public static long runTicks(List<Call> calls, int from, RunTimes times) {
         Call leaving = calls.get(from);
         Call coming = calls.get(from + 1);
-        OptionalLong track = times.ticks(leaving.station(), coming.station());
+        OptionalLong track = times.ticks(leaving.station(), coming.station(), leaving.tag());
         if (track.isPresent())
             return track.getAsLong();
         return plannedRunTicks(calls, from);

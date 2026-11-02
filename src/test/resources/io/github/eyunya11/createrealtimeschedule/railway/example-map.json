@@ -1,12 +1,32 @@
 {
   "format": "createrealtimeschedule.network",
-  "version": 3,
+  "version": 4,
   "train": {"topSpeed": 28, "turnSpeed": 14, "acceleration": 3, "throttle": 1},
   "stations": ["Alpha", "Beta", "Gamma"],
+  "tags": [],
+  "tagProblems": [],
+  "platforms": [{"station": "Alpha"}, {"station": "Beta"}, {"station": "Gamma"}],
   "legs": [
     {"from": "Alpha", "to": "Beta", "distance": 20, "ticks": 96, "tracks": [0]},
     {"from": "Alpha", "to": "Gamma", "distance": 40, "via": ["Beta"], "ticks": 133, "tracks": [0]},
-    {"from": "Beta", "to": "Gamma", "distance": 20, "ticks": 96, "tracks": [0]}
+    {"from": "Beta", "to": "Gamma", "distance": 20, "ticks": 96, "tracks": [0]},
+    {"from": "Alpha", "to": "Beta", "otherTag": true, "distance": 20, "ticks": 96, "tracks": [0]},
+    {
+      "from": "Alpha",
+      "to": "Gamma",
+      "otherTag": true,
+      "distance": 40,
+      "via": ["Beta"],
+      "ticks": 133,
+      "tracks": [0]
+    },
+    {"from": "Beta", "to": "Gamma", "otherTag": true, "distance": 20, "ticks": 96, "tracks": [0]}
+  ],
+  "ways": [
+    {"from": 0, "to": {"Beta": 1, "Gamma": 2}},
+    {"from": 1, "to": {"Gamma": 2}},
+    {"from": 0, "otherTag": true, "to": {"Beta": 1, "Gamma": 2}},
+    {"from": 1, "otherTag": true, "to": {"Gamma": 2}}
   ],
   "map": {
     "dimensions": ["minecraft:overworld"],

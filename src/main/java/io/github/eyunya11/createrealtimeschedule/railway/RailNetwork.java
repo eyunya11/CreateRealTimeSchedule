@@ -3,10 +3,12 @@ package io.github.eyunya11.createrealtimeschedule.railway;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalInt;
 import java.util.Set;
 
 import org.jetbrains.annotations.Nullable;
@@ -98,6 +100,22 @@ public final class RailNetwork {
     }
 
     /**
+     * A track tag block's point on the track (see {@link TagSections}).
+     *
+     * @param edge   the index of the edge it faces along: its section runs on the way this edge runs
+     * @param offset its distance from the start of that edge
+     * @param tags   the ids of its tags, none for a block that only ends a section
+     * @param oneWay whether it is a one-way block, whose tags hold only for trains running the way it faces
+     * @param block  where the block is, to tell the player which one is meant
+     */
+    public record Marker(int edge, double offset, List<Integer> tags, boolean oneWay, Place block) {
+
+        public Marker {
+            tags = List.copyOf(tags);
+        }
+    }
+
+    /**
      * A point on an edge that weighs a way through it (see {@link RouteSearch}).
      *
      * @param position its distance from the start of the edge
@@ -129,6 +147,17 @@ public final class RailNetwork {
         }
     }
 
+    /**
+     * Where a train standing at one station goes when it is sent to a name: to the first station of
+     * that name its search comes to (see {@link #ways}).
+     *
+     * @param from    the index of the station it stands at
+     * @param to      the name it is sent to
+     * @param station the index of the station of that name it comes to
+     */
+    public record Way(int from, String to, int station) {
+    }
+
     private static final double EPSILON = 1e-9;
 
     /**
@@ -145,10 +174,13 @@ public final class RailNetwork {
     private final List<Station> stations;
     /** Where each node is, by its number; empty if not known. */
     private final List<Place> places;
+    private final List<Marker> markers;
     /** For every edge, the indexes of its stations by offset. */
     private final List<List<Integer>> stationsOn = new ArrayList<>();
     /** For every edge, the points on it that the search looks at, in order. */
     private final List<List<RouteSearch.Item>> items = new ArrayList<>();
+    /** The sections of the track tag blocks, worked out the first time they are wanted. */
+    private @Nullable TagSections tagSections;
 
     /**
      * @throws IllegalArgumentException if an index is out of range, a length is negative, or a station
@@ -163,9 +195,15 @@ public final class RailNetwork {
      * that a search can estimate the way left as Create's does.
      */
     public RailNetwork(List<Edge> edges, List<Station> stations, List<Place> places) {
+        this(edges, stations, places, List.of());
+    }
+
+    /** A network with track tag blocks on it. */
+    public RailNetwork(List<Edge> edges, List<Station> stations, List<Place> places, List<Marker> markers) {
         this.edges = List.copyOf(edges);
         this.stations = List.copyOf(stations);
         this.places = List.copyOf(places);
+        this.markers = List.copyOf(markers);
         for (int i = 0; i < this.edges.size(); i++) {
             Edge edge = this.edges.get(i);
             if (!(edge.length() >= 0))
@@ -194,6 +232,13 @@ public final class RailNetwork {
                 throw new IllegalArgumentException("station " + i + " is at " + station.offset() + ", outside its edge");
             stationsOn.get(station.edge()).add(i);
         }
+        for (int i = 0; i < this.markers.size(); i++) {
+            Marker marker = this.markers.get(i);
+            if (marker.edge() < 0 || marker.edge() >= this.edges.size())
+                throw new IllegalArgumentException("tag block " + i + " is on edge " + marker.edge() + ", which is not there");
+            if (!(marker.offset() >= 0 && marker.offset() <= this.edges.get(marker.edge()).length()))
+                throw new IllegalArgumentException("tag block " + i + " is at " + marker.offset() + ", outside its edge");
+        }
         for (List<Integer> onEdge : stationsOn)
             onEdge.sort(Comparator.comparingDouble((Integer i) -> this.stations.get(i).offset()).thenComparingInt(i -> i));
         for (int i = 0; i < this.edges.size(); i++)
@@ -206,6 +251,18 @@ public final class RailNetwork {
 
     public List<Station> stations() {
         return stations;
+    }
+
+    /** The track tag blocks on the network. */
+    public List<Marker> markers() {
+        return markers;
+    }
+
+    /** The sections of the track tag blocks on the network. */
+    public TagSections tagSections() {
+        if (tagSections == null)
+            tagSections = TagSections.of(this);
+        return tagSections;
     }
 
     /** Where the node numbered {@code node} is, or null if that is not known. */
@@ -255,35 +312,95 @@ public final class RailNetwork {
      * the leg.
      */
     public List<Leg> legs(Collection<String> among) {
+        return legs(among, OptionalInt.empty());
+    }
+
+    /**
+     * The legs of {@link #legs(Collection)} for a train held to the track tag {@code tag}, if any
+     * ({@link RouteSearch}); see {@link #routes}.
+     */
+    public List<Leg> legs(Collection<String> among, OptionalInt tag) {
+        return routes(among, tag).legs();
+    }
+
+    /** The ways of {@link #routes}: where a train held to {@code tag}, if any, comes to from each station. */
+    public List<Way> ways(Collection<String> among, OptionalInt tag) {
+        return routes(among, tag).ways();
+    }
+
+    /**
+     * The legs and the ways between the stations of the given names, for a train held to the track tag
+     * {@code tag}, if any, from one search from each station.
+     *
+     * @param legs the legs, as {@link #legs(Collection)} has them. For a train held to a tag, a leg is
+     *             timed from the stations of its first name where the track is open to the tag, where
+     *             any of them has a way to the other name: a train of the tag may leave a section
+     *             without its tag that it stands in, but would not be standing there. From the others
+     *             only where none of those has a way, as a set that came there on another tag
+     * @param ways where a train standing at each station goes when it is sent to each other name: to
+     *             the station it comes to, by the station it starts from and then by the order of
+     *             {@link #names()}. A name it cannot get to from a station has no way
+     */
+    public record Routes(List<Leg> legs, List<Way> ways) {
+        public Routes {
+            legs = List.copyOf(legs);
+            ways = List.copyOf(ways);
+        }
+    }
+
+    /** See {@link Routes}. */
+    public Routes routes(Collection<String> among, OptionalInt tag) {
         Set<String> wanted = Set.copyOf(among);
+        List<String> names = names();
         Map<List<String>, Leg> best = new LinkedHashMap<>();
+        Set<List<String>> bestOpen = new HashSet<>();
+        List<Way> ways = new ArrayList<>();
         for (int i = 0; i < stations.size(); i++) {
             int source = i;
             Station start = stations.get(source);
             if (!wanted.contains(start.name()))
                 continue;
-            int own = platformOf(source);
-            RouteSearch.Weights weights = new RouteSearch.Weights() {
-                @Override
-                public RouteSearch.Presence presence(int platform) {
-                    return platform == own ? RouteSearch.Presence.OWN : RouteSearch.Presence.NONE;
-                }
-            };
-            Map<String, RouteSearch.Route> routes = RouteSearch.toEveryName(this, new RouteSearch.Start(start.edge(), start.offset()),
-                station -> station != source && wanted.contains(stations.get(station).name())
-                    && !stations.get(station).name().equals(start.name()),
-                weights);
-            for (RouteSearch.Route route : routes.values()) {
+            boolean open = opensTo(source, tag);
+            List<Way> from = new ArrayList<>();
+            for (RouteSearch.Route route : routesFrom(source, wanted, tag).values()) {
+                from.add(new Way(source, stations.get(route.station()).name(), route.station()));
                 List<String> key = List.of(start.name(), stations.get(route.station()).name());
                 Leg known = best.get(key);
-                if (known == null || route.distance() < known.distance())
+                boolean knownOpen = bestOpen.contains(key);
+                if (known == null || open && !knownOpen || open == knownOpen && route.distance() < known.distance()) {
                     best.put(key, leg(source, route));
+                    if (open)
+                        bestOpen.add(key);
+                }
             }
+            from.sort(Comparator.comparingInt(way -> names.indexOf(way.to())));
+            ways.addAll(from);
         }
-        List<String> names = names();
         List<Leg> legs = new ArrayList<>(best.values());
         legs.sort(Comparator.<Leg>comparingInt(leg -> names.indexOf(leg.from())).thenComparingInt(leg -> names.indexOf(leg.to())));
-        return legs;
+        return new Routes(legs, ways);
+    }
+
+    /** Whether the track at station {@code station} is open to a train held to {@code tag}, if any. */
+    private boolean opensTo(int station, OptionalInt tag) {
+        Station s = stations.get(station);
+        return tag.isEmpty() || tagSections().allows(s.edge(), s.offset(), tag.getAsInt());
+    }
+
+    /** The way from station {@code source} to each other name of {@code wanted}, weighing only what the track says. */
+    private Map<String, RouteSearch.Route> routesFrom(int source, Set<String> wanted, OptionalInt tag) {
+        Station start = stations.get(source);
+        int own = platformOf(source);
+        RouteSearch.Weights weights = new RouteSearch.Weights() {
+            @Override
+            public RouteSearch.Presence presence(int platform) {
+                return platform == own ? RouteSearch.Presence.OWN : RouteSearch.Presence.NONE;
+            }
+        };
+        return RouteSearch.toEveryName(this, new RouteSearch.Start(start.edge(), start.offset()),
+            station -> station != source && wanted.contains(stations.get(station).name())
+                && !stations.get(station).name().equals(start.name()),
+            weights, tag);
     }
 
     /** The leg of {@code route}, from station {@code source}: its curves, the stations it passes and the signs it meets. */

@@ -16,6 +16,7 @@ import io.github.eyunya11.createrealtimeschedule.clock.RealClock;
 import io.github.eyunya11.createrealtimeschedule.operation.Recovery.Hold;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Stop;
+import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Train;
 
 /** The laps of {@link OperationTimetables#laps}, 10 minutes the threshold, 20 seconds the server's minimum stop. */
 class RecoveryTest {
@@ -41,22 +42,27 @@ class RecoveryTest {
         }
 
         @Override
-        public OptionalLong ticks(String from, String to) {
-            return times.ticks(from, to);
+        public OptionalLong ticks(String from, String to, String tag) {
+            return times.ticks(from, to, tag);
         }
 
         @Override
-        public int platforms(String station) {
+        public int platforms(String station, String tag) {
             return platforms;
         }
 
         @Override
-        public int standing(String station) {
+        public int standing(String station, String tag) {
             return standing;
         }
 
         @Override
-        public OptionalLong ticksTo(String station) {
+        public boolean shares(String station, String tag, String other) {
+            return true;
+        }
+
+        @Override
+        public OptionalLong ticksTo(String station, String tag) {
             return onward;
         }
     }
@@ -85,7 +91,7 @@ class RecoveryTest {
         // A and B have a minimum stop of 2 minutes, all the time they stand, and the track takes 14
         // minutes, a minute more than the timetable: the set loses time on the way, and makes none up.
         Timetable timetable = OperationTimetables.laps(120, List.of(), List.of(), List.of());
-        RunTimes slow = (from, to) -> OptionalLong.of(840 * SECOND);
+        RunTimes slow = (from, to, tag) -> OptionalLong.of(840 * SECOND);
         Around slowTrack = new Around(slow, 1, 0, OptionalLong.of(840 * SECOND));
         assertEquals(Optional.empty(), onArrival(timetable, at("08:08"), slowTrack), "it leaves at 08:10, 10 minutes late");
         assertEquals(Optional.of(new Hold(3, at("08:30"), List.of("1", "2"), List.of())), onArrival(timetable, at("08:08") + 1, slowTrack),
@@ -144,6 +150,73 @@ class RecoveryTest {
         assertEquals(Optional.empty(), onArrival(timetable, at("08:25"), new Around(2, 1, OptionalLong.of(720 * SECOND))),
             "and a train stands there already");
         assertTrue(onArrival(timetable, at("08:25"), new Around(3, 1, OptionalLong.of(720 * SECOND))).isPresent());
+    }
+
+    /**
+     * A, with two platforms: one open to the local's tag, and one only to the express's; trains of the
+     * same tag or of none could take the same platform. No train stands there, and the way on takes 12 minutes.
+     */
+    private static final Reach TAGGED = new Reach() {
+        @Override
+        public OptionalLong ticks(String from, String to, String tag) {
+            return ForecastTest.TRACK.ticks(from, to, tag);
+        }
+
+        @Override
+        public int platforms(String station, String tag) {
+            return tag.equals("local") ? 1 : 2;
+        }
+
+        @Override
+        public int standing(String station, String tag) {
+            return 0;
+        }
+
+        @Override
+        public boolean shares(String station, String tag, String other) {
+            return tag.isEmpty() || other.isEmpty() || tag.equals(other);
+        }
+
+        @Override
+        public OptionalLong ticksTo(String station, String tag) {
+            return OptionalLong.of(720 * SECOND);
+        }
+    };
+
+    /**
+     * The set of 1A comes to A on the local's tag (D1), so it can stand at the one platform open to it
+     * only, which 3A's set needs too if it comes on the local's tag as well, but not if it comes on the
+     * express's.
+     */
+    @Test
+    void aSetCountsOnlyThePlatformsOpenToTheTagItCameOnAndTheTrainsThatCouldTakeThem() {
+        Timetable express = withTag(withTag(StationUseTest.withSetStandingAtA(), "D1", "local"), "S1", "express");
+        assertTrue(onArrival(express, at("08:25"), TAGGED).isPresent(), "3A's set comes on the express's tag, to the other platform");
+        Timetable local = withTag(withTag(StationUseTest.withSetStandingAtA(), "D1", "local"), "S1", "local");
+        assertEquals(Optional.empty(), onArrival(local, at("08:25"), TAGGED), "3A's set comes on the local's tag, to the one platform");
+        Timetable untagged = StationUseTest.withSetStandingAtA();
+        assertTrue(onArrival(untagged, at("08:25"), TAGGED).isPresent(), "a set of no tag has both platforms");
+    }
+
+    /**
+     * The express runs through A on the express's tag while the set of 1A, come in on the local's, would
+     * stand there: it cannot run through the one platform open to the local, so the set is held.
+     */
+    @Test
+    void aTrainRunningThroughOnATagThatCannotTakeTheSetsPlatformDoesNotStopItBeingHeld() {
+        Timetable express = withTag(withTag(StationUseTest.withExpress("08:20"), "D1", "local"), "E1", "express");
+        assertTrue(onArrival(express, at("08:25"), TAGGED).isPresent());
+        Timetable local = withTag(withTag(StationUseTest.withExpress("08:20"), "D1", "local"), "E1", "local");
+        assertEquals(Optional.empty(), onArrival(local, at("08:25"), TAGGED), "on the local's tag, it could run through the set's platform");
+        Timetable untagged = withTag(StationUseTest.withExpress("08:20"), "D1", "local");
+        assertEquals(Optional.empty(), onArrival(untagged, at("08:25"), TAGGED), "nor may a train of no tag");
+    }
+
+    /** {@code timetable} with the train {@code number} held to the track tag {@code tag}. */
+    private static Timetable withTag(Timetable timetable, String number, String tag) {
+        List<Train> trains = timetable.trains().stream().map(train -> !train.number().equals(number) ? train
+            : new Train(train.number(), train.line(), train.type(), train.stops(), train.deadhead(), train.keep(), tag)).toList();
+        return new Timetable(timetable.name(), timetable.lines(), timetable.stations(), timetable.types(), trains, timetable.duties());
     }
 
     @Test

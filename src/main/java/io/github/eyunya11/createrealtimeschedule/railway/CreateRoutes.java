@@ -8,6 +8,7 @@ import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalInt;
 import java.util.Set;
 import java.util.UUID;
 
@@ -128,13 +129,39 @@ public final class CreateRoutes {
      * finds it with no cap on the cost; null if there is none, or the train is on no graph.
      */
     public static @Nullable DiscoveredPath pathTo(Train train, List<GlobalStation> stations) {
+        return pathTo(train, stations, OptionalInt.empty());
+    }
+
+    /**
+     * {@link #pathTo(Train, List)} for a train held to the track tag of id {@code tag}, if any, which
+     * Create's search knows nothing of ({@link RouteSearch}).
+     */
+    public static @Nullable DiscoveredPath pathTo(Train train, List<GlobalStation> stations, OptionalInt tag) {
         TrackGraph graph = train.graph;
         if (graph == null || stations.isEmpty())
             return null;
-        Found found = find(train, stations, mapped(graph, false));
+        Found found = find(train, stations, mapped(graph, false), tag);
         if (found.stale())
-            found = find(train, stations, mapped(graph, true));
+            found = find(train, stations, mapped(graph, true), tag);
         return found.path();
+    }
+
+    /**
+     * The stations named {@code station} on {@code graph}, as it is now, that a train held to the track
+     * tag of id {@code tag} can stand at: those where the track is open to it ({@link TagSections#allows});
+     * all of them for no tag.
+     */
+    public static List<GlobalStation> platformsOpenTo(TrackGraph graph, String station, OptionalInt tag) {
+        Mapped mapped = mapped(graph, false);
+        RailNetwork network = mapped.network();
+        Set<GlobalStation> found = Collections.newSetFromMap(new IdentityHashMap<>());
+        for (RailNetwork.Station each : network.stations()) {
+            GlobalStation platform = platform(mapped, each.platform());
+            if (platform != null && each.name().equals(station)
+                && (tag.isEmpty() || network.tagSections().allows(each.edge(), each.offset(), tag.getAsInt())))
+                found.add(platform);
+        }
+        return new ArrayList<>(found);
     }
 
     /**
@@ -145,7 +172,7 @@ public final class CreateRoutes {
      */
     private record Found(@Nullable DiscoveredPath path, boolean stale) {}
 
-    private static Found find(Train train, List<GlobalStation> stations, Mapped mapped) {
+    private static Found find(Train train, List<GlobalStation> stations, Mapped mapped, OptionalInt tag) {
         TrackGraph graph = train.graph;
         if (!knows(train, mapped, true) || !knows(train, mapped, false))
             return new Found(null, true);
@@ -163,7 +190,7 @@ public final class CreateRoutes {
         boolean canDriveForward = train.hasForwardConductor() || train.runtime.paused;
         boolean canDriveBackward = train.doubleEnded && train.hasBackwardConductor() || train.runtime.paused;
         Route route = RouteSearch.find(network, front, back, canDriveForward, canDriveBackward,
-            station -> wanted.contains(platform(mapped, network.stations().get(station).platform())), live);
+            station -> wanted.contains(platform(mapped, network.stations().get(station).platform())), live, tag);
         if (route == null)
             return new Found(null, false);
         for (int edge : route.edges())

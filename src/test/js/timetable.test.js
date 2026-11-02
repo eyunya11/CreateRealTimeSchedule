@@ -67,10 +67,10 @@ test('a timetable not of the right shape is not read', () => {
 });
 
 test('a newer version is not read, and says the editor needs updating', () => {
-  const result = timetable.read('{"format": "createrealtimeschedule.timetable", "version": 8, "whatever": 1}');
+  const result = timetable.read('{"format": "createrealtimeschedule.timetable", "version": 9, "whatever": 1}');
   assert.equal(result.timetable, null);
   assert.deepEqual(result.problems,
-    ['version: is 8, but this editor reads timetables up to version 7; the editor needs updating to read this one']);
+    ['version: is 9, but this editor reads timetables up to version 8; the editor needs updating to read this one']);
 });
 
 test('the types\' colours and the stops that change a train\'s type are read and written back as the mod writes them, as version 6', () => {
@@ -88,7 +88,7 @@ test('the types\' colours and the stops that change a train\'s type are read and
   assert.equal(timetable.version(waits), 6, 'a stop that changes the type is version 6');
 });
 
-test('the tracks a map shows and hides are read and written back as the mod writes them, as version 7', () => {
+test('the tracks a map shows and hides are read and written back as the mod writes them, as version 8', () => {
   const text = readText(path.join(RESOURCES, 'timetable', 'example-map.json'));
   const result = timetable.read(text);
   assert.deepEqual(result.problems, []);
@@ -96,13 +96,32 @@ test('the tracks a map shows and hides are read and written back as the mod writ
   assert.deepEqual(line.mapAdd, ['minecraft:overworld 60.5,2,3.5 70.5,2,13.5']);
   assert.deepEqual(line.mapRemove, ['minecraft:overworld 0.5,2,3.5 60.5,2,3.5']);
   assert.deepEqual(result.timetable.mapHidden, ['minecraft:overworld 60.5,2,3.5 70.5,2,13.5']);
-  assert.equal(timetable.version(result.timetable), 7);
+  assert.equal(timetable.version(result.timetable), 8);
   assert.equal(timetable.write(result.timetable), text);
   line.mapAdd = [];
   line.mapRemove = [];
   result.timetable.mapHidden = [];
-  assert.equal(timetable.version(result.timetable), 2, 'a timetable that shows and hides no track is no version 7');
+  assert.equal(timetable.version(result.timetable), 2, 'a timetable that shows and hides no track is no version 8');
   assert.ok(!timetable.write(result.timetable).includes('map_'), 'a timetable that shows and hides no track says nothing of the map');
+});
+
+test('the track tags of trains and stops are read and written back as the mod writes them, as version 7', () => {
+  const text = readText(path.join(RESOURCES, 'timetable', 'example-tags.json'));
+  const result = timetable.read(text);
+  assert.deepEqual(result.problems, []);
+  const local = result.timetable.trains[0];
+  assert.equal(local.tag, 'local');
+  assert.equal(local.stops[1].tag, 'main');
+  assert.equal('tag' in local.stops[0], false, 'a stop with no tag of its own has none');
+  assert.equal('tag' in result.timetable.trains[1], false, 'a train with no tag has none');
+  assert.deepEqual([0, 1].map(k => timetable.tagAt(local, k)), ['local', 'main'], 'a stop\'s tag holds for the way on from it only');
+  assert.equal(timetable.tagAt(result.timetable.trains[1], 0), 'express');
+  assert.equal(timetable.version(result.timetable), 7);
+  assert.equal(timetable.write(result.timetable), text);
+  const types = timetable.read(readText(path.join(RESOURCES, 'timetable', 'example-types.json'))).timetable;
+  assert.equal(timetable.version(types), 6, 'a timetable with no tags is no version 7');
+  types.trains[0].tag = 'local';
+  assert.equal(timetable.version(types), 7, 'a train with a tag is version 7');
 });
 
 test('a train has its own type until a stop changes it, and on from there', () => {
