@@ -1,10 +1,13 @@
 package io.github.eyunya11.createrealtimeschedule.operation;
 
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
+import java.util.Set;
 
 import com.simibubi.create.Create;
 import com.simibubi.create.content.trains.entity.Train;
@@ -12,7 +15,9 @@ import com.simibubi.create.content.trains.graph.DiscoveredPath;
 import com.simibubi.create.content.trains.graph.EdgePointType;
 import com.simibubi.create.content.trains.station.GlobalStation;
 
+import io.github.eyunya11.createrealtimeschedule.railway.CreateRoutes;
 import io.github.eyunya11.createrealtimeschedule.railway.Leg;
+import io.github.eyunya11.createrealtimeschedule.tag.TrackTagData;
 import io.github.eyunya11.createrealtimeschedule.travel.TrainSpec;
 import io.github.eyunya11.createrealtimeschedule.travel.TrainSpecs;
 import io.github.eyunya11.createrealtimeschedule.travel.TravelTime;
@@ -54,9 +59,11 @@ public final class CreateReach implements Reach {
     }
 
     @Override
-    public int platforms(String station) {
+    public int platforms(String station, String tag) {
         if (train.graph == null)
             return 0;
+        if (!tag.isEmpty())
+            return open(station, tag).size();
         int platforms = 0;
         for (GlobalStation each : train.graph.getPoints(EdgePointType.STATION))
             if (station.equals(each.name))
@@ -65,16 +72,32 @@ public final class CreateReach implements Reach {
     }
 
     @Override
-    public int standing(String station) {
+    public int standing(String station, String tag) {
+        Set<GlobalStation> open = tag.isEmpty() || train.graph == null ? null : open(station, tag);
         int standing = 0;
         for (Train other : Create.RAILWAYS.trains.values()) {
             if (other == train || other.graph != train.graph)
                 continue;
             GlobalStation at = other.getCurrentStation();
-            if (at != null && station.equals(at.name))
+            if (at != null && station.equals(at.name) && (open == null || open.contains(at)))
                 standing++;
         }
         return standing;
+    }
+
+    @Override
+    public boolean shares(String station, String tag, String other) {
+        if (tag.isEmpty() || other.isEmpty() || tag.equals(other) || train.graph == null)
+            return true;
+        Set<GlobalStation> theirs = open(station, other);
+        return open(station, tag).stream().anyMatch(theirs::contains);
+    }
+
+    /** The stations of the name on the set's track network that are open to the track tag {@code tag}. */
+    private Set<GlobalStation> open(String station, String tag) {
+        Set<GlobalStation> found = Collections.newSetFromMap(new IdentityHashMap<>());
+        found.addAll(CreateRoutes.platformsOpenTo(train.graph, station, TrackTagData.held(tag)));
+        return found;
     }
 
     /**

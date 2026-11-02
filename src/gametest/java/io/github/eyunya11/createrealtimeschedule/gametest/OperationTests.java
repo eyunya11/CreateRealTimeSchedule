@@ -9,6 +9,7 @@ import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.Set;
 import java.util.UUID;
 
@@ -18,6 +19,7 @@ import org.slf4j.Logger;
 import com.mojang.logging.LogUtils;
 import com.simibubi.create.Create;
 import com.simibubi.create.content.trains.entity.Train;
+import com.simibubi.create.content.trains.graph.TrackGraph;
 import com.simibubi.create.content.trains.station.GlobalStation;
 
 import io.github.eyunya11.createrealtimeschedule.Createrealtimeschedule;
@@ -34,6 +36,8 @@ import io.github.eyunya11.createrealtimeschedule.operation.OperationService;
 import io.github.eyunya11.createrealtimeschedule.operation.TagWays;
 import io.github.eyunya11.createrealtimeschedule.operation.TrackFacts;
 import io.github.eyunya11.createrealtimeschedule.operation.TrainDriver;
+import io.github.eyunya11.createrealtimeschedule.railway.CreateRoutes;
+import io.github.eyunya11.createrealtimeschedule.tag.TrackTagData;
 import io.github.eyunya11.createrealtimeschedule.timetable.ServiceTime;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable;
 import io.github.eyunya11.createrealtimeschedule.timetable.TimetableJson;
@@ -818,6 +822,15 @@ public class OperationTests {
                 TrackFacts.legs(data, timetable);
                 helper.assertValueEqual(List.of(new TagWays.NoWay("E", 0, "Dx", "B", nowhere)), data.noWays(), "the ways with none");
                 helper.assertValueEqual(List.of(nowhere), data.unknownTags(), "the tags the world has none of");
+                // The platforms of A a set of each tag can stand at, as the recovery counts them.
+                TrackGraph graph = line.train().graph;
+                helper.assertValueEqual(List.of(line.station(2)), CreateRoutes.platformsOpenTo(graph, "A", TrackTagData.held(line.madeTag(0))),
+                    "the platforms of A open to the express's tag");
+                helper.assertValueEqual(List.of(line.station(3)), CreateRoutes.platformsOpenTo(graph, "A", TrackTagData.held(line.madeTag(1))),
+                    "the platforms of A open to the local's tag");
+                helper.assertValueEqual(List.of(), CreateRoutes.platformsOpenTo(graph, "A", TrackTagData.held(nowhere)),
+                    "the platforms of A open to a tag no section has");
+                helper.assertValueEqual(2, CreateRoutes.platformsOpenTo(graph, "A", OptionalInt.empty()).size(), "the platforms of A for no tag");
                 return true;
             }
         }.begin();

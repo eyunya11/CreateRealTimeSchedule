@@ -118,6 +118,15 @@ class StationUseTest {
         return OperationTimetables.laps(Stop.NONE, List.of(), List.of(in, out), List.of(new Duty("3A", "Depot", List.of("S1", "S2"))));
     }
 
+    /** A set is counted only if it could take the platform, by the track tag of the way it comes in on. */
+    @Test
+    void onlyTheSetsThatCouldTakeThePlatformAreCounted() {
+        Map<String, List<Call>> calls = calls(withSetStandingAtA());
+        assertEquals(0, StationUse.mostStanding(calls, "1A", DAY, "A", at("08:25"), at("08:30"), at("08:25"), LEAD, tag -> false));
+        assertEquals(1, StationUse.mostStanding(calls, "1A", DAY, "A", at("08:25"), at("08:30"), at("08:25"), LEAD, String::isEmpty),
+            "3A's set comes on no tag");
+    }
+
     @Test
     void theSetsThatComeToStandAtTheStationMeanwhileAreCounted() {
         Map<String, List<Call>> calls = calls(withSetStandingAtA());

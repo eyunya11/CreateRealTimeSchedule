@@ -147,6 +147,24 @@ public final class CreateRoutes {
     }
 
     /**
+     * The stations named {@code station} on {@code graph}, as it is now, that a train held to the track
+     * tag of id {@code tag} can stand at: those where the track is open to it ({@link TagSections#allows});
+     * all of them for no tag.
+     */
+    public static List<GlobalStation> platformsOpenTo(TrackGraph graph, String station, OptionalInt tag) {
+        Mapped mapped = mapped(graph, false);
+        RailNetwork network = mapped.network();
+        Set<GlobalStation> found = Collections.newSetFromMap(new IdentityHashMap<>());
+        for (RailNetwork.Station each : network.stations()) {
+            GlobalStation platform = platform(mapped, each.platform());
+            if (platform != null && each.name().equals(station)
+                && (tag.isEmpty() || network.tagSections().allows(each.edge(), each.offset(), tag.getAsInt())))
+                found.add(platform);
+        }
+        return new ArrayList<>(found);
+    }
+
+    /**
      * What a search on one reading of the graph found.
      *
      * @param stale whether the reading turned out to be of track that has changed: the edge the train

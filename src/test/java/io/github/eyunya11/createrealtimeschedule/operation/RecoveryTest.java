@@ -16,6 +16,7 @@ import io.github.eyunya11.createrealtimeschedule.clock.RealClock;
 import io.github.eyunya11.createrealtimeschedule.operation.Recovery.Hold;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Stop;
+import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Train;
 
 /** The laps of {@link OperationTimetables#laps}, 10 minutes the threshold, 20 seconds the server's minimum stop. */
 class RecoveryTest {
@@ -46,13 +47,18 @@ class RecoveryTest {
         }
 
         @Override
-        public int platforms(String station) {
+        public int platforms(String station, String tag) {
             return platforms;
         }
 
         @Override
-        public int standing(String station) {
+        public int standing(String station, String tag) {
             return standing;
+        }
+
+        @Override
+        public boolean shares(String station, String tag, String other) {
+            return true;
         }
 
         @Override
@@ -144,6 +150,54 @@ class RecoveryTest {
         assertEquals(Optional.empty(), onArrival(timetable, at("08:25"), new Around(2, 1, OptionalLong.of(720 * SECOND))),
             "and a train stands there already");
         assertTrue(onArrival(timetable, at("08:25"), new Around(3, 1, OptionalLong.of(720 * SECOND))).isPresent());
+    }
+
+    /**
+     * A, with two platforms: one open to the local's tag, and one only to the express's. The set of 1A
+     * comes to A on the local's tag (D1), so it can stand at the one only, which 3A's set needs too if it
+     * comes on the local's tag as well, but not if it comes on the express's.
+     */
+    @Test
+    void aSetCountsOnlyThePlatformsOpenToTheTagItCameOnAndTheTrainsThatCouldTakeThem() {
+        Reach tagged = new Reach() {
+            @Override
+            public OptionalLong ticks(String from, String to, String tag) {
+                return ForecastTest.TRACK.ticks(from, to, tag);
+            }
+
+            @Override
+            public int platforms(String station, String tag) {
+                return tag.equals("local") ? 1 : 2;
+            }
+
+            @Override
+            public int standing(String station, String tag) {
+                return 0;
+            }
+
+            @Override
+            public boolean shares(String station, String tag, String other) {
+                return tag.isEmpty() || other.isEmpty() || tag.equals(other);
+            }
+
+            @Override
+            public OptionalLong ticksTo(String station, String tag) {
+                return OptionalLong.of(720 * SECOND);
+            }
+        };
+        Timetable express = withTag(withTag(StationUseTest.withSetStandingAtA(), "D1", "local"), "S1", "express");
+        assertTrue(onArrival(express, at("08:25"), tagged).isPresent(), "3A's set comes on the express's tag, to the other platform");
+        Timetable local = withTag(withTag(StationUseTest.withSetStandingAtA(), "D1", "local"), "S1", "local");
+        assertEquals(Optional.empty(), onArrival(local, at("08:25"), tagged), "3A's set comes on the local's tag, to the one platform");
+        Timetable untagged = StationUseTest.withSetStandingAtA();
+        assertTrue(onArrival(untagged, at("08:25"), tagged).isPresent(), "a set of no tag has both platforms");
+    }
+
+    /** {@code timetable} with the train {@code number} held to the track tag {@code tag}. */
+    private static Timetable withTag(Timetable timetable, String number, String tag) {
+        List<Train> trains = timetable.trains().stream().map(train -> !train.number().equals(number) ? train
+            : new Train(train.number(), train.line(), train.type(), train.stops(), train.deadhead(), train.keep(), tag)).toList();
+        return new Timetable(timetable.name(), timetable.lines(), timetable.stations(), timetable.types(), trains, timetable.duties());
     }
 
     @Test
