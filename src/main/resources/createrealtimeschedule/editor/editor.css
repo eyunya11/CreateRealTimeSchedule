@@ -350,6 +350,22 @@ label.check {
   stroke-width: 3;
 }
 
+/* A stretch with track tags, in a tag's colour (the stroke attribute); stripes for more than one. */
+#map .track.tagged {
+  stroke-width: 3;
+  stroke-linecap: butt;
+}
+
+/* A track tag's colour beside its name in the map's menu of tags. */
+.tag-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 4px;
+  border-radius: 2px;
+  vertical-align: middle;
+}
+
 #map .track.chosen {
   stroke: var(--accent);
   stroke-width: 5;

@@ -28,8 +28,9 @@
     // Times dragged or drawn land on the step, or on the fine step while Shift is held.
     settings: {
       language: i18n.guess(navigator.language), dwell: 20, snap: 15, fineSnap: 5,
-      // The diagram or the map, the lines whose track the map shows (none for all), and what it shows on it.
-      view: 'diagram', mapLines: [], mapLayers: {},
+      // The diagram or the map, the lines whose track the map shows (none for all), what it shows on it,
+      // and the track tags turned off ('' for no tag).
+      view: 'diagram', mapLines: [], mapLayers: {}, mapTagsOff: [],
     },
     undo: [],
     redo: [],
@@ -1036,6 +1037,8 @@
       }), line.name));
     $('map-lines-summary').textContent = chosen.size === 0 ? t('mapAllLines') : t('mapSomeLines', chosen.size);
 
+    renderMapTags();
+
     const layers = $('map-layers-list');
     layers.replaceChildren();
     for (const name of rt.map.LAYERS)
@@ -1052,6 +1055,44 @@
     const dimensions = map === null ? [] : map.dimensions;
     select.hidden = dimensions.length < 2;
     select.replaceChildren(...dimensions.map((name, i) => h('option', { value: String(i), selected: i === mapDimension }, name)));
+  }
+
+  /** The track tags turned off on the map, '' among them for no tag. */
+  function tagsOff() {
+    return Array.isArray(state.settings.mapTagsOff) ? state.settings.mapTagsOff : [];
+  }
+
+  /** The colour a track tag is drawn in: the one the world gave it, or the one its name picks. */
+  function tagColour(network, tag) {
+    const colours = network === null ? {} : network.tagColours || {};
+    return typeof colours[tag] === 'string' ? colours[tag] : rt.timetable.colourByName(tag);
+  }
+
+  /** The menu of the track tags to show: no tag, then the world's tags, each in its colour. */
+  function renderMapTags() {
+    const list = $('map-tags-list');
+    list.replaceChildren();
+    const network = state.network;
+    const tags = network === null ? [] : network.tags;
+    const off = new Set(tagsOff());
+    list.append(h('p', { class: 'note' }, tags.length === 0 ? t('mapNoTags') : t('mapTagsHelp')));
+    const toggle = (tag) => event => {
+      const next = new Set(tagsOff());
+      if (event.target.checked)
+        next.delete(tag);
+      else
+        next.add(tag);
+      state.settings.mapTagsOff = [...next];
+      render();
+    };
+    list.append(h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: !off.has(rt.map.NO_TAG), onchange: toggle(rt.map.NO_TAG) }),
+      t('mapNoTag')));
+    for (const tag of tags)
+      list.append(h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: !off.has(tag), onchange: toggle(tag) }),
+        h('span', { class: 'tag-swatch', style: 'background: ' + tagColour(network, tag) }), tag));
+    // A tag turned off that the world no longer has hides nothing, and is not counted.
+    const hidden = [...off].filter(tag => tag === rt.map.NO_TAG || tags.includes(tag)).length;
+    $('map-tags-summary').textContent = hidden === 0 ? t('mapAllTags') : t('mapSomeTagsOff', hidden);
   }
 
   /** The map's place for a world's point, in pixels. */
@@ -1092,28 +1133,33 @@
       if (track !== null && track.dimension === mapDimension)
         here.push(i);
     });
-    const on = (track) => shownTracks.has(track) && map.tracks[track].dimension === mapDimension;
+    // The stretches the tags turned off leave shown; a track the lines do not show is not shown at all.
+    const off = tagsOff();
+    const segments = rt.map.tagSegments(map.tracks, off);
+    const on = (track, x, z) => shownTracks.has(track) && map.tracks[track].dimension === mapDimension
+      && rt.map.shownAt(segments[track], rt.map.shareOf(map.tracks[track].points, x, z));
     svg.append(s('path', { class: 'track other', d: rt.map.pathData(map, here.filter(i => !shownTracks.has(i) && !hidden.has(keys[i])), mapView) }));
     svg.append(s('path', { class: 'track hidden', d: rt.map.pathData(map, here.filter(i => hidden.has(keys[i])), mapView) }));
-    svg.append(s('path', { class: 'track shown', d: rt.map.pathData(map, here.filter(i => shownTracks.has(i)), mapView) }));
+    renderMapSegments(svg, map, here.filter(i => shownTracks.has(i)), segments);
     if (mapTrack !== null && mapTrack < map.tracks.length && map.tracks[mapTrack].dimension === mapDimension)
       svg.append(s('path', { class: 'track chosen', d: rt.map.pathData(map, [mapTrack], mapView) }));
 
     if (layerOn('speedLimits'))
       for (const sign of map.speedLimits)
-        if (sign !== null && on(sign.track))
+        if (sign !== null && on(sign.track, sign.x, sign.z))
           svg.append(speedSign(sign));
     if (layerOn('signals'))
       for (const signal of map.signals)
-        if (signal !== null && on(signal.track))
+        if (signal !== null && on(signal.track, signal.x, signal.z))
           for (const side of signal.sides)
             if (side !== null)
               svg.append(signalHead(signal, side));
     if (layerOn('trains'))
       for (const train of map.trains) {
-        if (train === null)
+        if (train === null || !rt.map.trainShown(train.tags, off))
           continue;
-        const carriages = train.carriages.filter(carriage => carriage !== null && (on(carriage.tracks[0]) || on(carriage.tracks[1])));
+        const carriages = train.carriages.filter(carriage => carriage !== null
+          && (on(carriage.tracks[0], carriage.points[0], carriage.points[1]) || on(carriage.tracks[1], carriage.points[2], carriage.points[3])));
         if (carriages.length === 0)
           continue;
         const group = s('g', { class: 'map-train' });
@@ -1133,13 +1179,46 @@
       renderMapStations(svg, map, on);
   }
 
+  /**
+   * The tracks the lines show, a stretch at a time: one shown with tags in the colours of its tags on,
+   * in stripes for more than one; one shown with no tag as a track shown; and one the tags turned off
+   * do not show faint, as a track not shown, in no tag's colour.
+   */
+  function renderMapSegments(svg, map, tracks, segments) {
+    const faint = [];
+    const plain = [];
+    const striped = [];
+    for (const index of tracks)
+      for (const segment of segments[index]) {
+        const d = rt.map.piecePath(map.tracks[index], segment.from, segment.to, mapView);
+        if (!segment.shown)
+          faint.push(d);
+        else if (segment.tags.length === 0)
+          plain.push(d);
+        else
+          striped.push([d, segment.tags]);
+      }
+    svg.append(s('path', { class: 'track other', d: faint.join('') }));
+    svg.append(s('path', { class: 'track shown', d: plain.join('') }));
+    const dash = 8;
+    for (const [d, tags] of striped)
+      tags.forEach((tag, i) => {
+        const attributes = { class: 'track tagged', d, stroke: tagColour(state.network, tag) };
+        if (tags.length > 1) {
+          attributes['stroke-dasharray'] = dash + ' ' + dash * (tags.length - 1);
+          attributes['stroke-dashoffset'] = String(-dash * i);
+        }
+        svg.append(s('path', attributes));
+      });
+  }
+
   /** The stations: a dot for each marker, and the name once for the markers of a name, in the middle of them. */
   function renderMapStations(svg, map, on) {
     const line = currentLine();
     const ofLine = new Set(line === null ? [] : line.stations);
     const byName = new Map();
     for (const station of map.stations) {
-      if (station === null || !on(station.track))
+      if (station === null || !on(station.track, station.x, station.z))
         continue;
       if (layerOn('stations'))
         svg.append(s('circle', {
