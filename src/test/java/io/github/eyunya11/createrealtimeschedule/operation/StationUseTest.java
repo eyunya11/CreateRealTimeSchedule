@@ -54,6 +54,8 @@ class StationUseTest {
         assertFalse(StationUse.passedBy(timetable, calls, Map.of(), "1A", DAY, "B", at("08:00"), at("09:30")),
             "the express ends at B and starts there again; it does not run through it");
         assertFalse(StationUse.passedBy(timetable, calls, Map.of(), "1A", DAY, "A", at("10:00"), at("11:00")));
+        assertFalse(StationUse.passedBy(timetable, calls, Map.of(), "1A", DAY, "A", at("08:25"), at("08:30"), tag -> false),
+            "a train that could not run through the platform the set needs is no matter");
         // A train of the day before, or the day after, runs through on its own day only.
         assertFalse(StationUse.passedBy(timetable, calls, Map.of(), "1A", DAY, "A", at("08:25") + RealClock.TICKS_PER_DAY / 2,
             at("08:30") + RealClock.TICKS_PER_DAY / 2));

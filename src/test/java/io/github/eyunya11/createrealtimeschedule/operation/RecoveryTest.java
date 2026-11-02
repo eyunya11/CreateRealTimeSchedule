@@ -153,44 +153,63 @@ class RecoveryTest {
     }
 
     /**
-     * A, with two platforms: one open to the local's tag, and one only to the express's. The set of 1A
-     * comes to A on the local's tag (D1), so it can stand at the one only, which 3A's set needs too if it
-     * comes on the local's tag as well, but not if it comes on the express's.
+     * A, with two platforms: one open to the local's tag, and one only to the express's; trains of the
+     * same tag or of none could take the same platform. No train stands there, and the way on takes 12 minutes.
+     */
+    private static final Reach TAGGED = new Reach() {
+        @Override
+        public OptionalLong ticks(String from, String to, String tag) {
+            return ForecastTest.TRACK.ticks(from, to, tag);
+        }
+
+        @Override
+        public int platforms(String station, String tag) {
+            return tag.equals("local") ? 1 : 2;
+        }
+
+        @Override
+        public int standing(String station, String tag) {
+            return 0;
+        }
+
+        @Override
+        public boolean shares(String station, String tag, String other) {
+            return tag.isEmpty() || other.isEmpty() || tag.equals(other);
+        }
+
+        @Override
+        public OptionalLong ticksTo(String station, String tag) {
+            return OptionalLong.of(720 * SECOND);
+        }
+    };
+
+    /**
+     * The set of 1A comes to A on the local's tag (D1), so it can stand at the one platform open to it
+     * only, which 3A's set needs too if it comes on the local's tag as well, but not if it comes on the
+     * express's.
      */
     @Test
     void aSetCountsOnlyThePlatformsOpenToTheTagItCameOnAndTheTrainsThatCouldTakeThem() {
-        Reach tagged = new Reach() {
-            @Override
-            public OptionalLong ticks(String from, String to, String tag) {
-                return ForecastTest.TRACK.ticks(from, to, tag);
-            }
-
-            @Override
-            public int platforms(String station, String tag) {
-                return tag.equals("local") ? 1 : 2;
-            }
-
-            @Override
-            public int standing(String station, String tag) {
-                return 0;
-            }
-
-            @Override
-            public boolean shares(String station, String tag, String other) {
-                return tag.isEmpty() || other.isEmpty() || tag.equals(other);
-            }
-
-            @Override
-            public OptionalLong ticksTo(String station, String tag) {
-                return OptionalLong.of(720 * SECOND);
-            }
-        };
         Timetable express = withTag(withTag(StationUseTest.withSetStandingAtA(), "D1", "local"), "S1", "express");
-        assertTrue(onArrival(express, at("08:25"), tagged).isPresent(), "3A's set comes on the express's tag, to the other platform");
+        assertTrue(onArrival(express, at("08:25"), TAGGED).isPresent(), "3A's set comes on the express's tag, to the other platform");
         Timetable local = withTag(withTag(StationUseTest.withSetStandingAtA(), "D1", "local"), "S1", "local");
-        assertEquals(Optional.empty(), onArrival(local, at("08:25"), tagged), "3A's set comes on the local's tag, to the one platform");
+        assertEquals(Optional.empty(), onArrival(local, at("08:25"), TAGGED), "3A's set comes on the local's tag, to the one platform");
         Timetable untagged = StationUseTest.withSetStandingAtA();
-        assertTrue(onArrival(untagged, at("08:25"), tagged).isPresent(), "a set of no tag has both platforms");
+        assertTrue(onArrival(untagged, at("08:25"), TAGGED).isPresent(), "a set of no tag has both platforms");
+    }
+
+    /**
+     * The express runs through A on the express's tag while the set of 1A, come in on the local's, would
+     * stand there: it cannot run through the one platform open to the local, so the set is held.
+     */
+    @Test
+    void aTrainRunningThroughOnATagThatCannotTakeTheSetsPlatformDoesNotStopItBeingHeld() {
+        Timetable express = withTag(withTag(StationUseTest.withExpress("08:20"), "D1", "local"), "E1", "express");
+        assertTrue(onArrival(express, at("08:25"), TAGGED).isPresent());
+        Timetable local = withTag(withTag(StationUseTest.withExpress("08:20"), "D1", "local"), "E1", "local");
+        assertEquals(Optional.empty(), onArrival(local, at("08:25"), TAGGED), "on the local's tag, it could run through the set's platform");
+        Timetable untagged = withTag(StationUseTest.withExpress("08:20"), "D1", "local");
+        assertEquals(Optional.empty(), onArrival(untagged, at("08:25"), TAGGED), "nor may a train of no tag");
     }
 
     /** {@code timetable} with the train {@code number} held to the track tag {@code tag}. */

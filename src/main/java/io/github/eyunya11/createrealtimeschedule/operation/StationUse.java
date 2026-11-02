@@ -39,6 +39,16 @@ public final class StationUse {
      */
     public static boolean passedBy(Timetable timetable, Map<String, List<Call>> calls, Map<String, LineAxis> axes, String duty, long day,
                                    String station, long from, long to) {
+        return passedBy(timetable, calls, axes, duty, day, station, from, to, tag -> true);
+    }
+
+    /**
+     * {@link #passedBy(Timetable, Map, Map, String, long, String, long, long)}, counting only the trains
+     * that {@code competes} says could run through a platform the set held stands at, by the track tag
+     * of the way they run on: {@code ""} for none.
+     */
+    public static boolean passedBy(Timetable timetable, Map<String, List<Call>> calls, Map<String, LineAxis> axes, String duty, long day,
+                                   String station, long from, long to, Predicate<String> competes) {
         for (Map.Entry<String, List<Call>> entry : calls.entrySet()) {
             List<Call> dutyCalls = entry.getValue();
             for (long serviceDay = RealClock.day(from) - DAYS_BACK; serviceDay <= RealClock.day(to); serviceDay++) {
@@ -50,7 +60,7 @@ public final class StationUse {
                     if (DutyPlan.at(serviceDay, leaving.depart()) > to || DutyPlan.at(serviceDay, coming.comesIn()) < from)
                         continue;
                     Train train = timetable.train(leaving.leavingTrain()).orElse(null);
-                    if (train != null && runsThrough(timetable, axes, train, leaving.station(), coming.station(), station))
+                    if (train != null && competes.test(leaving.tag()) && runsThrough(timetable, axes, train, leaving.station(), coming.station(), station))
                         return true;
                 }
             }

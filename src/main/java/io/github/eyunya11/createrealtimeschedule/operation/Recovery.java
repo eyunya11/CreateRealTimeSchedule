@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalLong;
+import java.util.function.Predicate;
 
 import org.jetbrains.annotations.Nullable;
 
@@ -196,18 +197,17 @@ public final class Recovery {
      * by then.
      *
      * <p>A set that came in on the track tag {@code tag} stands at a platform open to it: only those are
-     * its platforms, and only the trains that stand at one of them, or could come to, count. A set of no
-     * tag counts every platform and every train.
+     * its platforms, and only the trains that stand at one of them, or could come to or run through
+     * one, count. A set of no tag counts every platform and every train.
      */
     private static boolean roomFor(Rules rules, String duty, long day, String station, String tag, long from, long to, long now,
                                    Reach reach) {
-        if (StationUse.passedBy(rules.timetable(), rules.calls(), rules.axes(), duty, day, station, from, to))
+        Predicate<String> competes = other -> reach.shares(station, tag, other);
+        if (StationUse.passedBy(rules.timetable(), rules.calls(), rules.axes(), duty, day, station, from, to, competes))
             return false;
         int others = from <= now
-            ? reach.standing(station, tag)
-                + StationUse.mostStanding(rules.calls(), duty, day, station, from, to, now, rules.lead(), other -> reach.shares(station, tag, other))
-            : StationUse.mostStanding(rules.calls(), duty, day, station, from, to, Long.MIN_VALUE, rules.lead(),
-                other -> reach.shares(station, tag, other));
+            ? reach.standing(station, tag) + StationUse.mostStanding(rules.calls(), duty, day, station, from, to, now, rules.lead(), competes)
+            : StationUse.mostStanding(rules.calls(), duty, day, station, from, to, Long.MIN_VALUE, rules.lead(), competes);
         return others + 1 <= reach.platforms(station, tag);
     }
 
