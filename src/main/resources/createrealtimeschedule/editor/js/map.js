@@ -23,7 +23,8 @@
    * The indexes of the tracks shown, in order (MapSelection.visible in the mod).
    *
    * @param keys      the key of each track, by its index
-   * @param legs      the legs between the stations, each {from, to, tracks}
+   * @param legs      the legs between the stations, each {from, to, tracks}, and tag or otherTag for a
+   *                  train held to a track tag
    * @param timetable the timetable, or null, which shows every track
    * @param lines     the ids of the lines shown; none for every track
    */
@@ -37,11 +38,16 @@
     if (lines.length === 0 || timetable === null) {
       keys.forEach((key, i) => shown.add(i));
     } else {
+      // By from and to, and the tag: '' for none, null for a tag the world has none of.
       const legOf = new Map();
+      const known = new Set();
       for (const leg of legs) {
-        const pair = JSON.stringify([leg.from, leg.to]);
+        const tag = leg.otherTag === true ? null : (typeof leg.tag === 'string' ? leg.tag : '');
+        const pair = JSON.stringify([leg.from, leg.to, tag]);
         if (!legOf.has(pair))
           legOf.set(pair, leg);
+        if (tag !== null && tag !== '')
+          known.add(tag);
       }
       const wanted = new Set(lines);
       for (const line of timetable.lines) {
@@ -56,7 +62,19 @@
           const a = stations[i];
           const b = stations[last ? 0 : i + 1];
           for (const pair of [[a, b], [b, a]]) {
-            const leg = legOf.get(JSON.stringify(pair));
+            const leg = legOf.get(JSON.stringify([pair[0], pair[1], '']));
+            if (leg !== undefined)
+              leg.tracks.forEach(track => ofLine.add(track));
+          }
+        }
+        for (const train of timetable.trains) {
+          if (train.line !== line.id)
+            continue;
+          for (let k = 0; k + 1 < train.stops.length; k++) {
+            const tag = timetableModule.tagAt(train, k);
+            if (tag === '')
+              continue;
+            const leg = legOf.get(JSON.stringify([train.stops[k].station, train.stops[k + 1].station, known.has(tag) ? tag : null]));
             if (leg !== undefined)
               leg.tracks.forEach(track => ofLine.add(track));
           }

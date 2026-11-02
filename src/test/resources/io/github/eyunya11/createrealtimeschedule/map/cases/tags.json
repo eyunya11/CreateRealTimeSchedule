@@ -1,0 +1,54 @@
+{
+  "about": "Which tracks a map shows of a line whose trains are held to track tags. Tracks: 0 the main line from A to B, 1 from B to C, 2 a siding at B that the local tag takes, 3 a way from A to C that a tag the world has none of takes. Line l has a local train that runs into the siding, and a train with no tag but for a stop held to a tag the world has none of; line m has no trains.",
+  "tracks": ["t0", "t1", "t2", "t3"],
+  "legs": [
+    {"from": "A", "to": "B", "tracks": [0]},
+    {"from": "B", "to": "A", "tracks": [0]},
+    {"from": "B", "to": "C", "tracks": [1]},
+    {"from": "C", "to": "B", "tracks": [1]},
+    {"from": "A", "to": "C", "tracks": [0, 1]},
+    {"from": "A", "to": "B", "tag": "local", "tracks": [2]},
+    {"from": "B", "to": "C", "tag": "local", "tracks": [1]},
+    {"from": "A", "to": "C", "tag": "local", "tracks": [2, 1]},
+    {"from": "A", "to": "B", "otherTag": true, "tracks": [0]},
+    {"from": "A", "to": "C", "otherTag": true, "tracks": [3]}
+  ],
+  "timetable": {
+    "format": "createrealtimeschedule.timetable",
+    "version": 7,
+    "name": "",
+    "lines": [
+      {"id": "l", "name": "L", "stations": ["A", "B", "C"]},
+      {"id": "m", "name": "M", "stations": ["A", "B"]}
+    ],
+    "trains": [
+      {
+        "number": "1",
+        "line": "l",
+        "type": "local",
+        "tag": "local",
+        "stops": [
+          {"station": "A", "depart": "08:00"},
+          {"station": "B", "arrive": "08:04", "depart": "08:05"},
+          {"station": "C", "arrive": "08:10"}
+        ]
+      },
+      {
+        "number": "2",
+        "line": "l",
+        "type": "rapid",
+        "stops": [
+          {"station": "A", "depart": "09:00", "tag": "ghost"},
+          {"station": "C", "arrive": "09:08"}
+        ]
+      }
+    ],
+    "duties": []
+  },
+  "cases": [
+    {"lines": [], "visible": [0, 1, 2, 3]},
+    {"lines": ["l"], "visible": [0, 1, 2, 3]},
+    {"lines": ["m"], "visible": [0]}
+  ],
+  "missing": []
+}

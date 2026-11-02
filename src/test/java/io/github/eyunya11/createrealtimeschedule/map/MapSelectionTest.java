@@ -50,6 +50,7 @@ class MapSelectionTest {
             for (JsonElement element : root.getAsJsonArray("legs")) {
                 JsonObject leg = element.getAsJsonObject();
                 legs.add(new MapSelection.LegTracks(leg.get("from").getAsString(), leg.get("to").getAsString(),
+                    leg.has("tag") ? leg.get("tag").getAsString() : "", leg.has("otherTag") && leg.get("otherTag").getAsBoolean(),
                     integers(leg.getAsJsonArray("tracks"))));
             }
             TimetableJson.Result read = TimetableJson.parse(root.get("timetable").toString());
