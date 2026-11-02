@@ -93,7 +93,7 @@ public final class RtNetworkCommand {
     private static NetworkMap map(CommandSourceStack source, CreateNetwork.All all) {
         CreateMap.Read read = CreateMap.read(Create.RAILWAYS.trackNetworks.values(), Create.RAILWAYS.trains.values(),
             source.getServer()::getLevel);
-        return NetworkMap.of(read.map(), all.edges(), read.trackOf());
+        return NetworkMap.of(read.map(), all.edges(), read.trackOf(), read.backward());
     }
 
     private static int tags(CommandContext<CommandSourceStack> context) {

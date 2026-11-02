@@ -4,6 +4,7 @@
   "train": {"topSpeed": 28, "turnSpeed": 14, "acceleration": 3, "throttle": 1},
   "stations": ["Alpha", "Beta", "Gamma"],
   "tags": [],
+  "tagColours": {},
   "tagProblems": [],
   "platforms": [{"station": "Alpha"}, {"station": "Beta"}, {"station": "Gamma"}],
   "legs": [

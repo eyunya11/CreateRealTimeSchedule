@@ -73,7 +73,15 @@
         problems.push('map.tracks[' + i + ']: must have a key, the index of its dimension, and points, X and Z in turn, at least two');
         return null;
       }
-      return { key: track.key, dimension: track.dimension, points: track.points.slice() };
+      // The stretches that track tags are on, as shares of the track's length from its first point.
+      const isPiece = piece => isObject(piece) && isNumber(piece.from) && isNumber(piece.to)
+        && piece.from >= 0 && piece.from < piece.to && piece.to <= 1 && isStrings(piece.tags) && piece.tags.length > 0;
+      if (track.tags !== undefined && (!Array.isArray(track.tags) || !track.tags.every(isPiece))) {
+        problems.push('map.tracks[' + i + '].tags: must be an array of stretches, each with a from and a to between 0 and 1 and its tags');
+        return null;
+      }
+      const tags = track.tags === undefined ? [] : track.tags.map(piece => ({ from: piece.from, to: piece.to, tags: piece.tags.slice() }));
+      return { key: track.key, dimension: track.dimension, points: track.points.slice(), tags };
     });
     const onTrack = (thing, at) => {
       if (!isObject(thing) || !isIndex(thing.track, tracks.length) || !isNumber(thing.x) || !isNumber(thing.z)) {
@@ -229,12 +237,16 @@
             to[each.to] = stations.indexOf(each.to);
         return { from, to };
       });
-      return { network: { stations, legs, tagged: false, tags: [], tagProblems: [], platforms: stations.map(station => ({ station })), ways, map },
+      return { network: { stations, legs, tagged: false, tags: [], tagColours: {}, tagProblems: [], platforms: stations.map(station => ({ station })), ways, map },
         problems: [] };
     }
 
     if (!isStrings(root.tags))
       problems.push('tags: must be an array of strings');
+    // Version 4 gives each tag its colour; a tag with none is drawn in the one its name picks.
+    if (root.tagColours !== undefined && (!isObject(root.tagColours)
+        || !Object.values(root.tagColours).every(colour => typeof colour === 'string' && /^#[0-9a-fA-F]{6}$/.test(colour))))
+      problems.push('tagColours: must be an object of colours, #rrggbb, by the tags\' names');
     if (!Array.isArray(root.tagProblems) || !root.tagProblems.every(isObject))
       problems.push('tagProblems: must be an array of objects');
     if (!Array.isArray(root.platforms) || !root.platforms.every(platform => isObject(platform) && typeof platform.station === 'string'))
@@ -260,7 +272,8 @@
       return { network: null, problems };
     return {
       network: {
-        stations, legs, tagged: true, tags: root.tags.slice(), tagProblems: root.tagProblems.map(problem => Object.assign({}, problem)),
+        stations, legs, tagged: true, tags: root.tags.slice(), tagColours: Object.assign({}, root.tagColours),
+        tagProblems: root.tagProblems.map(problem => Object.assign({}, problem)),
         platforms: root.platforms.map(platform => ({ station: platform.station })), ways, map,
       },
       problems: [],

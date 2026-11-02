@@ -3,10 +3,12 @@ package io.github.eyunya11.createrealtimeschedule.railway;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.WeakHashMap;
@@ -75,9 +77,10 @@ public final class CreateMap {
     /**
      * The map, and which track of it each edge of the graphs is.
      *
-     * @param trackOf the index of the track of each edge, both ways, by the edge itself
+     * @param trackOf  the index of the track of each edge, both ways, by the edge itself
+     * @param backward the edges that run from the last point of their track to its first
      */
-    public record Read(TrackMap map, Map<TrackEdge, Integer> trackOf) {}
+    public record Read(TrackMap map, Map<TrackEdge, Integer> trackOf, Set<TrackEdge> backward) {}
 
     /**
      * @param graphs the track graphs
@@ -112,14 +115,17 @@ public final class CreateMap {
 
         List<Track> tracks = new ArrayList<>();
         Map<TrackEdge, Integer> trackOf = new IdentityHashMap<>();
+        Set<TrackEdge> backward = Collections.newSetFromMap(new IdentityHashMap<>());
         for (Map.Entry<String, Found> entry : found.entrySet()) {
             TrackEdge edge = entry.getValue().edge();
             int index = tracks.size();
             tracks.add(new Track(entry.getKey(), dimensions.indexOf(dimension(edge.node1)), points(edge)));
             trackOf.put(edge, index);
             TrackEdge back = entry.getValue().graph().getConnection(Couple.create(edge.node2, edge.node1));
-            if (back != null)
+            if (back != null) {
                 trackOf.put(back, index);
+                backward.add(back);
+            }
         }
 
         List<StationMark> stations = new ArrayList<>();
@@ -179,7 +185,7 @@ public final class CreateMap {
         }
         trainMarks.sort(Comparator.comparing(TrainMark::name));
 
-        return new Read(new TrackMap(dimensions, tracks, stations, signals, limits, trainMarks), trackOf);
+        return new Read(new TrackMap(dimensions, tracks, stations, signals, limits, trainMarks), trackOf, backward);
     }
 
     /** An edge found, and its graph. */

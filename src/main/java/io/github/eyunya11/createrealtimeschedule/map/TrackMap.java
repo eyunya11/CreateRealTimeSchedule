@@ -53,6 +53,20 @@ public record TrackMap(List<String> dimensions, List<Track> tracks, List<Station
     }
 
     /**
+     * A stretch of a track that track tags are on, as a share of the track's length from the first of
+     * its points, either way of it: a one-way tag block's tags count as on the track too.
+     *
+     * @param from where it starts, from 0 to 1
+     * @param to   where it ends, after {@code from}
+     * @param tags the names of the tags on all of it, each once, in the order of the world's list
+     */
+    public record TagPiece(double from, double to, List<String> tags) {
+        public TagPiece {
+            tags = List.copyOf(tags);
+        }
+    }
+
+    /**
      * @param name  the station's name
      * @param track the index of the track its marker is on
      * @param at    where the marker is

@@ -102,7 +102,7 @@ public class NetworkExportTests {
             CreateNetwork.All all = CreateNetwork.readAll(Create.RAILWAYS.trackNetworks.values());
             CreateMap.Read read = CreateMap.read(Create.RAILWAYS.trackNetworks.values(), Create.RAILWAYS.trains.values(),
                 helper.getLevel().getServer()::getLevel);
-            NetworkMap map = NetworkMap.of(read.map(), all.edges(), read.trackOf());
+            NetworkMap map = NetworkMap.of(read.map(), all.edges(), read.trackOf(), read.backward());
             Leg mapped = leg(helper, all.network().legs(), "Alpha", "Gamma");
             List<Integer> tracks = map.tracks(mapped);
             helper.assertFalse(tracks.isEmpty(), "the leg from Alpha to Gamma runs along no track of the map");

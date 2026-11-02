@@ -30,18 +30,36 @@ public final class TrackMapJson {
     private TrackMapJson() {}
 
     public static MapNode write(TrackMap map) {
+        return write(map, List.of());
+    }
+
+    /**
+     * {@code map} with the stretches of each track that track tags are on, by the track's index; a track
+     * past the end of {@code tagsOfTracks}, or with none, is written without {@code tags}.
+     */
+    public static MapNode write(TrackMap map, List<List<TrackMap.TagPiece>> tagsOfTracks) {
         MapNode node = new MapNode();
         node.put("dimensions", JsonOutput.inline(JsonOutput.texts(map.dimensions())));
 
         ListNode tracks = new ListNode();
-        for (Track track : map.tracks()) {
+        for (int i = 0; i < map.tracks().size(); i++) {
+            Track track = map.tracks().get(i);
             ListNode points = new ListNode();
             for (Spot point : track.points())
                 points.add(place(point.x())).add(place(point.z()));
-            tracks.add(JsonOutput.inline(new MapNode()
+            MapNode entry = new MapNode()
                 .put("key", JsonOutput.text(track.key()))
                 .put("dimension", whole(track.dimension()))
-                .put("points", JsonOutput.inline(points))));
+                .put("points", JsonOutput.inline(points));
+            List<TrackMap.TagPiece> pieces = i < tagsOfTracks.size() ? tagsOfTracks.get(i) : List.of();
+            if (!pieces.isEmpty()) {
+                ListNode tags = new ListNode();
+                for (TrackMap.TagPiece piece : pieces)
+                    tags.add(JsonOutput.inline(new MapNode().put("from", share(piece.from())).put("to", share(piece.to()))
+                        .put("tags", JsonOutput.inline(JsonOutput.texts(piece.tags())))));
+                entry.put("tags", JsonOutput.inline(tags));
+            }
+            tracks.add(JsonOutput.inline(entry));
         }
         node.put("tracks", tracks);
 
@@ -123,6 +141,11 @@ public final class TrackMapJson {
 
     private static JsonOutput.Leaf place(double value) {
         return rounded(value, 1);
+    }
+
+    /** A share of a track's length, to a thousandth. */
+    private static JsonOutput.Leaf share(double value) {
+        return rounded(value, 3);
     }
 
     private static JsonOutput.Leaf direction(double value) {

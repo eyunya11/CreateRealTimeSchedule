@@ -31,8 +31,9 @@ import io.github.eyunya11.createrealtimeschedule.travel.TrainSpec;
  * is wrong with the blocks' sections, the platforms, the legs for a train held to each tag (and to a
  * tag the world has none of), and where a train standing at each platform comes to on each tag. One
  * with neither is written as version 2, as it was before them. With a map of the track, it is written
- * as version 4, which has all that version 3 has and adds the map, and for each leg the tracks of the
- * map it runs along, by their indexes.
+ * as version 4, which has all that version 3 has and adds the map, with the stretches of each of its
+ * tracks that tags are on, the colours of the tags, and for each leg the tracks of the map it runs
+ * along, by their indexes.
  */
 public final class NetworkJson {
 
@@ -102,6 +103,12 @@ public final class NetworkJson {
 
         MapNode root = head(map != null ? 4 : 3, names, spec, throttle);
         root.put("tags", JsonOutput.texts(new ArrayList<>(tags.names().values())));
+        if (map != null) {
+            MapNode colours = new MapNode();
+            for (Map.Entry<Integer, String> tag : tags.names().entrySet())
+                colours.put(tag.getValue(), JsonOutput.text(tags.colour(tag.getKey())));
+            root.put("tagColours", JsonOutput.inline(colours));
+        }
         ListNode problems = new ListNode();
         List<RailNetwork.Marker> markers = network.markers();
         for (TagSections.Problem problem : network.tagSections().problems()) {
@@ -138,7 +145,7 @@ public final class NetworkJson {
         root.put("legs", legs);
         root.put("ways", ways);
         if (map != null)
-            root.put("map", TrackMapJson.write(map.map()));
+            root.put("map", TrackMapJson.write(map.map(), map.tagPieces(network, tags)));
         return JsonOutput.render(root);
     }
 

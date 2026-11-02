@@ -47,7 +47,7 @@ test('the map the mod writes is read, with the tracks of each leg', () => {
   assert.deepEqual(network.leg(result.network, 'Alpha', 'Gamma').tracks, [0]);
 });
 
-test('a network of before version 3 has no map, and its legs no tracks', () => {
+test('a network of before version 4 has no map, and its legs no tracks', () => {
   const result = network.read(fs.readFileSync(path.join(RESOURCES, 'railway', 'example.json'), 'utf8'));
   assert.equal(result.network.map, null);
   assert.deepEqual(network.leg(result.network, 'Alpha', 'Beta').tracks, []);
@@ -75,6 +75,24 @@ test('a leg that runs along a track the map does not have is not read', () => {
   const result = network.read(JSON.stringify(root));
   assert.equal(result.network, null);
   assert.deepEqual(result.problems, ['legs[0].tracks: must be an array of the indexes of tracks of the map']);
+});
+
+test('the stretches of the tracks that track tags are on, and the colours of the tags, are read', () => {
+  const root = JSON.parse(EXAMPLE_MAP);
+  root.tags = ['Local', 'Rapid'];
+  root.tagColours = { Local: '#3b7dd8', Rapid: '#123456' };
+  root.map.tracks[0].tags = [{ from: 0, to: 0.5, tags: ['Local'] }, { from: 0.5, to: 1, tags: ['Local', 'Rapid'] }];
+  const result = network.read(JSON.stringify(root));
+  assert.deepEqual(result.problems, []);
+  assert.deepEqual(result.network.tagColours, { Local: '#3b7dd8', Rapid: '#123456' });
+  assert.deepEqual(result.network.map.tracks[0].tags, root.map.tracks[0].tags);
+  assert.deepEqual(result.network.map.tracks[1].tags, [], 'a track with no tags has none');
+  root.map.tracks[1].tags = [{ from: 0.5, to: 0.2, tags: ['Local'] }];
+  root.tagColours.Rapid = 'red';
+  assert.deepEqual(network.read(JSON.stringify(root)).problems, [
+    'map.tracks[1].tags: must be an array of stretches, each with a from and a to between 0 and 1 and its tags',
+    'tagColours: must be an object of colours, #rrggbb, by the tags\' names',
+  ]);
 });
 
 test('a view fitted to a box shows it all, in the middle', () => {
