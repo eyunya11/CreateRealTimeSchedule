@@ -2,6 +2,12 @@
  * The track network as /rtnetwork export and /rteditor copy network write it (NetworkJson in the mod): the
  * stations, and the legs between them with their length and the ticks a train takes. The editor
  * takes the running time between two stations from it, and the distances for the diagram's axis.
+ *
+ * Version 3 adds the track tags: the world's tags, what is wrong with the tag blocks' sections, the
+ * platforms, the legs for a train held to each tag (and to a tag the world has none of, otherTag),
+ * and the ways from each platform: where a train of each tag comes to when it is sent to a name. A
+ * network of before has none of them; its tags are taken to change nothing, and each station to be
+ * one platform.
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports)
@@ -14,8 +20,8 @@
   /** The format member of a network in JSON. */
   const FORMAT = 'createrealtimeschedule.network';
 
-  /** The newest version of the JSON the editor reads. Version 2 added the signs of a leg. */
-  const VERSION = 2;
+  /** The newest version of the JSON the editor reads. Version 2 added the signs of a leg, and version 3 the track tags. */
+  const VERSION = 3;
 
   const TICKS_PER_SECOND = 20;
 
@@ -73,35 +79,129 @@
         problems.push(at + '.via: must be an array of strings');
       if (leg.ticks !== undefined && (!Number.isInteger(leg.ticks) || leg.ticks < 0))
         problems.push(at + '.ticks: must be a whole number, 0 or more');
-      legs.push({
+      if (leg.tag !== undefined && typeof leg.tag !== 'string')
+        problems.push(at + '.tag: must be a string');
+      if (leg.otherTag !== undefined && typeof leg.otherTag !== 'boolean')
+        problems.push(at + '.otherTag: must be true or false');
+      const made = {
         from: leg.from,
         to: leg.to,
         distance: leg.distance,
         via: leg.via === undefined ? [] : leg.via,
         ticks: leg.ticks === undefined ? null : leg.ticks,
+      };
+      tagged(made, leg);
+      legs.push(made);
+    });
+    const stations = isStrings(root.stations) ? root.stations.slice() : [];
+    if (root.version < 3) {
+      if (problems.length > 0)
+        return { network: null, problems };
+      // Each station one platform, the ways from it those of its legs.
+      const ways = stations.map((station, from) => {
+        const to = {};
+        for (const each of legs)
+          if (each.from === station && stations.includes(each.to))
+            to[each.to] = stations.indexOf(each.to);
+        return { from, to };
       });
+      return { network: { stations, legs, tagged: false, tags: [], tagProblems: [], platforms: stations.map(station => ({ station })), ways },
+        problems: [] };
+    }
+
+    if (!isStrings(root.tags))
+      problems.push('tags: must be an array of strings');
+    if (!Array.isArray(root.tagProblems) || !root.tagProblems.every(isObject))
+      problems.push('tagProblems: must be an array of objects');
+    if (!Array.isArray(root.platforms) || !root.platforms.every(platform => isObject(platform) && typeof platform.station === 'string'))
+      problems.push('platforms: must be an array of objects with a station');
+    const ways = [];
+    if (!Array.isArray(root.ways))
+      problems.push('ways: must be an array');
+    // A platform is a number of one of platforms, from 0.
+    const count = Array.isArray(root.platforms) ? root.platforms.length : 0;
+    const isPlatform = platform => Number.isInteger(platform) && platform >= 0 && platform < count;
+    (Array.isArray(root.ways) ? root.ways : []).forEach((way, i) => {
+      const at = 'ways[' + i + ']';
+      if (!isObject(way) || !isPlatform(way.from) || !isObject(way.to) || !Object.values(way.to).every(isPlatform))
+        problems.push(at + ': must have a platform from and the platforms it comes to, each one of platforms');
+      else if (way.tag !== undefined && typeof way.tag !== 'string')
+        problems.push(at + '.tag: must be a string');
+      else if (way.otherTag !== undefined && typeof way.otherTag !== 'boolean')
+        problems.push(at + '.otherTag: must be true or false');
+      else
+        ways.push(tagged({ from: way.from, to: Object.fromEntries(Object.entries(way.to)) }, way));
     });
     if (problems.length > 0)
       return { network: null, problems };
-    return { network: { stations: root.stations.slice(), legs }, problems: [] };
+    return {
+      network: {
+        stations, legs, tagged: true, tags: root.tags.slice(), tagProblems: root.tagProblems.map(problem => Object.assign({}, problem)),
+        platforms: root.platforms.map(platform => ({ station: platform.station })), ways,
+      },
+      problems: [],
+    };
   }
 
-  /** The leg from one station to another, or null if the track does not take a train there. */
-  function leg(network, from, to) {
+  /** Gives made the tag item is for: a tag, or otherTag for a tag the world has none of. */
+  function tagged(made, item) {
+    if (typeof item.tag === 'string' && item.tag !== '')
+      made.tag = item.tag;
+    if (item.otherTag === true)
+      made.otherTag = true;
+    return made;
+  }
+
+  /**
+   * Whether item (a leg or a way) is for a train held to tag ('' for none): one of that tag, or, for a
+   * tag the world has none of, one of otherTag. In a network with no tags, every tag is as none.
+   */
+  function forTag(network, item, tag) {
+    const of = item.tag === undefined ? '' : item.tag;
+    if (!network.tagged || tag === '' || tag === undefined)
+      return of === '' && item.otherTag !== true;
+    return network.tags.includes(tag) ? of === tag && item.otherTag !== true : item.otherTag === true;
+  }
+
+  /** The leg from one station to another for a train held to tag (none if left out), or null if the track does not take it there. */
+  function leg(network, from, to, tag) {
     for (const each of network.legs)
-      if (each.from === from && each.to === to)
+      if (each.from === from && each.to === to && forTag(network, each, tag))
         return each;
     return null;
   }
 
   /**
-   * The seconds a train takes from one station to another, its ticks rounded up to the next whole
-   * second; null if the network has no running time for the way.
+   * The seconds a train held to tag (none if left out) takes from one station to another, its ticks
+   * rounded up to the next whole second; null if the network has no running time for the way.
    */
-  function seconds(network, from, to) {
-    const way = leg(network, from, to);
+  function seconds(network, from, to, tag) {
+    const way = leg(network, from, to, tag);
     return way === null || way.ticks === null ? null : Math.ceil(way.ticks / TICKS_PER_SECOND);
   }
 
-  return { FORMAT, VERSION, read, leg, seconds };
+  /** The legs a train held to no tag runs, from which the diagram's axis is drawn. */
+  function untaggedLegs(network) {
+    return network.legs.filter(each => forTag(network, each, ''));
+  }
+
+  /** The platforms of the station named station, by their numbers in the network. */
+  function platforms(network, station) {
+    const found = [];
+    network.platforms.forEach((platform, i) => {
+      if (platform.station === station)
+        found.push(i);
+    });
+    return found;
+  }
+
+  /** The platform a train held to tag that stands at platform comes to when it is sent to station; -1 if it has no way there. */
+  function way(network, platform, station, tag) {
+    for (const each of network.ways)
+      if (each.from === platform && forTag(network, each, tag) && Object.prototype.hasOwnProperty.call(each.to, station))
+        return each.to[station];
+    return -1;
+  }
+
+  return { FORMAT, VERSION, read, leg, seconds, untaggedLegs, platforms, way };
 });

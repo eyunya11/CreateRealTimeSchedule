@@ -5,9 +5,12 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalInt;
 import java.util.PriorityQueue;
+import java.util.Set;
 import java.util.function.IntPredicate;
 
 import org.jetbrains.annotations.Nullable;
@@ -36,6 +39,13 @@ import io.github.eyunya11.createrealtimeschedule.railway.RailNetwork.Station;
  * of the way left to the stations looked for (where the network knows where its nodes are), the
  * ways of a junction in the order of the track graph, and among ways of the same worth the one
  * Create's queue gives first.
+ *
+ * <p>A train may be held to a track tag ({@link TagSections}), which Create knows nothing of. It then
+ * does not run into track that sections cover none of which has the tag: such a stretch is as a point
+ * that does not let it through. Track with no section is open to it, and so are the sections it
+ * starts in, so that it can leave them. At a junction, where a way goes on to a section with the tag
+ * before the next junction, it takes such a way and no other. A train held to no tag goes as Create's
+ * would.
  */
 public final class RouteSearch {
 
@@ -146,8 +156,14 @@ public final class RouteSearch {
      */
     public static @Nullable Route find(RailNetwork network, @Nullable Start front, @Nullable Start back, boolean canDriveForward,
                                        boolean canDriveBackward, IntPredicate destination, Weights weights) {
-        Route forward = front == null ? null : first(network, front, destination, weights);
-        Route backward = back == null ? null : first(network, back, destination, weights);
+        return find(network, front, back, canDriveForward, canDriveBackward, destination, weights, OptionalInt.empty());
+    }
+
+    /** {@link #find(RailNetwork, Start, Start, boolean, boolean, IntPredicate, Weights)} for a train held to the track tag {@code tag}, if any. */
+    public static @Nullable Route find(RailNetwork network, @Nullable Start front, @Nullable Start back, boolean canDriveForward,
+                                       boolean canDriveBackward, IntPredicate destination, Weights weights, OptionalInt tag) {
+        Route forward = front == null ? null : first(network, front, destination, weights, tag);
+        Route backward = back == null ? null : first(network, back, destination, weights, tag);
         if (backward != null)
             backward = backward.backwards();
         if (backward == null || !canDriveBackward)
@@ -159,8 +175,13 @@ public final class RouteSearch {
 
     /** The first station that {@code destination} takes that the search from {@code start} comes to, or null if it comes to none. */
     public static @Nullable Route first(RailNetwork network, Start start, IntPredicate destination, Weights weights) {
+        return first(network, start, destination, weights, OptionalInt.empty());
+    }
+
+    /** {@link #first(RailNetwork, Start, IntPredicate, Weights)} for a train held to the track tag {@code tag}, if any. */
+    public static @Nullable Route first(RailNetwork network, Start start, IntPredicate destination, Weights weights, OptionalInt tag) {
         Route[] found = new Route[1];
-        new Search(network, start, destination, weights, true).run(route -> {
+        new Search(network, start, destination, weights, true, tag).run(route -> {
             found[0] = route;
             return true;
         });
@@ -172,8 +193,14 @@ public final class RouteSearch {
      * station of that name the search comes to, which is where a train sent to that name would go.
      */
     public static Map<String, Route> toEveryName(RailNetwork network, Start start, IntPredicate destination, Weights weights) {
+        return toEveryName(network, start, destination, weights, OptionalInt.empty());
+    }
+
+    /** {@link #toEveryName(RailNetwork, Start, IntPredicate, Weights)} for a train held to the track tag {@code tag}, if any. */
+    public static Map<String, Route> toEveryName(RailNetwork network, Start start, IntPredicate destination, Weights weights,
+                                                 OptionalInt tag) {
         Map<String, Route> found = new HashMap<>();
-        new Search(network, start, destination, weights, false).run(route -> {
+        new Search(network, start, destination, weights, false, tag).run(route -> {
             found.putIfAbsent(network.stations().get(route.station()).name(), route);
             return false;
         });
@@ -215,15 +242,23 @@ public final class RouteSearch {
         private final boolean[] visited;
         private final PriorityQueue<Entry> frontier;
         private final List<Aim> aims = new ArrayList<>();
+        /** The track tag the train is held to, if any. */
+        private final OptionalInt tag;
+        /** The blocks whose sections the train starts in, which it may run along whatever their tags. */
+        private final Set<Integer> allowed;
+        /** For a train held to a tag, the points of each edge with the places it may not run on from among them. */
+        private final Map<Integer, List<Item>> held = new HashMap<>();
         private long order;
         private int signalWeight;
 
-        Search(RailNetwork network, Start start, IntPredicate destination, Weights weights, boolean once) {
+        Search(RailNetwork network, Start start, IntPredicate destination, Weights weights, boolean once, OptionalInt tag) {
             this.network = network;
             this.start = start;
             this.destination = destination;
             this.weights = weights;
             this.once = once;
+            this.tag = tag;
+            this.allowed = tag.isPresent() ? network.tagSections().markersAt(start.edge(), start.offset()) : Set.of();
             int count = network.edges().size();
             reachedVia = new int[count];
             Arrays.fill(reachedVia, -1);
@@ -288,7 +323,7 @@ public final class RouteSearch {
                     continue;
                 visited[entry.edge()] = true;
                 List<Integer> next = network.edges().get(entry.edge()).next();
-                for (int target : next)
+                for (int target : taken(next))
                     goOn(entry, target, next.size() > 1);
             }
         }
@@ -400,9 +435,66 @@ public final class RouteSearch {
             return new Route(true, entry.station(), entry.stationDistance(), entry.penalty(), edges, junctions);
         }
 
-        /** The points on an edge that the search looks at, in order. */
+        /**
+         * The ways of a junction a train held to a tag takes: those it can run on that come to a section
+         * with the tag before the next junction, if any do, and otherwise all of them, as for any train.
+         */
+        private List<Integer> taken(List<Integer> next) {
+            if (tag.isEmpty() || next.size() < 2)
+                return next;
+            List<Integer> tagged = new ArrayList<>();
+            for (int target : next)
+                if (weights.canUse(target) && comesToTheTag(target))
+                    tagged.add(target);
+            return tagged.isEmpty() ? next : tagged;
+        }
+
+        /**
+         * Whether the track from the start of {@code edge} to the next junction, or its end, comes to a
+         * section with the tag before anything that does not let the train through: a stretch closed to
+         * the tag, a point such as a signal facing the other way, or track the train cannot run on. A way
+         * where the tag lies only past such a point is no way to it.
+         */
+        private boolean comesToTheTag(int edge) {
+            TagSections sections = network.tagSections();
+            Set<Integer> passed = new HashSet<>();
+            for (int at = edge; passed.add(at); ) {
+                double tagged = sections.tagFrom(at, tag.getAsInt());
+                double barrier = Double.POSITIVE_INFINITY;
+                for (Item item : items(at))
+                    if (item.kind() == Item.Kind.BARRIER) {
+                        barrier = item.position();
+                        break;
+                    }
+                if (tagged < barrier)
+                    return true;
+                if (barrier < Double.POSITIVE_INFINITY)
+                    return false;
+                List<Integer> next = network.edges().get(at).next();
+                if (next.size() != 1 || !weights.canUse(next.getFirst()))
+                    return false;
+                at = next.getFirst();
+            }
+            return false;
+        }
+
+        /**
+         * The points on an edge that the search looks at, in order; for a train held to a tag, with a
+         * point that does not let it through where it may not run on from.
+         */
         private List<Item> items(int edge) {
-            return network.items(edge);
+            if (tag.isEmpty())
+                return network.items(edge);
+            return held.computeIfAbsent(edge, e -> {
+                List<Double> closed = network.tagSections().closedTo(e, tag.getAsInt(), allowed);
+                if (closed.isEmpty())
+                    return network.items(e);
+                List<Item> items = new ArrayList<>(network.items(e));
+                for (double at : closed)
+                    items.add(new Item(at, Item.Kind.BARRIER, -1, -1));
+                items.sort(Item.ORDER);
+                return items;
+            });
         }
     }
 
@@ -414,6 +506,10 @@ public final class RouteSearch {
      * @param ref     for a station marker, its platform number; for a signal, the signal's number
      */
     record Item(double position, Kind kind, int station, int ref) {
+
+        /** By position, and a barrier first of points at one place. */
+        static final Comparator<Item> ORDER = Comparator.comparingDouble(Item::position).thenComparingInt(item -> item.kind().ordinal());
+
         enum Kind {
             /** A point that does not let the train through. */
             BARRIER,
@@ -435,7 +531,7 @@ public final class RouteSearch {
                 items.add(point.kind() == Point.Kind.STATION
                     ? new Item(point.position(), Kind.STATION, -1, point.ref())
                     : new Item(point.position(), Kind.SIGNAL, -1, point.ref()));
-            items.sort(Comparator.comparingDouble(Item::position).thenComparingInt(item -> item.kind().ordinal()));
+            items.sort(ORDER);
             return List.copyOf(items);
         }
     }

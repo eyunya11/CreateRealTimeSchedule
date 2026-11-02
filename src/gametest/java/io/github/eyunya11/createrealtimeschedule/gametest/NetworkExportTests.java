@@ -19,6 +19,7 @@ import io.github.eyunya11.createrealtimeschedule.railway.CreateNetwork;
 import io.github.eyunya11.createrealtimeschedule.railway.Leg;
 import io.github.eyunya11.createrealtimeschedule.railway.NetworkJson;
 import io.github.eyunya11.createrealtimeschedule.railway.RailNetwork;
+import io.github.eyunya11.createrealtimeschedule.tag.TrackTagData;
 import io.github.eyunya11.createrealtimeschedule.travel.TrainSpec;
 import io.github.eyunya11.createrealtimeschedule.travel.TrainSpecs;
 import io.github.eyunya11.createrealtimeschedule.travel.TravelTime;
@@ -90,7 +91,8 @@ public class NetworkExportTests {
             helper.assertValueEqual(TravelTime.ticks(spec, 1.0, betaGamma.distance(), List.of()).orElseThrow(),
                 betaGamma.ticks(spec, 1.0).orElseThrow(), "ticks from Beta to Gamma");
 
-            String json = NetworkJson.write(network.names(), legs, spec, 1.0);
+            // As the command writes it: as version 3 if another test has track tags in the world now.
+            String json = NetworkJson.write(network, TrackTagData.get(helper.getLevel().getServer()).tags(), spec, 1.0);
             helper.assertTrue(json.contains("\"from\": \"Alpha\", \"to\": \"Gamma\", \"distance\": 40, \"via\": [\"Beta\"], \"ticks\": 133}"),
                 "the JSON does not have the leg from Alpha to Gamma as expected: " + json);
 

@@ -10,10 +10,10 @@ import org.junit.jupiter.api.Test;
 
 class RunTimesTest {
 
-    /** Running times between stations, as a map by "from-to". */
+    /** Running times between stations, as a map by "from-to", or "from-to-tag" for a train held to a track tag. */
     private static RunTimes times(Map<String, Long> ticks) {
-        return (from, to) -> {
-            Long found = ticks.get(from + "-" + to);
+        return (from, to, tag) -> {
+            Long found = ticks.get(from + "-" + to + (tag.isEmpty() ? "" : "-" + tag));
             return found == null ? OptionalLong.empty() : OptionalLong.of(found);
         };
     }
@@ -30,10 +30,25 @@ class RunTimesTest {
         assertEquals(OptionalLong.empty(), RunTimes.fastest(List.of()).ticks("A", "B"));
     }
 
+    /** A train held to a track tag has the times of its tag, which may be none where a train of no tag has one. */
+    @Test
+    void theTimesOfATagAreTheirOwn() {
+        RunTimes times = times(Map.of("A-B", 100L, "A-B-local", 120L));
+        assertEquals(OptionalLong.of(100), times.ticks("A", "B"));
+        assertEquals(OptionalLong.of(120), times.ticks("A", "B", "local"));
+        assertEquals(OptionalLong.empty(), times.ticks("A", "B", "express"));
+        RunTimes remembered = RunTimes.remembered(times);
+        assertEquals(OptionalLong.of(100), remembered.ticks("A", "B"));
+        assertEquals(OptionalLong.of(120), remembered.ticks("A", "B", "local"), "remembered by the tag too");
+        RunTimes fastest = RunTimes.fastest(List.of(times, times(Map.of("A-B-local", 110L))));
+        assertEquals(OptionalLong.of(110), fastest.ticks("A", "B", "local"));
+        assertEquals(OptionalLong.of(100), fastest.ticks("A", "B"));
+    }
+
     @Test
     void rememberedTimesAreWorkedOutOnceForEachTwoStations() {
         int[] asked = {0};
-        RunTimes remembered = RunTimes.remembered((from, to) -> {
+        RunTimes remembered = RunTimes.remembered((from, to, tag) -> {
             asked[0]++;
             return from.equals("A") ? OptionalLong.of(100) : OptionalLong.empty();
         });

@@ -22,6 +22,7 @@ import io.github.eyunya11.createrealtimeschedule.operation.DutyPlan;
 import io.github.eyunya11.createrealtimeschedule.operation.DutyRun;
 import io.github.eyunya11.createrealtimeschedule.operation.OperationData;
 import io.github.eyunya11.createrealtimeschedule.operation.OperationService;
+import io.github.eyunya11.createrealtimeschedule.operation.TagWays;
 import io.github.eyunya11.createrealtimeschedule.operation.TrackFacts;
 import io.github.eyunya11.createrealtimeschedule.operation.Waits;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable;
@@ -124,6 +125,8 @@ public final class RtTimetableCommand {
             timetable.trains().size()), true);
         for (Component line : unmetWaits(data))
             source.sendSuccess(() -> line, false);
+        for (Component line : tagLines(data))
+            source.sendSuccess(() -> line, false);
         return timetable.duties().size();
     }
 
@@ -139,6 +142,26 @@ public final class RtTimetableCommand {
         for (Waits.Unmet unmet : data.waits(TrackFacts.axes(data, timetable)).unmet())
             lines.add(Component.translatableWithFallback(KEY + (unmet.inNoDuty() ? "wait_in_no_duty" : "wait_no_way"), unmet.pattern(),
                 unmet.arguments()).withStyle(ChatFormatting.YELLOW));
+        return lines;
+    }
+
+    /**
+     * A line for each track tag the timetable holds trains to that the world has none of, and for each
+     * way between stops a train cannot run on its tag, where a set would not leave.
+     */
+    private static List<Component> tagLines(OperationData data) {
+        Timetable timetable = data.timetable();
+        if (timetable == null || TagWays.tags(timetable).isEmpty())
+            return List.of();
+        TrackFacts.axes(data, timetable);
+        List<Component> lines = new ArrayList<>();
+        for (String tag : data.unknownTags())
+            lines.add(Component.translatableWithFallback(KEY + "tag_unknown",
+                "The world has no track tag \"%1$s\"; trains held to it run on track with no tag only", tag).withStyle(ChatFormatting.YELLOW));
+        for (TagWays.NoWay way : data.noWays())
+            lines.add(Component.translatableWithFallback(KEY + "tag_no_way",
+                "Train %1$s has no way from %2$s (stop %3$s) to %4$s on the track tag \"%5$s\": a set held to it there will not leave",
+                way.train(), way.from(), way.stop() + 1, way.to(), way.tag()).withStyle(ChatFormatting.YELLOW));
         return lines;
     }
 
@@ -168,6 +191,8 @@ public final class RtTimetableCommand {
         for (Duty duty : timetable.duties())
             source.sendSuccess(() -> dutyLine(data, duty, now), false);
         for (Component line : unmetWaits(data))
+            source.sendSuccess(() -> line, false);
+        for (Component line : tagLines(data))
             source.sendSuccess(() -> line, false);
         List<OperationData.Note> notes = data.notes();
         for (OperationData.Note note : notes.subList(Math.max(0, notes.size() - NOTES_SHOWN), notes.size()))

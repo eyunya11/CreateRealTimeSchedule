@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 import java.util.Map;
+import java.util.OptionalInt;
 
 import org.junit.jupiter.api.Test;
 
@@ -64,6 +65,15 @@ class TrackTagsTest {
         assertEquals(Refusal.CONTROL, tags.rename(1, "Lo\tcal"));
         assertEquals("Local", tags.name(1));
         assertEquals(2, tags.create("Local 2").id(), "a space is no control character");
+    }
+
+    /** A train held to a tag by its name looks for its id; for a name the list does not have, for one no block holds. */
+    @Test
+    void aTrainIsHeldToTheIdOfTheTagOfItsName() {
+        TrackTags tags = new TrackTags(Map.of(1, "Local", 4, "Rapid"), 5);
+        assertEquals(OptionalInt.of(4), tags.held("Rapid"));
+        assertEquals(OptionalInt.empty(), tags.held(""), "no name holds a train to no tag");
+        assertEquals(OptionalInt.of(TrackTags.UNKNOWN), tags.held("rapid"), "names are told apart by case");
     }
 
     @Test

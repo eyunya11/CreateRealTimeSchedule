@@ -3,6 +3,7 @@ package io.github.eyunya11.createrealtimeschedule.railway;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.List;
+import java.util.Set;
 
 import org.junit.jupiter.api.Test;
 
@@ -149,5 +150,25 @@ class TagSectionsTest {
         assertEquals(List.of(span(0, 50, 0, 1)), sections.spans(2));
         assertEquals(List.of(span(0, 30, 0, 1), span(30, 50, 0, 1)), sections.spans(3));
         assertEquals(List.of(), sections.problems());
+    }
+
+    /**
+     * Where a train held to a tag may run: where no section is, or one with its tag; where sections of
+     * blocks facing each other overlap, the track has both their tags. The sections it starts in are open to it.
+     */
+    @Test
+    void theTrackIsOpenToATagWhereNoSectionIsOrOneWithItCoversIt() {
+        // Tag 1 east from 20 in on edge 0; tag 2 west from 10 in on edge 3, which covers all of edge 0 the other way.
+        TagSections sections = TagSections.of(new RailNetwork(line(), List.of(), List.of(), List.of(marker(0, 20, 1), marker(3, 10, 2))));
+        assertEquals(List.of(0.0), sections.closedTo(0, 1, Set.of()), "short of 20 in, edge 0 has tag 2 only");
+        assertEquals(List.of(), sections.closedTo(0, 2, Set.of()));
+        assertEquals(List.of(0.0), sections.closedTo(0, 3, Set.of()), "one stretch closed, though two sections cover it");
+        assertEquals(List.of(), sections.closedTo(0, 3, Set.of(1)), "the section of block 1, which the train starts in, is open to it");
+        assertEquals(List.of(40.0), sections.closedTo(2, 2, Set.of()), "the westward section ends 10 short of node 2 on edge 2");
+        assertEquals(List.of(false, true, true), List.of(sections.allows(0, 10, 1), sections.allows(0, 30, 1), sections.allows(0, 30, 2)));
+        assertEquals(Set.of(0, 1), sections.markersAt(0, 20));
+        assertEquals(List.of(20.0, 0.0), List.of(sections.tagFrom(0, 1), sections.tagFrom(0, 2)), "where the first section with each tag starts");
+        TagSections none = TagSections.of(new RailNetwork(line(), List.of(), List.of(), List.of()));
+        assertEquals(List.of(true, Double.POSITIVE_INFINITY), List.of(none.allows(0, 10, 1), none.tagFrom(0, 1)));
     }
 }

@@ -6,6 +6,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalInt;
 
 import org.jetbrains.annotations.Nullable;
 
@@ -14,7 +15,6 @@ import com.mojang.brigadier.context.CommandContext;
 import com.simibubi.create.Create;
 
 import io.github.eyunya11.createrealtimeschedule.railway.CreateNetwork;
-import io.github.eyunya11.createrealtimeschedule.railway.Leg;
 import io.github.eyunya11.createrealtimeschedule.railway.NetworkJson;
 import io.github.eyunya11.createrealtimeschedule.railway.RailNetwork;
 import io.github.eyunya11.createrealtimeschedule.railway.TagSections;
@@ -74,8 +74,9 @@ public final class RtNetworkCommand {
         }
         RailNetwork network = CreateNetwork.read(Create.RAILWAYS.trackNetworks.values());
         List<String> names = network.names();
-        List<Leg> legs = network.legs();
-        return new Written(NetworkJson.write(names, legs, spec, 1.0), names.size(), legs.size());
+        RailNetwork.Routes untagged = network.routes(names, OptionalInt.empty());
+        TrackTags tags = TrackTagData.get(source.getServer()).tags();
+        return new Written(NetworkJson.write(network, untagged, tags, spec, 1.0), names.size(), untagged.legs().size());
     }
 
     private static int tags(CommandContext<CommandSourceStack> context) {

@@ -239,6 +239,7 @@
   function render() {
     renderBar();
     renderTypeNames();
+    renderTagNames();
     renderLines();
     renderTrains();
     renderDuties();
@@ -292,6 +293,15 @@
   /** The names the boxes for a type offer: the types of the list. */
   function renderTypeNames() {
     $('type-names').replaceChildren(...rt.edit.typeList(state.timetable).map(type => h('option', { value: type.name })));
+  }
+
+  /** The names the boxes for a track tag offer: the network's tags, and those the trains are held to. */
+  function renderTagNames() {
+    const names = (state.network === null ? [] : state.network.tags).slice();
+    for (const tag of rt.edit.tagsOf(state.timetable))
+      if (!names.includes(tag))
+        names.push(tag);
+    $('tag-names').replaceChildren(...names.map(name => h('option', { value: name })));
   }
 
   function firstDeparture(train) {
@@ -352,12 +362,30 @@
 
   function renderProblems() {
     const found = rt.problems.problems(state.timetable);
-    // Not what the mod refuses a timetable for, but a train that cannot keep its times on this track.
-    const fast = state.network === null ? [] : rt.edit.tooFast(state.timetable, running);
+    // Not what the mod refuses a timetable for, but a train that cannot keep its times on this track,
+    // or run at all on the track tag it is held to, and what is wrong with the track's tags.
+    const network = state.network;
+    const fast = network === null ? [] : rt.edit.tooFast(state.timetable, running);
+    const track = network === null ? null
+      : { platforms: station => rt.network.platforms(network, station), way: (platform, station, tag) => rt.network.way(network, platform, station, tag) };
+    const noWays = track === null ? [] : rt.edit.noWay(state.timetable, track);
+    // A network of before the tags (version 2 and older) cannot say which tags the world has.
+    const unknown = network === null || !network.tagged ? [] : rt.edit.tagsOf(state.timetable).filter(tag => !network.tags.includes(tag));
+    const tagProblems = network === null ? [] : network.tagProblems;
+    const notes = fast.length + noWays.length + unknown.length + tagProblems.length;
     $('problems-title').textContent = (found.length === 0 ? t('noProblems') : t('problemCount', found.length))
-      + (fast.length === 0 ? '' : t('tooFastCount', fast.length));
+      + (notes === 0 ? '' : t('tooFastCount', notes));
     const list = $('problems');
     list.replaceChildren();
+    const place = at => (Array.isArray(at) ? at.join(' ') : '?');
+    for (const problem of tagProblems)
+      list.append(h('li', { class: 'warning' }, problem.problem === 'junction'
+        ? t('tagJunction', place(problem.block)) : t('tagMixed', place(problem.block), place(problem.other))));
+    for (const tag of unknown)
+      list.append(h('li', { class: 'warning' }, t('unknownTag', tag)));
+    for (const way of noWays)
+      list.append(h('li', { class: 'warning', onclick: () => select({ kind: 'train', number: way.train }) },
+        t('noWay', way.train, way.from, way.stop + 1, way.to, way.tag)));
     for (const way of fast)
       list.append(h('li', { class: 'warning', onclick: () => select({ kind: 'train', number: way.number }) },
         t('tooFast', way.number, way.from, way.to, way.given, way.needed)));
@@ -407,16 +435,16 @@
   let trainNote = '';
 
   function lineAxis(line) {
-    return rt.axis.of(line, state.network === null ? [] : state.network.legs);
+    return rt.axis.of(line, state.network === null ? [] : rt.network.untaggedLegs(state.network));
   }
 
   function shownTimetable() {
     return shown !== null ? shown : state.timetable;
   }
 
-  /** The seconds a train takes from one station to the other, by the network; null if it does not say. */
-  function running(from, to) {
-    return state.network === null ? null : rt.network.seconds(state.network, from, to);
+  /** The seconds a train held to the track tag tag ('' or none for none) takes from one station to the other, by the network; null if it does not say. */
+  function running(from, to, tag) {
+    return state.network === null ? null : rt.network.seconds(state.network, from, to, tag || '');
   }
 
   /** The seconds a train drawn at the station stands there: the station's own, or the setting's. */
@@ -685,7 +713,7 @@
       const to = train.stops[i + 1];
       if (from === undefined || to === undefined || from.depart === rt.edit.NONE)
         continue;
-      const seconds = running(from.station, to.station);
+      const seconds = running(from.station, to.station, rt.timetable.tagAt(train, i));
       if (seconds === null)
         continue;
       const fastest = { number: '', line: train.line, type: '', deadhead: false, stops: [
@@ -1060,6 +1088,10 @@
       type: 'text', class: 'type-from', value: stop.type || '', placeholder: t('typeUnchanged'), spellcheck: 'false', list: 'type-names',
       onchange: event => change(rt.edit.setStopType(state.timetable, number, i, event.target.value.trim())),
     })));
+    cells.push(h('label', null, t('tagFrom'), ' ', h('input', {
+      type: 'text', class: 'type-from', value: stop.tag || '', placeholder: t('tagOfTrain'), spellcheck: 'false', list: 'tag-names',
+      onchange: event => change(rt.edit.setStopTag(state.timetable, number, i, event.target.value.trim())),
+    })));
     cells.push(waitsCell(train, i));
     return h('tr', { class: 'stop-times' }, h('td', { colspan: '4' }, cells));
   }
@@ -1141,6 +1173,10 @@
     panel.append(field(t('type'), h('input', {
       type: 'text', value: train.type, spellcheck: 'false', list: 'type-names',
       onchange: event => change(rt.edit.setTrain(state.timetable, number, { type: event.target.value.trim() })),
+    })));
+    panel.append(field(t('tag'), h('input', {
+      type: 'text', value: train.tag || '', spellcheck: 'false', list: 'tag-names',
+      onchange: event => change(rt.edit.setTrain(state.timetable, number, { tag: event.target.value.trim() })),
     })));
     panel.append(field(t('deadhead'), h('span', null, h('input', {
       type: 'checkbox', checked: train.deadhead,

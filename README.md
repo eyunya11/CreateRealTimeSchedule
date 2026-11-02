@@ -63,7 +63,7 @@ The departure time is kept in the train as a clock value, so it survives saving 
 
 ## Running a timetable
 
-The mod can also run trains to a whole day's timetable by itself, without Create's schedules. The timetable is a JSON file of lines, trains and duties, in the format of [docs/proposal.md](docs/proposal.md) (version 6; a timetable is written in the oldest version that holds it, so one with nothing of versions 3 to 6 is still version 2). A duty is what one train does in a day: it leaves its depot, runs a string of trains one after another, and comes back. Deadhead trains (`"deadhead": true`) take it from the depot to where its first train starts, and back, and are timed like any other train. The timetable editor, a web page, makes such files by drawing the trains on a diagram (see below).
+The mod can also run trains to a whole day's timetable by itself, without Create's schedules. The timetable is a JSON file of lines, trains and duties, in the format of [docs/proposal.md](docs/proposal.md) (version 7; a timetable is written in the oldest version that holds it, so one with nothing of versions 3 to 7 is still version 2). A duty is what one train does in a day: it leaves its depot, runs a string of trains one after another, and comes back. Deadhead trains (`"deadhead": true`) take it from the depot to where its first train starts, and back, and are timed like any other train. The timetable editor, a web page, makes such files by drawing the trains on a diagram (see below).
 
 | Command | Who | What it does |
 | --- | --- | --- |
@@ -105,7 +105,7 @@ The editor checks a timetable by the same rules as the mod and words its problem
 
 ## Track tags
 
-A track tag block gives a stretch of track tags, such as "Local" or "Siding", which you name. For now a tag only marks the track; a later version will let a timetable keep a train to the track of a tag.
+A track tag block gives a stretch of track tags, such as "Local" or "Siding", which you name. A timetable can hold a train to a tag: a train's `tag` (version 7) holds on every way between its stops, and a stop's `tag` on the way from it to the next stop only. A train held to a tag runs only on track with no tag and on stretches with its tag, though it may leave the stretch it starts in; at a junction it takes the way to a stretch with its tag, and with no way it does not leave. Loading the timetable and `/rttimetable status` say which ways have none on their tag, and which tags the world lacks. The editor checks the same from the exported network (version 3), and offers the world's tags in the boxes for a train and its stops.
 
 - There are two blocks, Track Tag (Both Ways) and Track Tag (One Way). Each is placed as a station is: use the item on the track first, facing the way the stretch is to run, then place the block near it. A railway casing and a paper make two blocks for both ways, and either block can be crafted into the other. Both are in Create's creative tab.
 - Its stretch runs the way it faces, to the next block of its kind that faces the same way, or to the end of the track. The tags of a block for both ways hold for trains running either way along its stretch; those of a one-way block hold only for trains running the way it faces, so that one track can have a tag for each way. A block may have more than one tag, and where stretches overlap, the track has the tags of them all. A block with no tag only ends the stretch of the block before it. A block facing the other way, or of the other kind, does not end it.

@@ -2,6 +2,7 @@ package io.github.eyunya11.createrealtimeschedule.tag;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.OptionalInt;
 
 import io.github.eyunya11.createrealtimeschedule.Createrealtimeschedule;
 import net.minecraft.core.HolderLookup;
@@ -10,6 +11,7 @@ import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.level.saveddata.SavedData;
+import net.neoforged.neoforge.server.ServerLifecycleHooks;
 
 /** The world's list of track tags ({@link TrackTags}), held by the overworld's data storage. */
 public final class TrackTagData extends SavedData {
@@ -22,6 +24,20 @@ public final class TrackTagData extends SavedData {
 
     public static TrackTagData get(MinecraftServer server) {
         return server.overworld().getDataStorage().computeIfAbsent(FACTORY, NAME);
+    }
+
+    /**
+     * The id a train held to the tag named {@code name} looks for on the track, by the list of the
+     * server now running ({@link TrackTags#held}); with no server, {@link TrackTags#UNKNOWN} for a name.
+     */
+    public static OptionalInt held(String name) {
+        return current().held(name);
+    }
+
+    /** The list of the server now running; an empty one with no server. */
+    public static TrackTags current() {
+        MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
+        return server == null ? new TrackTags() : get(server).tags();
     }
 
     /** The list; one who changes it calls {@link #setDirty()}. */

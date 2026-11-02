@@ -54,6 +54,8 @@ class StationUseTest {
         assertFalse(StationUse.passedBy(timetable, calls, Map.of(), "1A", DAY, "B", at("08:00"), at("09:30")),
             "the express ends at B and starts there again; it does not run through it");
         assertFalse(StationUse.passedBy(timetable, calls, Map.of(), "1A", DAY, "A", at("10:00"), at("11:00")));
+        assertFalse(StationUse.passedBy(timetable, calls, Map.of(), "1A", DAY, "A", at("08:25"), at("08:30"), tag -> false),
+            "a train that could not run through the platform the set needs is no matter");
         // A train of the day before, or the day after, runs through on its own day only.
         assertFalse(StationUse.passedBy(timetable, calls, Map.of(), "1A", DAY, "A", at("08:25") + RealClock.TICKS_PER_DAY / 2,
             at("08:30") + RealClock.TICKS_PER_DAY / 2));
@@ -116,6 +118,15 @@ class StationUseTest {
         Train in = new Train("S1", "l", "", List.of(Stop.leaving("Depot", t("08:20")), Stop.arriving("A", t("08:26"))), true);
         Train out = new Train("S2", "l", "", List.of(Stop.leaving("A", t("08:29")), Stop.arriving("Depot", t("08:35"))), true);
         return OperationTimetables.laps(Stop.NONE, List.of(), List.of(in, out), List.of(new Duty("3A", "Depot", List.of("S1", "S2"))));
+    }
+
+    /** A set is counted only if it could take the platform, by the track tag of the way it comes in on. */
+    @Test
+    void onlyTheSetsThatCouldTakeThePlatformAreCounted() {
+        Map<String, List<Call>> calls = calls(withSetStandingAtA());
+        assertEquals(0, StationUse.mostStanding(calls, "1A", DAY, "A", at("08:25"), at("08:30"), at("08:25"), LEAD, tag -> false));
+        assertEquals(1, StationUse.mostStanding(calls, "1A", DAY, "A", at("08:25"), at("08:30"), at("08:25"), LEAD, String::isEmpty),
+            "3A's set comes on no tag");
     }
 
     @Test

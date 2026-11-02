@@ -115,7 +115,7 @@ public class DiagramTests {
             }
             helper.assertTrue(tick - changedAt[0] >= TrackFacts.SETTLE_TICKS,
                 "the axes are worked out again " + (tick - changedAt[0]) + " ticks after the track changed, before it settled");
-            helper.assertTrue(data.legs().containsKey(List.of("Alpha", "Beta")) != bravo,
+            helper.assertTrue(data.legs().containsKey(List.of("Alpha", "Beta", "")) != bravo,
                 "with the station named " + names[step[0]] + ", the ways are " + data.legs().keySet());
             LineAxis axis = data.axes().get("l");
             if (!bravo)
