@@ -52,6 +52,9 @@ public final class TrackTagData extends SavedData {
             CompoundTag one = new CompoundTag();
             one.putInt("Id", entry.getKey());
             one.putString("Name", entry.getValue());
+            String colour = tags.colours().get(entry.getKey());
+            if (colour != null)
+                one.putString("Colour", colour);
             list.add(one);
         }
         tag.put("Tags", list);
@@ -61,12 +64,16 @@ public final class TrackTagData extends SavedData {
 
     public static TrackTagData load(CompoundTag tag, HolderLookup.Provider registries) {
         Map<Integer, String> names = new LinkedHashMap<>();
+        Map<Integer, String> colours = new LinkedHashMap<>();
         for (Tag each : tag.getList("Tags", Tag.TAG_COMPOUND)) {
             CompoundTag one = (CompoundTag) each;
             names.put(one.getInt("Id"), one.getString("Name"));
+            // A tag kept before tags had colours has none, and keeps the colour its name picks.
+            if (one.contains("Colour", Tag.TAG_STRING))
+                colours.put(one.getInt("Id"), one.getString("Colour"));
         }
         TrackTagData data = new TrackTagData();
-        data.tags = new TrackTags(names, tag.getInt("NextId"));
+        data.tags = new TrackTags(names, tag.getInt("NextId"), colours);
         return data;
     }
 }

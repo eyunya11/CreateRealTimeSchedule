@@ -54,7 +54,7 @@ public final class TrackTagService {
     public static TrackTagListPayload list(MinecraftServer server) {
         List<TrackTagListPayload.Entry> entries = new ArrayList<>();
         for (Map.Entry<Integer, String> entry : TrackTagData.get(server).tags().names().entrySet())
-            entries.add(new TrackTagListPayload.Entry(entry.getKey(), entry.getValue()));
+            entries.add(new TrackTagListPayload.Entry(entry.getKey(), entry.getValue(), TrackTagData.get(server).tags().colour(entry.getKey())));
         return new TrackTagListPayload(entries);
     }
 
@@ -104,6 +104,12 @@ public final class TrackTagService {
                     yield Outcome.refused(refusal, before);
                 yield new Outcome(Component.translatableWithFallback(KEY + "deleted", "Deleted the tag %1$s", before), true);
             }
+            case COLOUR -> {
+                TrackTags.Refusal refusal = tags.recolour(edit.tag(), edit.name());
+                if (refusal != null)
+                    yield Outcome.refused(refusal, edit.name());
+                yield new Outcome(null, true);
+            }
         };
         if (outcome.listChanged())
             listChanged(player.server);
@@ -143,6 +149,7 @@ public final class TrackTagService {
             case UNKNOWN -> Component.translatableWithFallback(KEY + "unknown", "There is no such tag; it may have been deleted");
             case IN_USE -> Component.translatableWithFallback(KEY + "in_use", "A tag block has the tag %1$s, so it cannot be deleted", shown);
             case CONTROL -> Component.translatableWithFallback(KEY + "control", "A tag's name cannot have a control character, such as a line break");
+            case COLOUR -> Component.translatableWithFallback(KEY + "bad_colour", "%1$s is not a colour: write one as #rrggbb", shown);
         };
     }
 

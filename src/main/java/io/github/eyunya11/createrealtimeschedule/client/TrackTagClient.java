@@ -14,14 +14,19 @@ import net.minecraft.client.Minecraft;
 public final class TrackTagClient {
 
     private static Map<Integer, String> names = Map.of();
+    private static Map<Integer, String> colours = Map.of();
 
     private TrackTagClient() {}
 
     public static void onList(TrackTagListPayload payload) {
         Map<Integer, String> received = new LinkedHashMap<>();
-        for (TrackTagListPayload.Entry entry : payload.tags())
+        Map<Integer, String> receivedColours = new LinkedHashMap<>();
+        for (TrackTagListPayload.Entry entry : payload.tags()) {
             received.put(entry.id(), entry.name());
+            receivedColours.put(entry.id(), entry.colour());
+        }
         names = Collections.unmodifiableMap(received);
+        colours = Collections.unmodifiableMap(receivedColours);
         if (Minecraft.getInstance().screen instanceof TrackTagScreen screen)
             screen.listChanged();
     }
@@ -37,6 +42,11 @@ public final class TrackTagClient {
     /** The tags by their ids, in the order they were made. */
     public static Map<Integer, String> names() {
         return names;
+    }
+
+    /** The colours of the tags by their ids, {@code #rrggbb}. */
+    public static Map<Integer, String> colours() {
+        return colours;
     }
 
     /**
@@ -55,5 +65,6 @@ public final class TrackTagClient {
 
     static void reset() {
         names = Map.of();
+        colours = Map.of();
     }
 }
