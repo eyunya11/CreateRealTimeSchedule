@@ -1,0 +1,86 @@
+{
+  "about": "Which stretches a map shows for the tags turned off. Track 0 (a to b) and 2 (c to d) are Local, joined by track 1 with no tag and by a way round with no tag, 6 and 7 through h; 3 is a siding with no tag off b. Track 4 is Rapid for its first half from d, then has no tag to f, and 5 goes on from f to an end. Track 8 is Local from a, then Local and Rapid, then has no tag to an end. Each stretch is [from, to, tagged, shown, the tags on that are on].",
+  "tracks": [
+    {"key": "w a b", "tags": [{"from": 0, "to": 1, "tags": ["Local"]}]},
+    {"key": "w b c", "tags": []},
+    {"key": "w c d", "tags": [{"from": 0, "to": 1, "tags": ["Local"]}]},
+    {"key": "w b e", "tags": []},
+    {"key": "w d f", "tags": [{"from": 0, "to": 0.5, "tags": ["Rapid"]}]},
+    {"key": "w f g", "tags": []},
+    {"key": "w c h", "tags": []},
+    {"key": "w h d", "tags": []},
+    {"key": "w a i", "tags": [{"from": 0, "to": 0.3, "tags": ["Local"]}, {"from": 0.3, "to": 0.6, "tags": ["Local", "Rapid"]}]}
+  ],
+  "cases": [
+    {
+      "off": [],
+      "segments": [
+        [[0, 1, true, true, ["Local"]]],
+        [[0, 1, false, true, []]],
+        [[0, 1, true, true, ["Local"]]],
+        [[0, 1, false, true, []]],
+        [[0, 0.5, true, true, ["Rapid"]], [0.5, 1, false, true, []]],
+        [[0, 1, false, true, []]],
+        [[0, 1, false, true, []]],
+        [[0, 1, false, true, []]],
+        [[0, 0.3, true, true, ["Local"]], [0.3, 0.6, true, true, ["Local", "Rapid"]], [0.6, 1, false, true, []]]
+      ]
+    },
+    {
+      "off": [""],
+      "segments": [
+        [[0, 1, true, true, ["Local"]]],
+        [[0, 1, false, true, []]],
+        [[0, 1, true, true, ["Local"]]],
+        [[0, 1, false, false, []]],
+        [[0, 0.5, true, true, ["Rapid"]], [0.5, 1, false, false, []]],
+        [[0, 1, false, false, []]],
+        [[0, 1, false, true, []]],
+        [[0, 1, false, true, []]],
+        [[0, 0.3, true, true, ["Local"]], [0.3, 0.6, true, true, ["Local", "Rapid"]], [0.6, 1, false, false, []]]
+      ]
+    },
+    {
+      "off": ["", "Rapid"],
+      "segments": [
+        [[0, 1, true, true, ["Local"]]],
+        [[0, 1, false, true, []]],
+        [[0, 1, true, true, ["Local"]]],
+        [[0, 1, false, false, []]],
+        [[0, 0.5, true, false, []], [0.5, 1, false, false, []]],
+        [[0, 1, false, false, []]],
+        [[0, 1, false, true, []]],
+        [[0, 1, false, true, []]],
+        [[0, 0.3, true, true, ["Local"]], [0.3, 0.6, true, true, ["Local"]], [0.6, 1, false, false, []]]
+      ]
+    },
+    {
+      "off": ["Local"],
+      "segments": [
+        [[0, 1, true, false, []]],
+        [[0, 1, false, true, []]],
+        [[0, 1, true, false, []]],
+        [[0, 1, false, true, []]],
+        [[0, 0.5, true, true, ["Rapid"]], [0.5, 1, false, true, []]],
+        [[0, 1, false, true, []]],
+        [[0, 1, false, true, []]],
+        [[0, 1, false, true, []]],
+        [[0, 0.3, true, false, []], [0.3, 0.6, true, true, ["Rapid"]], [0.6, 1, false, true, []]]
+      ]
+    },
+    {
+      "off": ["", "Local"],
+      "segments": [
+        [[0, 1, true, false, []]],
+        [[0, 1, false, false, []]],
+        [[0, 1, true, false, []]],
+        [[0, 1, false, false, []]],
+        [[0, 0.5, true, true, ["Rapid"]], [0.5, 1, false, false, []]],
+        [[0, 1, false, false, []]],
+        [[0, 1, false, false, []]],
+        [[0, 1, false, false, []]],
+        [[0, 0.3, true, false, []], [0.3, 0.6, true, true, ["Rapid"]], [0.6, 1, false, false, []]]
+      ]
+    }
+  ]
+}

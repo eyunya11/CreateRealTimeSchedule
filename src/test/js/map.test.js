@@ -28,6 +28,45 @@ test('each shared case shows the tracks it says', () => {
   }
 });
 
+// The cases of the mod's TagViewTest: the same stretches shown for the same tags turned off.
+test('each shared case of tags turned off shows the stretches it says', () => {
+  const folder = path.join(RESOURCES, 'map', 'tagviews');
+  const files = fs.readdirSync(folder).filter(file => file.endsWith('.json')).sort();
+  assert.ok(files.length > 0, 'there are no cases');
+  for (const file of files) {
+    const root = JSON.parse(fs.readFileSync(path.join(folder, file), 'utf8'));
+    for (const one of root.cases) {
+      const segments = map.tagSegments(root.tracks, one.off).map(track => track.map(segment =>
+        [segment.from, segment.to, segment.tagged, segment.shown, segment.tags]));
+      assert.deepEqual(segments, one.segments, file + ': the stretches shown with ' + JSON.stringify(one.off) + ' off');
+    }
+  }
+});
+
+test('a place is as far along a track as the nearest point on it, and shown where a stretch shown has it', () => {
+  assert.equal(map.shareOf([0, 0, 30, 0, 30, 10], 20, 3), 0.5);
+  assert.equal(map.shareOf([0, 0, 30, 0, 30, 10], 40, 20), 1);
+  assert.equal(map.shareOf([5, 5, 5, 5], 1, 1), 0);
+  const segments = [{ from: 0, to: 0.5, tagged: true, shown: false, tags: [] }, { from: 0.5, to: 1, tagged: false, shown: true, tags: [] }];
+  assert.equal(map.shownAt(segments, 0.2), false);
+  assert.equal(map.shownAt(segments, 0.5), true, 'at the end of a stretch shown');
+  assert.equal(map.shownAt(segments, 0.8), true);
+});
+
+test('a train is shown if a tag it runs on is on', () => {
+  assert.equal(map.trainShown(['Local', ''], ['Local']), true, 'the stretch with no tag it runs on is on');
+  assert.equal(map.trainShown(['Local'], ['Local']), false);
+  assert.equal(map.trainShown([], ['Local']), true, 'a train on no tag is shown while no tag is on');
+  assert.equal(map.trainShown([], [map.NO_TAG]), false);
+});
+
+test('the path of a stretch of a track runs from where it starts to where it ends, through the points between', () => {
+  const view = { x: x => x, y: z => z };
+  const track = { points: [0, 0, 10, 0, 10, 10] };
+  assert.equal(map.piecePath(track, 0.25, 0.75, view), 'M5 0L10 0L10 5');
+  assert.equal(map.piecePath(track, 0, 1, view), 'M0 0L10 0L10 10');
+});
+
 test('with no timetable every track is shown', () => {
   assert.deepEqual(map.visible(['a', 'b'], [], null, ['l']), [0, 1]);
 });
