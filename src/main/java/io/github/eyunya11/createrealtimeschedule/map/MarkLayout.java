@@ -1,0 +1,187 @@
+package io.github.eyunya11.createrealtimeschedule.map;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Where to put the things a map screen draws beside the track (the heads of the signals, the
+ * speed-limit signs and the stations' names) so that they do not lie over the track, over what is on
+ * it, or over one another. Each thing has places it may go, best first; it takes the first that is
+ * clear of what is fixed (the track, and the marks on it) and of what has been put before it, and on
+ * the screen. A thing with no clear place goes in its best place on the screen anyway, or, if it may be
+ * left out (a name), is left out.
+ * Things are boxes that may lie at a slant, as a signal's head along slanting track does, and a piece
+ * of track is a long thin box.
+ */
+public final class MarkLayout {
+
+    /** The side of the squares the boxes are sorted into, so that a box is tested only against those near it. */
+    private static final double CELL = 0.25;
+
+    private MarkLayout() {}
+
+    /**
+     * A box on the screen: its middle, the way of its length (a unit vector), and how far it reaches
+     * each side of its middle along its length and across it.
+     */
+    public record Rect(double u, double v, double du, double dv, double halfAlong, double halfAcross) {
+
+        /** The upright box of {@code halfU} and {@code halfV} each side of ({@code u}, {@code v}). */
+        public static Rect around(double u, double v, double halfU, double halfV) {
+            return new Rect(u, v, 1, 0, halfU, halfV);
+        }
+
+        /** The box of {@code halfAlong} and {@code halfAcross} each side of ({@code u}, {@code v}), lengthways along ({@code du}, {@code dv}). */
+        public static Rect along(double u, double v, double du, double dv, double halfAlong, double halfAcross) {
+            double length = Math.hypot(du, dv);
+            return length < 1e-12 ? around(u, v, halfAlong, halfAcross) : new Rect(u, v, du / length, dv / length, halfAlong, halfAcross);
+        }
+
+        /** A line from one point to another, {@code half} each side of it. */
+        public static Rect line(double u1, double v1, double u2, double v2, double half) {
+            return along((u1 + u2) / 2, (v1 + v2) / 2, u2 - u1, v2 - v1, Math.hypot(u2 - u1, v2 - v1) / 2, half);
+        }
+
+        /** How far it reaches each way along u and v. */
+        double reachU() {
+            return Math.abs(du) * halfAlong + Math.abs(dv) * halfAcross;
+        }
+
+        double reachV() {
+            return Math.abs(dv) * halfAlong + Math.abs(du) * halfAcross;
+        }
+
+        /** Whether the two boxes share more than an edge: no line along a side of either parts them. */
+        public boolean overlaps(Rect other) {
+            return !parted(du, dv, halfAlong, other) && !parted(-dv, du, halfAcross, other)
+                && !other.parted(other.du, other.dv, other.halfAlong, this) && !other.parted(-other.dv, other.du, other.halfAcross, this);
+        }
+
+        /** Whether the two boxes lie apart along the way (au, av), one of this box's own, which it reaches {@code mine} along. */
+        private boolean parted(double au, double av, double mine, Rect other) {
+            double gap = Math.abs((other.u - u) * au + (other.v - v) * av);
+            double theirs = Math.abs(other.du * au + other.dv * av) * other.halfAlong + Math.abs(-other.dv * au + other.du * av) * other.halfAcross;
+            return gap >= mine + theirs - 1e-12;
+        }
+    }
+
+    /**
+     * A thing to put.
+     *
+     * @param places    where it may go, best first
+     * @param posts     for each place, the post it stands on there, from beside the track; none for a
+     *                  thing on no post. A place is clear only if its post is too, so that a post does
+     *                  not cross other track or other things
+     * @param droppable whether it is left out if no place is clear
+     */
+    public record Item(List<Rect> places, List<Rect> posts, boolean droppable) {
+        public Item {
+            places = List.copyOf(places);
+            posts = List.copyOf(posts);
+            if (places.isEmpty())
+                throw new IllegalArgumentException("a thing with nowhere to go");
+            if (!posts.isEmpty() && posts.size() != places.size())
+                throw new IllegalArgumentException(posts.size() + " posts for " + places.size() + " places");
+        }
+
+        /** A thing on no post. */
+        public Item(List<Rect> places, boolean droppable) {
+            this(places, List.of(), droppable);
+        }
+    }
+
+    /** The place each item takes, by its index in its places, or -1 for one left out; with no edges to keep within. */
+    public static int[] place(List<Rect> fixed, List<Item> items) {
+        return place(fixed, items, Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY);
+    }
+
+    /**
+     * The place each item takes, by its index in its places, or -1 for one left out, on a screen
+     * {@code width} by {@code height} from (0, 0): a place that reaches off it is not clear, as nothing
+     * drawn there would be on the screen.
+     */
+    public static int[] place(List<Rect> fixed, List<Item> items, double width, double height) {
+        Grid taken = new Grid();
+        fixed.forEach(taken::add);
+        int[] chosen = new int[items.size()];
+        for (int i = 0; i < items.size(); i++) {
+            Item item = items.get(i);
+            chosen[i] = item.droppable() ? -1 : 0;
+            if (!item.droppable())
+                for (int k = 0; k < item.places().size(); k++)
+                    if (on(item.places().get(k), width, height)) {
+                        chosen[i] = k;
+                        break;
+                    }
+            for (int k = 0; k < item.places().size(); k++)
+                if (on(item.places().get(k), width, height) && taken.clear(item.places().get(k))
+                    && (item.posts().isEmpty() || taken.clear(item.posts().get(k)))) {
+                    chosen[i] = k;
+                    break;
+                }
+            if (chosen[i] >= 0) {
+                taken.add(item.places().get(chosen[i]));
+                if (!item.posts().isEmpty())
+                    taken.add(item.posts().get(chosen[i]));
+            }
+        }
+        return chosen;
+    }
+
+    /** Whether a box lies on a screen {@code width} by {@code height} from (0, 0); any box does on one of no edges (infinite). */
+    private static boolean on(Rect rect, double width, double height) {
+        if (Double.isInfinite(width) || Double.isInfinite(height))
+            return true;
+        return rect.u() - rect.reachU() >= -1e-9 && rect.v() - rect.reachV() >= -1e-9 && rect.u() + rect.reachU() <= width + 1e-9
+            && rect.v() + rect.reachV() <= height + 1e-9;
+    }
+
+    /** The boxes taken, by the squares they reach into. */
+    private static final class Grid {
+        private final Map<Long, List<Rect>> cells = new HashMap<>();
+
+        /**
+         * Takes a box. A long one is taken as pieces no longer than a square, so that a long slanting
+         * piece of track reaches into the squares along it, not into every square of its upright bounds.
+         */
+        void add(Rect rect) {
+            int pieces = (int) Math.min(100_000, Math.ceil(2 * rect.halfAlong() / CELL));
+            if (pieces <= 1) {
+                forCells(rect, key -> cells.computeIfAbsent(key, unused -> new ArrayList<>()).add(rect));
+                return;
+            }
+            double length = 2 * rect.halfAlong() / pieces;
+            for (int i = 0; i < pieces; i++) {
+                double along = -rect.halfAlong() + (i + 0.5) * length;
+                Rect piece = new Rect(rect.u() + rect.du() * along, rect.v() + rect.dv() * along, rect.du(), rect.dv(), length / 2,
+                    rect.halfAcross());
+                forCells(piece, key -> cells.computeIfAbsent(key, unused -> new ArrayList<>()).add(piece));
+            }
+        }
+
+        boolean clear(Rect rect) {
+            boolean[] clear = {true};
+            forCells(rect, key -> {
+                if (clear[0])
+                    for (Rect other : cells.getOrDefault(key, List.of()))
+                        if (rect.overlaps(other)) {
+                            clear[0] = false;
+                            return;
+                        }
+            });
+            return clear[0];
+        }
+
+        private static void forCells(Rect rect, java.util.function.LongConsumer each) {
+            long fromU = (long) Math.floor((rect.u() - rect.reachU()) / CELL);
+            long toU = (long) Math.floor((rect.u() + rect.reachU()) / CELL);
+            long fromV = (long) Math.floor((rect.v() - rect.reachV()) / CELL);
+            long toV = (long) Math.floor((rect.v() + rect.reachV()) / CELL);
+            for (long cu = fromU; cu <= toU; cu++)
+                for (long cv = fromV; cv <= toV; cv++)
+                    each.accept(cu * 0x1_0000_0000L + (cv & 0xFFFF_FFFFL));
+        }
+    }
+}

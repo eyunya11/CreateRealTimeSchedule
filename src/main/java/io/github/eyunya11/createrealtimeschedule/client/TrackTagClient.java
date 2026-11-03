@@ -8,6 +8,7 @@ import java.util.Map;
 
 import io.github.eyunya11.createrealtimeschedule.network.TrackTagListPayload;
 import io.github.eyunya11.createrealtimeschedule.network.TrackTagOpenPayload;
+import io.github.eyunya11.createrealtimeschedule.timetable.TypeColours;
 import net.minecraft.client.Minecraft;
 
 /** The client's copy of the world's track tags, as the server last sent it, and the opening of the tag screen. */
@@ -47,6 +48,19 @@ public final class TrackTagClient {
     /** The colours of the tags by their ids, {@code #rrggbb}. */
     public static Map<Integer, String> colours() {
         return colours;
+    }
+
+    /**
+     * The colours the tags are drawn in, by their names, as ARGB: the server's, or, for one that is not
+     * a colour, the one the name picks.
+     */
+    public static Map<String, Integer> argbs() {
+        Map<String, Integer> argbs = new LinkedHashMap<>();
+        names.forEach((id, name) -> {
+            String colour = colours.get(id);
+            argbs.put(name, TypeColours.argb(colour != null && TypeColours.isColour(colour) ? colour : TypeColours.byName(name)));
+        });
+        return argbs;
     }
 
     /**

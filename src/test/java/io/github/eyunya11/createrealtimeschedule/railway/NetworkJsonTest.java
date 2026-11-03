@@ -102,8 +102,8 @@ class NetworkJsonTest {
         Spot east = new Spot(1, 0);
         Spot west = new Spot(-1, 0);
         TrackMap map = new TrackMap(List.of(overworld), List.of(line, curve),
-            List.of(new StationMark("Alpha", 0, new Spot(10.5, 3.5)), new StationMark("Beta", 0, new Spot(30.5, 3.5)),
-                new StationMark("Gamma", 0, new Spot(50.5, 3.5))),
+            List.of(new StationMark("Alpha", 0, new Spot(10.5, 3.5), east), new StationMark("Beta", 0, new Spot(30.5, 3.5), east),
+                new StationMark("Gamma", 0, new Spot(50.5, 3.5), west)),
             List.of(new SignalMark("3f1c", 0, new Spot(40.5, 3.5),
                 List.of(new SignalSide(east, "create", List.of(Lamp.GREEN)),
                     new SignalSide(west, "light4", List.of(Lamp.YELLOW, Lamp.GREEN))))),

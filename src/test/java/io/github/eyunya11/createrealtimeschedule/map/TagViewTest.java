@@ -107,4 +107,19 @@ class TagViewTest {
         assertTrue(TagView.trainShown(List.of(), Set.of("Local")), "a train on no tag is shown while no tag is on");
         assertFalse(TagView.trainShown(List.of(), Set.of(TagView.NO_TAG)));
     }
+
+    @Test
+    void aPieceOfATrackRunsFromWhereItStartsToWhereItEndsThroughThePointsBetween() {
+        List<Spot> points = List.of(new Spot(0, 0), new Spot(10, 0), new Spot(10, 10));
+        assertEquals(List.of(new Spot(5, 0), new Spot(10, 0), new Spot(10, 5)), TagView.piece(points, 0.25, 0.75));
+        assertEquals(points, TagView.piece(points, 0, 1));
+    }
+
+    @Test
+    void aTrackIsCutIntoDashesOfTheLengthGivenTheLastShorter() {
+        List<Spot> points = List.of(new Spot(0, 0), new Spot(10, 0));
+        assertEquals(List.of(List.of(new Spot(0, 0), new Spot(4, 0)), List.of(new Spot(4, 0), new Spot(8, 0)), List.of(new Spot(8, 0), new Spot(10, 0))),
+            TagView.dashes(points, 4));
+        assertEquals(List.of(points), TagView.dashes(points, 20), "a line shorter than a dash is one");
+    }
 }

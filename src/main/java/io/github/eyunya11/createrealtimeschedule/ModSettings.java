@@ -3,11 +3,12 @@ package io.github.eyunya11.createrealtimeschedule;
 import java.util.function.Supplier;
 
 import io.github.eyunya11.createrealtimeschedule.clock.RealClock;
+import io.github.eyunya11.createrealtimeschedule.map.ScreenLayout;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable;
 import net.neoforged.neoforge.common.ModConfigSpec;
 
 /**
- * The mod's per-world settings (the clock, the sky, the wait condition and the operation), in
+ * The mod's per-world settings (the clock, the sky, the wait condition, the operation and the map screens), in
  * {@code serverconfig/createrealtimeschedule-server.toml} of the world.
  *
  * <p>NeoForge sends the server's config files to a client when it joins, so a client reads the
@@ -84,6 +85,12 @@ public final class ModSettings {
             "0 waits only while that costs no time.")
         .defineInRange("max_wait_seconds", DEFAULT_MAX_WAIT_SECONDS, 0, Timetable.MAX_WAIT_SECONDS);
 
+    private static final ModConfigSpec.IntValue MAP_SCREEN_MAX_SIZE = BUILDER
+        .comment("The most map screen blocks a screen has each way. Blocks in a wall that fill a rectangle no larger than this",
+            "make one screen; a larger wall shows the map on each block alone. A screen takes a new size when a block of it is",
+            "put or broken. Each block of a screen draws its part of the map again when the map changes, so a large screen costs more.")
+        .defineInRange("map_screen_max_size", ScreenLayout.DEFAULT_MOST, 1, ScreenLayout.MOST_ALLOWED);
+
     public static final ModConfigSpec SPEC = BUILDER.build();
 
     private ModSettings() {}
@@ -120,6 +127,11 @@ public final class ModSettings {
     /** How many seconds late a set may be before trains are cancelled to get it back on time; 0 if never. */
     public static int recoveryThresholdSeconds() {
         return read(SPEC.isLoaded(), RECOVERY_THRESHOLD, DEFAULT_RECOVERY_THRESHOLD_SECONDS);
+    }
+
+    /** The most map screen blocks a screen has each way. */
+    public static int mapScreenMaxSize() {
+        return read(SPEC.isLoaded(), MAP_SCREEN_MAX_SIZE, ScreenLayout.DEFAULT_MOST);
     }
 
     /**

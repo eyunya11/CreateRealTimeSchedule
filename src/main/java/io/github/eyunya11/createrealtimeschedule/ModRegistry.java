@@ -1,9 +1,12 @@
 package io.github.eyunya11.createrealtimeschedule;
 
+import io.github.eyunya11.createrealtimeschedule.screen.MapScreenBlock;
+import io.github.eyunya11.createrealtimeschedule.screen.MapScreenBlockEntity;
 import io.github.eyunya11.createrealtimeschedule.tag.TrackTagBlock;
 import io.github.eyunya11.createrealtimeschedule.tag.TrackTagBlockEntity;
 import io.github.eyunya11.createrealtimeschedule.tag.TrackTagItem;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.SoundType;
 import net.minecraft.world.level.block.entity.BlockEntityType;
@@ -39,6 +42,18 @@ public final class ModRegistry {
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<TrackTagBlockEntity>> TRACK_TAG_ENTITY =
         BLOCK_ENTITY_TYPES.register("track_tag", () -> BlockEntityType.Builder
             .of((pos, state) -> new TrackTagBlockEntity(ModRegistry.TRACK_TAG_ENTITY.get(), pos, state), TRACK_TAG.get(), TRACK_TAG_ONE_WAY.get())
+            .build(null));
+
+    /** The map screen, which shows a map of the track; blocks of it side by side make one screen (see {@link MapScreenBlock}). */
+    public static final DeferredBlock<MapScreenBlock> MAP_SCREEN = BLOCKS.register("map_screen",
+        () -> new MapScreenBlock(BlockBehaviour.Properties.of().mapColor(MapColor.COLOR_BLACK).strength(1.5f).sound(SoundType.NETHERITE_BLOCK)
+            .lightLevel(state -> 4).noOcclusion()));
+
+    public static final DeferredItem<BlockItem> MAP_SCREEN_ITEM = ITEMS.registerSimpleBlockItem("map_screen", MAP_SCREEN);
+
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<MapScreenBlockEntity>> MAP_SCREEN_ENTITY =
+        BLOCK_ENTITY_TYPES.register("map_screen", () -> BlockEntityType.Builder
+            .of((pos, state) -> new MapScreenBlockEntity(ModRegistry.MAP_SCREEN_ENTITY.get(), pos, state), MAP_SCREEN.get())
             .build(null));
 
     private ModRegistry() {}

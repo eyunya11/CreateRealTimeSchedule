@@ -90,6 +90,9 @@ public class MapTests {
             helper.assertTrue(near(beta.at(), centre(helper, new BlockPos(QUARTER_TURN.toX(), TrackLine.TRACK_Y, BETA_Z))),
                 "Beta is at " + beta.at());
             helper.assertTrue(tracks.contains(map.tracks().get(alpha.track())), "Alpha's track is not one of the line's");
+            // The trains come in east to Alpha, and south, past the turn, to Beta.
+            helper.assertTrue(near(alpha.direction(), new Spot(1, 0)), "trains come in to Alpha running " + alpha.direction());
+            helper.assertTrue(near(beta.direction(), new Spot(0, 1)), "trains come in to Beta running " + beta.direction());
 
             List<TrainMark> trains = map.trains().stream()
                 .filter(train -> inside(helper, train.carriages().getFirst().front())).toList();
@@ -134,6 +137,9 @@ public class MapTests {
                 "the signal at x = 36 is for trains running " + east.sides().getFirst().direction() + ", not east");
             helper.assertValueEqual(List.of(Lamp.RED), west.sides().getFirst().lamps(), "what the signal towards the train shows");
             helper.assertValueEqual(List.of(Lamp.GREEN), east.sides().getFirst().lamps(), "what the signal towards empty track shows");
+            // Both blocks are north of the track: to the right of trains running west, and to the left of those running east.
+            helper.assertTrue(!west.sides().getFirst().left(), "the block of the signal for trains running west is not to their right");
+            helper.assertTrue(east.sides().getFirst().left(), "the block of the signal for trains running east is not to their left");
             helper.succeed();
         });
     }
