@@ -9,8 +9,10 @@ import com.mojang.logging.LogUtils;
 import com.simibubi.create.Create;
 import com.simibubi.create.content.trains.track.TrackTargetingBehaviour;
 import com.simibubi.create.foundation.blockEntity.behaviour.BlockEntityBehaviour;
+import com.simibubi.create.foundation.blockEntity.behaviour.scrollValue.ScrollValueBehaviour;
 
 import io.github.eyunya11.createrealtimeschedule.Createrealtimeschedule;
+import io.github.eyunya11.createrealtimeschedule.map.LiveMap;
 import io.github.eyunya11.createrealtimeschedule.map.TrackMap;
 import io.github.eyunya11.createrealtimeschedule.map.TrackMap.Lamp;
 import io.github.eyunya11.createrealtimeschedule.map.TrackMap.SignalMark;
@@ -70,7 +72,7 @@ public class MapTrainNextTests {
                 TIMEOUT_TICKS, 0, true, MapTrainNextTests::aColourLightSignalShowsItsAspect));
     }
 
-    /** A limit of 40 km/h for trains running east at x = 20, and a release at x = 30. */
+    /** A limit of 40 km/h for trains running east at x = 20, then set to 60, and a release at x = 30. */
     private static void theSpeedSignsAreOnTheMapWithTheirLimits(GameTestHelper helper) {
         TrackLine line = new TrackLine(helper, 50, STATION_X, NAMES);
         line.cleanUpWhenTheTestEnds();
@@ -106,6 +108,22 @@ public class MapTrainNextTests {
             helper.assertTrue(near(limit.direction(), new Spot(1, 0)), "the limit holds trains running " + limit.direction());
             helper.assertTrue(near(release.at(), centre(helper, line.track(30))), "the release is at " + release.at());
             helper.assertTrue(release.release(), "the sign at x = 30 is not a release: " + release);
+
+            // A limit changed is not sent to the clients' graphs: the screens are sent it with the signals.
+            BlockEntity sign = helper.getLevel().getBlockEntity(helper.absolutePos(limitAt));
+            ScrollValueBehaviour value = sign == null ? null : BlockEntityBehaviour.get(sign, ScrollValueBehaviour.TYPE);
+            helper.assertTrue(value != null, "the limit sign has no number to set");
+            value.setValue(60);
+            List<LiveMap.Limit> live = CreateMap.live(Create.RAILWAYS.trackNetworks.values(), Create.RAILWAYS.trains.values(),
+                helper.getLevel().getServer()::getLevel, helper.getLevel().dimension().location().toString()).limits().stream()
+                .filter(mark -> inside(helper, mark.at())).toList();
+            LOGGER.info("[{}] live signs: {}", helper.testInfo.getTestName(), live);
+            helper.assertValueEqual(2, live.size(), "number of signs sent to the screens");
+            helper.assertTrue(near(live.get(0).at(), centre(helper, line.track(20))) && live.get(0).kmh() == 60 && !live.get(0).release(),
+                "the limit sent once it is set to 60 is " + live.get(0));
+            helper.assertTrue(near(live.get(0).direction(), new Spot(1, 0)) && live.get(0).track().equals(map.tracks().get(limit.track()).key()),
+                "the limit sent is on another track or way: " + live.get(0));
+            helper.assertTrue(live.get(1).release(), "the sign sent for x = 30 is not a release: " + live.get(1));
             helper.succeed();
         });
     }

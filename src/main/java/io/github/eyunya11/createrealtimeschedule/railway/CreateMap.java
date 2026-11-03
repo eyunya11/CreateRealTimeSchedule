@@ -143,28 +143,21 @@ public final class CreateMap {
         }
 
         List<StationMark> stations = new ArrayList<>();
-        List<SpeedMark> limits = new ArrayList<>();
-        EdgePointType<?> signType = EdgePointType.TYPES.get(CreateNetwork.SPEED_LIMIT);
-        for (TrackGraph graph : graphs) {
+        for (TrackGraph graph : graphs)
             for (GlobalStation station : graph.getPoints(EdgePointType.STATION)) {
                 At at = at(graph, station);
                 Integer track = at == null ? null : trackOf.get(at.edge());
                 if (track != null && station.name != null && !station.name.isBlank())
                     stations.add(new StationMark(station.name, track, at.spot()));
             }
-            if (signType != null)
-                for (TrackEdgePoint point : graph.getPoints(signType)) {
-                    At at = at(graph, point);
-                    Integer track = at == null ? null : trackOf.get(at.edge());
-                    SpeedSign sign = track == null ? null : CreateNetwork.readSign(point);
-                    // A sign holds the trains running from the first node of its place to the second.
-                    if (sign != null)
-                        limits.add(new SpeedMark(track, at.spot(), at.direction(), sign.kmh(), sign.release()));
-                }
-        }
         stations.sort(Comparator.comparing(StationMark::name).thenComparingDouble(mark -> mark.at().x())
             .thenComparingDouble(mark -> mark.at().z()));
-        limits.sort(Comparator.comparingDouble((SpeedMark mark) -> mark.at().x()).thenComparingDouble(mark -> mark.at().z()));
+        List<SpeedMark> limits = new ArrayList<>();
+        for (LiveMap.Limit limit : limits(graphs, null)) {
+            Integer track = indexOf.get(limit.track());
+            if (track != null)
+                limits.add(new SpeedMark(track, limit.at(), limit.direction(), limit.kmh(), limit.release()));
+        }
 
         List<SignalMark> signals = new ArrayList<>();
         for (Keyed<LiveMap.Signal> signal : signals(graphs, levels, null)) {
@@ -188,7 +181,7 @@ public final class CreateMap {
     }
 
     /**
-     * The signals and the trains of one dimension now.
+     * The signals, the trains and the speed-limit signs of one dimension now.
      *
      * @param dimension the dimension, such as {@code minecraft:overworld}
      */
@@ -206,7 +199,27 @@ public final class CreateMap {
         List<LiveMap.Signal> signals = new ArrayList<>();
         for (Keyed<LiveMap.Signal> signal : signals(graphs, levels, dimension))
             signals.add(signal.value());
-        return new LiveMap(signals, trains(trains, dimension, tagsOf));
+        return new LiveMap(signals, trains(trains, dimension, tagsOf), limits(graphs, dimension));
+    }
+
+    /** Create Train Next's speed-limit signs, in order of where they are; of one dimension, or of all for null. */
+    private static List<LiveMap.Limit> limits(Collection<TrackGraph> graphs, @Nullable String dimension) {
+        List<LiveMap.Limit> limits = new ArrayList<>();
+        EdgePointType<?> signType = EdgePointType.TYPES.get(CreateNetwork.SPEED_LIMIT);
+        if (signType == null)
+            return limits;
+        for (TrackGraph graph : graphs)
+            for (TrackEdgePoint point : graph.getPoints(signType)) {
+                At at = at(graph, point);
+                if (at == null || dimension != null && !dimension.equals(dimension(at.edge().node1)))
+                    continue;
+                SpeedSign sign = CreateNetwork.readSign(point);
+                // A sign holds the trains running from the first node of its place to the second.
+                if (sign != null)
+                    limits.add(new LiveMap.Limit(key(at.edge()), at.spot(), at.direction(), sign.kmh(), sign.release()));
+            }
+        limits.sort(Comparator.comparingDouble((LiveMap.Limit limit) -> limit.at().x()).thenComparingDouble(limit -> limit.at().z()));
+        return limits;
     }
 
     /** A thing read, with Create's id for it. */

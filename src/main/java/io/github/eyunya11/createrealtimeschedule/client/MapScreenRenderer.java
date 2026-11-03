@@ -17,6 +17,7 @@ import com.mojang.math.Axis;
 import io.github.eyunya11.createrealtimeschedule.map.LiveMap;
 import io.github.eyunya11.createrealtimeschedule.map.MapProjection;
 import io.github.eyunya11.createrealtimeschedule.map.MapProjection.Box;
+import io.github.eyunya11.createrealtimeschedule.map.Polyline;
 import io.github.eyunya11.createrealtimeschedule.map.ScreenLayout.Place;
 import io.github.eyunya11.createrealtimeschedule.map.ScreenSettings;
 import io.github.eyunya11.createrealtimeschedule.map.TagView;
@@ -40,9 +41,10 @@ import net.minecraft.world.level.block.state.BlockState;
 
 /**
  * Draws a block's part of a map screen: the part of the world {@link MapProjection#tile} gives it, on
- * the front of the panel, north up. The track, the stations and the signs change only when the track,
- * the lines' tracks, the tags' colours or the settings do, and are worked out then; the signals and
- * the trains are drawn as the server last said. A stretch of track shown is drawn in the colours of its
+ * the front of the panel, north up. The track and the stations change only when the track, the lines'
+ * tracks, the tags' colours or the settings do, and are worked out then; the signals, the trains and
+ * the speed-limit signs are drawn as the server last said. Track is drawn as lines mitred at their
+ * bends ({@link Polyline}). A stretch of track shown is drawn in the colours of its
  * track tags that are on, a dash each in turn for more than one, or light grey with no tag; track not
  * shown, by the lines or by the tags, is drawn faint, in no tag's colour, with nothing on it. Sizes are in blocks of the screen, so that a screen shows the same however
  * much of the world it covers.
@@ -51,8 +53,12 @@ public class MapScreenRenderer implements BlockEntityRenderer<MapScreenBlockEnti
 
     /** Where the front of the panel is, from the middle of the block, towards the way it faces. */
     private static final float SURFACE = -0.5f + MapScreenBlock.THICKNESS / 16f;
-    /** How far each layer is drawn in front of the one below it. */
-    private static final float LAYER = 0.0015f;
+    /** How far each layer is drawn in front of the one below it: little, so that what is on a thing looks to be on it. */
+    private static final float LAYER = 0.0005f;
+    private static final int SIGN_LAYER = 3;
+    private static final int STATION_LAYER = 6;
+    private static final int SIGNAL_LAYER = 8;
+    private static final int TRAIN_LAYER = 10;
 
     private static final int BACKGROUND = 0xFF161B22;
     private static final int TRACK = 0xFFC9D1D9;
@@ -86,8 +92,8 @@ public class MapScreenRenderer implements BlockEntityRenderer<MapScreenBlockEnti
         this.font = context.getFont();
     }
 
-    /** A label: its text, where it starts on the tile, its size and colour. */
-    private record Label(String text, float u, float v, float scale, int colour, boolean centred) {}
+    /** A label: its text, where it starts on the tile, its size, colour and layer (that of what it is on). */
+    private record Label(String text, float u, float v, float scale, int colour, boolean centred, int layer) {}
 
     /**
      * The quads of a tile (u, v of four corners, then a colour, each), its labels, and the tracks shown,
@@ -139,7 +145,7 @@ public class MapScreenRenderer implements BlockEntityRenderer<MapScreenBlockEnti
                 quad(quads, matrix, q[i], q[i + 1], q[i + 2], q[i + 3], q[i + 4], q[i + 5], q[i + 6], q[i + 7], (int) q[i + 8],
                     Float.floatToRawIntBits(q[i + 9]));
             List<Label> labels = new ArrayList<>(drawing.labels());
-            live(quads, matrix, settings, box, drawing.shown());
+            live(quads, matrix, settings, box, drawing.shown(), labels);
             for (Label label : labels)
                 label(pose, buffers, label);
         }
@@ -165,42 +171,29 @@ public class MapScreenRenderer implements BlockEntityRenderer<MapScreenBlockEnti
             if (track.dimension() != dimension)
                 continue;
             if (!shown.tracks().contains(index)) {
-                lines(out, track.points(), box, scale, 1, FAINT);
+                polyline(out, track.points(), box, scale, 1, FAINT);
                 continue;
             }
             List<TagView.Segment> segments = shown.stretches().get(index);
             if (segments == null) {
-                lines(out, track.points(), box, scale, 2, TRACK);
+                polyline(out, track.points(), box, scale, 2, TRACK);
                 continue;
             }
             for (TagView.Segment segment : segments) {
                 List<Spot> piece = TagView.piece(track.points(), segment.from(), segment.to());
                 if (!segment.shown()) {
-                    lines(out, piece, box, scale, 1, FAINT);
+                    polyline(out, piece, box, scale, 1, FAINT);
                 } else if (segment.tags().isEmpty()) {
-                    lines(out, piece, box, scale, 2, TRACK);
+                    polyline(out, piece, box, scale, 2, TRACK);
                 } else {
                     List<List<Spot>> dashes = segment.tags().size() == 1 ? List.of(piece) : TagView.dashes(piece, DASH * scale);
                     for (int k = 0; k < dashes.size(); k++)
-                        lines(out, dashes.get(k), box, scale, 2, colours.getOrDefault(segment.tags().get(k % segment.tags().size()), TRACK));
+                        polyline(out, dashes.get(k), box, scale, 2, colours.getOrDefault(segment.tags().get(k % segment.tags().size()), TRACK));
                 }
             }
         }
 
         List<Label> labels = new ArrayList<>();
-        if (settings.shows("speedLimits"))
-            for (TrackMap.SpeedMark sign : map.speedLimits())
-                if (shown.at(sign.track(), sign.at()) && box.contains(sign.at().x(), sign.at().z())) {
-                    float[] at = beside(sign.at(), sign.direction(), box, scale, BESIDE * 1.4f);
-                    out.square(at[0], at[1], SIGN_SIZE, 3, sign.release() ? RELEASE_EDGE : SIGN_EDGE);
-                    out.square(at[0], at[1], SIGN_SIZE * 0.78f, 4, SIGN);
-                    if (sign.release())
-                        out.line(at[0] - SIGN_SIZE * 0.6f, at[1] - SIGN_SIZE * 0.6f, at[0] + SIGN_SIZE * 0.6f, at[1] + SIGN_SIZE * 0.6f,
-                            0.008f, 5, RELEASE_EDGE);
-                    else
-                        labels.add(new Label(Integer.toString(sign.kmh()), at[0], at[1], LIMIT_SCALE, SIGN_TEXT, true));
-                }
-
         if (settings.shows("stations") || settings.shows("stationNames")) {
             // A name once, in the middle of its markers on the tracks shown, by the tile that has that middle.
             Map<String, double[]> middles = new LinkedHashMap<>();
@@ -214,8 +207,8 @@ public class MapScreenRenderer implements BlockEntityRenderer<MapScreenBlockEnti
                 if (settings.shows("stations") && box.contains(station.at().x(), station.at().z())) {
                     float u = u(station.at().x(), box, scale);
                     float v = v(station.at().z(), box, scale);
-                    out.square(u, v, STATION_SIZE, 6, STATION_EDGE);
-                    out.square(u, v, STATION_SIZE * 0.7f, 7, STATION);
+                    out.square(u, v, STATION_SIZE, STATION_LAYER, STATION_EDGE);
+                    out.square(u, v, STATION_SIZE * 0.7f, STATION_LAYER + 1, STATION);
                 }
             }
             if (settings.shows("stationNames"))
@@ -224,7 +217,7 @@ public class MapScreenRenderer implements BlockEntityRenderer<MapScreenBlockEnti
                     double z = entry.getValue()[1] / entry.getValue()[2];
                     if (box.contains(x, z))
                         labels.add(new Label(entry.getKey(), u(x, box, scale) + STATION_SIZE * 1.4f, v(z, box, scale) + STATION_SIZE * 1.6f,
-                            NAME_SCALE, TEXT, false));
+                            NAME_SCALE, TEXT, false, STATION_LAYER + 2));
                 }
         }
         Drawing drawing = new Drawing(key, out.toArray(), labels, shown);
@@ -232,12 +225,19 @@ public class MapScreenRenderer implements BlockEntityRenderer<MapScreenBlockEnti
         return drawing;
     }
 
-    /** The lines through {@code points}, cut to the tile, at {@code layer} in {@code colour}. */
-    private static void lines(Quads out, List<Spot> points, Box box, double scale, int layer, int colour) {
-        for (int i = 1; i < points.size(); i++) {
-            double[] cut = MapProjection.clip(points.get(i - 1).x(), points.get(i - 1).z(), points.get(i).x(), points.get(i).z(), box);
-            if (cut != null)
-                out.line(u(cut[0], box, scale), v(cut[1], box, scale), u(cut[2], box, scale), v(cut[3], box, scale), TRACK_WIDTH, layer, colour);
+    /** The line through {@code points}, cut to the tile, at {@code layer} in {@code colour}. */
+    private static void polyline(Quads out, List<Spot> points, Box box, double scale, int layer, int colour) {
+        for (List<Spot> run : Polyline.runs(points, box)) {
+            List<Spot> onTile = new ArrayList<>(run.size());
+            for (Spot point : run)
+                onTile.add(new Spot(u(point.x(), box, scale), v(point.z(), box, scale)));
+            List<double[]> corners = Polyline.outline(onTile, TRACK_WIDTH / 2);
+            for (int i = 1; i < corners.size(); i++) {
+                double[] a = corners.get(i - 1);
+                double[] b = corners.get(i);
+                out.add((float) a[0], (float) a[1], (float) b[0], (float) b[1], (float) b[2], (float) b[3], (float) a[2], (float) a[3],
+                    layer, colour);
+            }
         }
     }
 
@@ -252,11 +252,27 @@ public class MapScreenRenderer implements BlockEntityRenderer<MapScreenBlockEnti
         return colours;
     }
 
-    /** The signals and the trains, as the server last said, on the stretches shown; a train only if a tag it runs on is on. */
-    private void live(VertexConsumer quads, Matrix4f matrix, ScreenSettings settings, Box box, Shown shown) {
+    /**
+     * The signals, the trains and the speed-limit signs, as the server last said, on the stretches
+     * shown; a train only if a tag it runs on is on. The signs' limits go into {@code labels}.
+     */
+    private void live(VertexConsumer quads, Matrix4f matrix, ScreenSettings settings, Box box, Shown shown, List<Label> labels) {
         LiveMap live = MapClient.live();
         double scale = settings.scale();
         Quads out = new Quads();
+        if (settings.shows("speedLimits"))
+            for (LiveMap.Limit sign : live.limits()) {
+                if (!shown.at(MapClient.indexOf(sign.track()), sign.at()) || !box.contains(sign.at().x(), sign.at().z()))
+                    continue;
+                float[] at = beside(sign.at(), sign.direction(), box, scale, BESIDE * 1.4f);
+                out.square(at[0], at[1], SIGN_SIZE, SIGN_LAYER, sign.release() ? RELEASE_EDGE : SIGN_EDGE);
+                out.square(at[0], at[1], SIGN_SIZE * 0.78f, SIGN_LAYER + 1, SIGN);
+                if (sign.release())
+                    out.line(at[0] - SIGN_SIZE * 0.6f, at[1] - SIGN_SIZE * 0.6f, at[0] + SIGN_SIZE * 0.6f, at[1] + SIGN_SIZE * 0.6f,
+                        0.008f, SIGN_LAYER + 2, RELEASE_EDGE);
+                else
+                    labels.add(new Label(Integer.toString(sign.kmh()), at[0], at[1], LIMIT_SCALE, SIGN_TEXT, true, SIGN_LAYER + 2));
+            }
         if (settings.shows("signals"))
             for (LiveMap.Signal signal : live.signals()) {
                 if (!shown.at(MapClient.indexOf(signal.track()), signal.at()) || !box.contains(signal.at().x(), signal.at().z()))
@@ -268,10 +284,10 @@ public class MapScreenRenderer implements BlockEntityRenderer<MapScreenBlockEnti
                     float dv = (float) -side.direction().z();
                     int count = side.lamps().size();
                     float reach = (count - 1) * LAMP_SIZE * 1.3f;
-                    out.line(at[0] - du * reach, at[1] - dv * reach, at[0] + du * reach, at[1] + dv * reach, LAMP_SIZE * 1.6f, 8, HEAD);
+                    out.line(at[0] - du * reach, at[1] - dv * reach, at[0] + du * reach, at[1] + dv * reach, LAMP_SIZE * 1.6f, SIGNAL_LAYER, HEAD);
                     for (int i = 0; i < count; i++) {
                         float along = (i - (count - 1) / 2f) * LAMP_SIZE * 2.6f;
-                        out.square(at[0] + du * along, at[1] + dv * along, LAMP_SIZE, 9, lamp(side.lamps().get(i)));
+                        out.square(at[0] + du * along, at[1] + dv * along, LAMP_SIZE, SIGNAL_LAYER + 1, lamp(side.lamps().get(i)));
                     }
                 }
             }
@@ -286,7 +302,7 @@ public class MapScreenRenderer implements BlockEntityRenderer<MapScreenBlockEnti
                     double[] cut = MapProjection.clip(carriage.front().x(), carriage.front().z(), carriage.back().x(), carriage.back().z(), box);
                     if (cut != null)
                         out.line(u(cut[0], box, scale), v(cut[1], box, scale), u(cut[2], box, scale), v(cut[3], box, scale), TRAIN_WIDTH,
-                            10, TRAIN);
+                            TRAIN_LAYER, TRAIN);
                 }
             }
         float[] q = out.toArray();
@@ -375,7 +391,7 @@ public class MapScreenRenderer implements BlockEntityRenderer<MapScreenBlockEnti
 
     private void label(PoseStack pose, MultiBufferSource buffers, Label label) {
         pose.pushPose();
-        pose.translate(label.u() - 0.5f, label.v() - 0.5f, SURFACE + 0.002f + 12 * LAYER);
+        pose.translate(label.u() - 0.5f, label.v() - 0.5f, SURFACE + 0.002f + label.layer() * LAYER);
         pose.scale(label.scale(), -label.scale(), label.scale());
         float x = label.centred() ? -font.width(label.text()) / 2f : 0;
         font.drawInBatch(label.text(), x, -font.lineHeight / 2f + 1, label.colour(), false, pose.last().pose(), buffers,

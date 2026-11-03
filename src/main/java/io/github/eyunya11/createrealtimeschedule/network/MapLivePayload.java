@@ -14,10 +14,10 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 
-/** What the signals of the player's dimension show and where its trains are ({@link LiveMap}). */
+/** What the signals of the player's dimension show, where its trains are, and what its speed-limit signs say ({@link LiveMap}). */
 public record MapLivePayload(LiveMap live) implements CustomPacketPayload {
 
-    /** The most signals and trains sent, and carriages of a train. */
+    /** The most signals, trains and signs sent, and carriages of a train. */
     public static final int MAX_THINGS = 20_000;
     public static final int MAX_CARRIAGES = 256;
     /** The most track tags a train is sent with: those it runs on in its duty. */
@@ -63,6 +63,16 @@ public record MapLivePayload(LiveMap live) implements CustomPacketPayload {
             for (String tag : tags)
                 out.writeUtf(tag, 256);
         }
+        List<LiveMap.Limit> limits = live.limits().subList(0, Math.min(MAX_THINGS, live.limits().size()));
+        out.writeVarInt(limits.size());
+        for (LiveMap.Limit limit : limits) {
+            out.writeUtf(limit.track(), 512);
+            spot(out, limit.at());
+            out.writeFloat((float) limit.direction().x());
+            out.writeFloat((float) limit.direction().z());
+            out.writeVarInt(limit.kmh());
+            out.writeBoolean(limit.release());
+        }
     }
 
     private static LiveMap read(FriendlyByteBuf in) {
@@ -98,7 +108,11 @@ public record MapLivePayload(LiveMap live) implements CustomPacketPayload {
                 tags.add(in.readUtf(256));
             trains.add(new LiveMap.Train(name, carriages, tags));
         }
-        return new LiveMap(signals, trains);
+        int limitCount = count(in, MAX_THINGS);
+        List<LiveMap.Limit> limits = new ArrayList<>();
+        for (int i = 0; i < limitCount; i++)
+            limits.add(new LiveMap.Limit(in.readUtf(512), spot(in), new Spot(in.readFloat(), in.readFloat()), in.readVarInt(), in.readBoolean()));
+        return new LiveMap(signals, trains, limits);
     }
 
     private static int count(FriendlyByteBuf in, int most) {

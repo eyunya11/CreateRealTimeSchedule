@@ -8,18 +8,20 @@ import io.github.eyunya11.createrealtimeschedule.map.TrackMap.Spot;
 
 /**
  * What changes on a map from one moment to the next, as the server sends it to the map screens of a
- * dimension: what the signals show, and where the trains are. A client reads the track itself from
- * the track graphs Create sends it, but Create sends it neither the signals' heads nor what they show,
- * and the places of the trains only for those near. Things are on tracks by the tracks' keys
+ * dimension: what the signals show, where the trains are, and what the speed-limit signs say. A client
+ * reads the track itself from the track graphs Create sends it, but Create sends it neither the signals'
+ * heads nor what they show, the places of the trains only for those near, and a sign's limit only when
+ * the sign is put (Create Train Next does not send a limit changed). Things are on tracks by the tracks' keys
  * ({@link TrackKeys}), which the server and the client work out alike.
  */
-public record LiveMap(List<Signal> signals, List<Train> trains) {
+public record LiveMap(List<Signal> signals, List<Train> trains, List<Limit> limits) {
 
-    public static final LiveMap EMPTY = new LiveMap(List.of(), List.of());
+    public static final LiveMap EMPTY = new LiveMap(List.of(), List.of(), List.of());
 
     public LiveMap {
         signals = List.copyOf(signals);
         trains = List.copyOf(trains);
+        limits = List.copyOf(limits);
     }
 
     /**
@@ -47,6 +49,17 @@ public record LiveMap(List<Signal> signals, List<Train> trains) {
         /** A train that runs no duty. */
         public Train(String name, List<Carriage> carriages) {
             this(name, carriages, List.of());
+        }
+    }
+
+    /**
+     * A speed-limit sign of Create Train Next, as {@link TrackMap.SpeedMark}.
+     *
+     * @param track the key of the track it is on
+     */
+    public record Limit(String track, Spot at, Spot direction, int kmh, boolean release) {
+        public Limit {
+            Objects.requireNonNull(track, "track");
         }
     }
 
