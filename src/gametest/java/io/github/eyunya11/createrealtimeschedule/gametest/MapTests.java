@@ -137,6 +137,9 @@ public class MapTests {
                 "the signal at x = 36 is for trains running " + east.sides().getFirst().direction() + ", not east");
             helper.assertValueEqual(List.of(Lamp.RED), west.sides().getFirst().lamps(), "what the signal towards the train shows");
             helper.assertValueEqual(List.of(Lamp.GREEN), east.sides().getFirst().lamps(), "what the signal towards empty track shows");
+            // Both blocks are north of the track: to the right of trains running west, and to the left of those running east.
+            helper.assertTrue(!west.sides().getFirst().left(), "the block of the signal for trains running west is not to their right");
+            helper.assertTrue(east.sides().getFirst().left(), "the block of the signal for trains running east is not to their left");
             helper.succeed();
         });
     }

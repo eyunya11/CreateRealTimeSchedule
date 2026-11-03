@@ -56,8 +56,9 @@ public record LiveMap(List<Signal> signals, List<Train> trains, List<Limit> limi
      * A speed-limit sign of Create Train Next, as {@link TrackMap.SpeedMark}.
      *
      * @param track the key of the track it is on
+     * @param left  whether its block is to the left of the trains it holds
      */
-    public record Limit(String track, Spot at, Spot direction, int kmh, boolean release) {
+    public record Limit(String track, Spot at, Spot direction, int kmh, boolean release, boolean left) {
         public Limit {
             Objects.requireNonNull(track, "track");
         }

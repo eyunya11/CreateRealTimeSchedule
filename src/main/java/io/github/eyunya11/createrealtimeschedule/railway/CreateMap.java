@@ -26,6 +26,7 @@ import com.simibubi.create.content.trains.graph.TrackGraph;
 import com.simibubi.create.content.trains.graph.TrackNode;
 import com.simibubi.create.content.trains.graph.TrackNodeLocation;
 import com.simibubi.create.content.trains.signal.SignalBoundary;
+import com.simibubi.create.content.trains.signal.SingleBlockEntityEdgePoint;
 import com.simibubi.create.content.trains.signal.TrackEdgePoint;
 import com.simibubi.create.content.trains.station.GlobalStation;
 import com.simibubi.create.content.trains.track.BezierConnection;
@@ -216,8 +217,10 @@ public final class CreateMap {
                     continue;
                 SpeedSign sign = CreateNetwork.readSign(point);
                 // A sign holds the trains running from the first node of its place to the second.
+                BlockPos block = point instanceof SingleBlockEntityEdgePoint single ? single.getBlockEntityPos() : null;
                 if (sign != null)
-                    limits.add(new LiveMap.Limit(key(at.edge()), at.spot(), at.direction(), sign.kmh(), sign.release()));
+                    limits.add(new LiveMap.Limit(key(at.edge()), at.spot(), at.direction(), sign.kmh(), sign.release(),
+                        block != null && left(at.spot(), at.direction(), block)));
             }
         limits.sort(Comparator.comparingDouble((LiveMap.Limit limit) -> limit.at().x()).thenComparingDouble(limit -> limit.at().z()));
         return limits;
@@ -241,7 +244,7 @@ public final class CreateMap {
                         continue;
                     // The first side is for the trains running from the first node of its place to the second.
                     Spot direction = first ? at.direction() : new Spot(-at.direction().x(), -at.direction().z());
-                    sides.add(side(signal, first, direction, level));
+                    sides.add(side(signal, first, at.spot(), direction, level));
                 }
                 if (!sides.isEmpty())
                     signals.add(new Keyed<>(signal.getId().toString(), new LiveMap.Signal(key(at.edge()), at.spot(), sides)));
@@ -327,7 +330,8 @@ public final class CreateMap {
     }
 
     /** What one side of a signal shows. */
-    private static SignalSide side(SignalBoundary signal, boolean first, Spot direction, @Nullable Level level) {
+    private static SignalSide side(SignalBoundary signal, boolean first, Spot at, Spot direction, @Nullable Level level) {
+        boolean left = signal.blockEntities.get(first).keySet().stream().findFirst().map(block -> left(at, direction, block)).orElse(false);
         TrainNextSignals.Look look = null;
         if (level != null)
             for (BlockPos head : signal.blockEntities.get(first).keySet()) {
@@ -345,8 +349,14 @@ public final class CreateMap {
             look = remembered[side];
         }
         if (look != null)
-            return new SignalSide(direction, look.kind(), look.lamps());
-        return new SignalSide(direction, SignalLooks.CREATE, SignalLooks.create(signal.cachedStates.get(first).name()));
+            return new SignalSide(direction, look.kind(), look.lamps(), left);
+        return new SignalSide(direction, SignalLooks.CREATE, SignalLooks.create(signal.cachedStates.get(first).name()), left);
+    }
+
+    /** Whether the middle of {@code block} is to the left of trains running {@code direction} at {@code at}. */
+    private static boolean left(Spot at, Spot direction, BlockPos block) {
+        // To the right of (dx, dz) in the world is (-dz, dx).
+        return (block.getX() + 0.5 - at.x()) * -direction.z() + (block.getZ() + 0.5 - at.z()) * direction.x() < 0;
     }
 
     /** Where one end of a carriage is, and the edge it is on. */

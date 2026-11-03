@@ -44,6 +44,7 @@ public record MapLivePayload(LiveMap live) implements CustomPacketPayload {
                 out.writeVarInt(side.lamps().size());
                 for (Lamp lamp : side.lamps())
                     out.writeByte(lamp.ordinal());
+                out.writeBoolean(side.left());
             }
         }
         List<LiveMap.Train> trains = live.trains().subList(0, Math.min(MAX_THINGS, live.trains().size()));
@@ -72,6 +73,7 @@ public record MapLivePayload(LiveMap live) implements CustomPacketPayload {
             out.writeFloat((float) limit.direction().z());
             out.writeVarInt(limit.kmh());
             out.writeBoolean(limit.release());
+            out.writeBoolean(limit.left());
         }
     }
 
@@ -90,7 +92,7 @@ public record MapLivePayload(LiveMap live) implements CustomPacketPayload {
                 List<Lamp> lamps = new ArrayList<>();
                 for (int k = 0; k < lampCount; k++)
                     lamps.add(Lamp.values()[Math.floorMod(in.readByte(), Lamp.values().length)]);
-                sides.add(new SignalSide(direction, kind, lamps));
+                sides.add(new SignalSide(direction, kind, lamps, in.readBoolean()));
             }
             signals.add(new LiveMap.Signal(track, at, sides));
         }
@@ -111,7 +113,7 @@ public record MapLivePayload(LiveMap live) implements CustomPacketPayload {
         int limitCount = count(in, MAX_THINGS);
         List<LiveMap.Limit> limits = new ArrayList<>();
         for (int i = 0; i < limitCount; i++)
-            limits.add(new LiveMap.Limit(in.readUtf(512), spot(in), new Spot(in.readFloat(), in.readFloat()), in.readVarInt(), in.readBoolean()));
+            limits.add(new LiveMap.Limit(in.readUtf(512), spot(in), new Spot(in.readFloat(), in.readFloat()), in.readVarInt(), in.readBoolean(), in.readBoolean()));
         return new LiveMap(signals, trains, limits);
     }
 

@@ -72,12 +72,15 @@ public class MapTrainNextTests {
                 TIMEOUT_TICKS, 0, true, MapTrainNextTests::aColourLightSignalShowsItsAspect));
     }
 
-    /** A limit of 40 km/h for trains running east at x = 20, then set to 60, and a release at x = 30. */
+    /**
+     * A limit of 40 km/h for trains running east at x = 20, then set to 60, south of the track (to the
+     * right of the trains), and a release at x = 30 north of it (to their left).
+     */
     private static void theSpeedSignsAreOnTheMapWithTheirLimits(GameTestHelper helper) {
         TrackLine line = new TrackLine(helper, 50, STATION_X, NAMES);
         line.cleanUpWhenTheTestEnds();
         BlockPos limitAt = line.track(20).south();
-        BlockPos releaseAt = line.track(30).south();
+        BlockPos releaseAt = line.track(30).north();
         int[] phase = {0};
         int[] waited = {0};
         helper.onEachTick(() -> {
@@ -124,6 +127,7 @@ public class MapTrainNextTests {
             helper.assertTrue(near(live.get(0).direction(), new Spot(1, 0)) && live.get(0).track().equals(map.tracks().get(limit.track()).key()),
                 "the limit sent is on another track or way: " + live.get(0));
             helper.assertTrue(live.get(1).release(), "the sign sent for x = 30 is not a release: " + live.get(1));
+            helper.assertTrue(!live.get(0).left() && live.get(1).left(), "the signs' blocks are not to the right and to the left: " + live);
             helper.succeed();
         });
     }
@@ -172,6 +176,8 @@ public class MapTrainNextTests {
             helper.assertTrue(!east.sides().getFirst().lamps().equals(List.of(Lamp.RED)),
                 "the signal into empty track shows " + east.sides().getFirst().lamps());
             helper.assertValueEqual(List.of(Lamp.RED), west.sides().getFirst().lamps(), "what the signal into the train's section shows");
+            helper.assertTrue(!west.sides().getFirst().left() && east.sides().getFirst().left(),
+                "the signals north of the track are not to the right of trains running west and to the left of those running east");
             helper.succeed();
         });
     }

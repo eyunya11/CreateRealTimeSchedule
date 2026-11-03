@@ -101,11 +101,19 @@ public record TrackMap(List<String> dimensions, List<Track> tracks, List<Station
      * @param kind      what kind of signal it is: {@code create} for Create's own, or {@code lightN} for a
      *                  colour light signal of Create Train Next with N aspects
      * @param lamps     the lamps it shows lit, as {@link Lamp}s from the top
+     * @param left      whether its block is to the left of the trains it is for, as on a line where trains
+     *                  keep left; the map screen puts its head that side first, and the network file does
+     *                  not write it
      */
-    public record SignalSide(Spot direction, String kind, List<Lamp> lamps) {
+    public record SignalSide(Spot direction, String kind, List<Lamp> lamps, boolean left) {
         public SignalSide {
             Objects.requireNonNull(kind, "kind");
             lamps = List.copyOf(lamps);
+        }
+
+        /** A side whose block is to the right of the trains. */
+        public SignalSide(Spot direction, String kind, List<Lamp> lamps) {
+            this(direction, kind, lamps, false);
         }
     }
 
