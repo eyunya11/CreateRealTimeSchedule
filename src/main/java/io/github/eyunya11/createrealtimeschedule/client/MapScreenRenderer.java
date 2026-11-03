@@ -98,7 +98,7 @@ public class MapScreenRenderer implements BlockEntityRenderer<MapScreenBlockEnti
     private static final double DASH = 0.08;
     private static final float TRAIN_WIDTH = 0.05f;
     /** The sizes of the marks on a screen of one block; a larger screen has them larger. */
-    private static final float STATION_SIZE = 0.045f;
+    private static final float STATION_SIZE = 0.03f;
     private static final float POINTER_SIZE = 0.018f;
     private static final float LAMP_SIZE = 0.022f;
     private static final float SIGN_SIZE = 0.028f;
@@ -382,7 +382,7 @@ public class MapScreenRenderer implements BlockEntityRenderer<MapScreenBlockEnti
                     continue;
                 float u = (float) ((sign.at().x() - whole.minX()) / scale);
                 float v = (float) (height - (sign.at().z() - whole.minZ()) / scale);
-                sign(u, v, sign, grow, width, height, quads, labels, pending);
+                sign(u, v, sign, grow, width, height, quads, labels, fixed, pending);
             }
 
         if (settings.shows("stationNames"))
@@ -468,26 +468,32 @@ public class MapScreenRenderer implements BlockEntityRenderer<MapScreenBlockEnti
     }
 
     /**
-     * A speed-limit sign at ({@code u}, {@code v}), on a post on the side of the track its block is on if
-     * there is room: its limit on a plate edged in red as wide as the number needs, or, for a release,
-     * black triangles meeting in the middle of an off-white plate edged in black, as Create Train Next's
-     * sign.
+     * A speed-limit sign at ({@code u}, {@code v}): a small triangle on the track pointing the way of the
+     * trains it holds, red for a limit and off-white for a release, as a sign holds one way only, and on
+     * a post on the side of the track its block is on if there is room, its limit on a plate edged in red
+     * as wide as the number needs, or, for a release, black triangles meeting in the middle of an
+     * off-white plate edged in black, as Create Train Next's sign.
      */
     private void sign(float u, float v, LiveMap.Limit sign, float grow, int width, int height, Map<Integer, Quads> quads,
-        Map<Integer, List<Label>> labels, List<Pending> pending) {
+        Map<Integer, List<Label>> labels, List<Rect> fixed, List<Pending> pending) {
         float du = (float) sign.direction().x();
         float dv = (float) -sign.direction().z();
         float length = (float) Math.hypot(du, dv);
         float ru = length < 1e-6f ? 0 : (sign.left() ? -dv : dv) / length;
         float rv = length < 1e-6f ? 1 : (sign.left() ? du : -du) / length;
+        float pointer = POINTER_SIZE * grow;
+        Quads onTrack = quads.computeIfAbsent(tileOf(u, v, width, height), unused -> new Quads());
+        onTrack.triangle(u, v, du, dv, pointer * 1.4f, SIGN_LAYER, sign.release() ? RELEASE_BLACK : HEAD);
+        onTrack.triangle(u, v, du, dv, pointer, SIGN_LAYER + 1, sign.release() ? RELEASE : SIGN_EDGE);
+        fixed.add(Rect.around(u, v, pointer * 1.2f, pointer * 1.2f));
         String text = Integer.toString(sign.kmh());
         float textScale = LIMIT_SCALE * grow;
         float halfV = SIGN_SIZE * grow;
         float halfU = sign.release() ? halfV : Math.max(halfV, font.width(text) * textScale / 2 / 0.78f + halfV * 0.1f);
         float[][] middles = middles(u, v, length < 1e-6f ? 0 : du / length, length < 1e-6f ? 0 : dv / length, ru, rv, BESIDE * grow,
             Math.max(halfU, halfV), Math.max(halfU, halfV) * 2);
-        // The post from clear of the track, and of a signal's mark at the same place.
-        float postFrom = POINTER_SIZE * grow * 1.8f;
+        // The post from clear of the sign's mark on the track, which reaches 1.2 pointers each way.
+        float postFrom = pointer * 1.8f;
         List<Rect> places = new ArrayList<>();
         List<Rect> posts = new ArrayList<>();
         for (float[] middle : middles) {
