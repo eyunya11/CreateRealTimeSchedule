@@ -25,6 +25,28 @@ class MarkLayoutTest {
     }
 
     @Test
+    void aSlantingBoxBesideSlantingTrackIsClearOfIt() {
+        // Track from the bottom left to the top right, and a head along it a little to its right:
+        // their upright bounds would overlap, but they do not.
+        Rect track = Rect.line(0, 0, 10, 10, 0.05);
+        double s = Math.sqrt(0.5);
+        Rect head = Rect.along(5 + 0.3 * s, 5 - 0.3 * s, 1, 1, 0.5, 0.2);
+        assertFalse(head.overlaps(track));
+        assertFalse(track.overlaps(head));
+        assertTrue(Rect.along(5 + 0.1 * s, 5 - 0.1 * s, 1, 1, 0.5, 0.2).overlaps(track), "a head nearer than its half width lies over the track");
+        assertTrue(Rect.around(5, 5, 0.1, 0.1).overlaps(track), "a box on the track");
+        assertFalse(Rect.around(5, 0, 0.5, 0.5).overlaps(track), "a box well off the track");
+    }
+
+    @Test
+    void aThingIsKeptOffTheTrack() {
+        Rect track = Rect.line(-10, 0, 10, 0, 0.05);
+        int[] chosen = MarkLayout.place(List.of(track), List.of(new Item(List.of(Rect.around(0, 0.1, 0.2, 0.2), Rect.around(0, 0.4, 0.2, 0.2)),
+            false)));
+        assertArrayEquals(new int[] {1}, chosen);
+    }
+
+    @Test
     void aThingTakesItsBestPlaceThatIsClear() {
         assertArrayEquals(new int[] {0}, MarkLayout.place(List.of(), List.of(new Item(List.of(A, B), false))));
         assertArrayEquals(new int[] {1}, MarkLayout.place(List.of(A), List.of(new Item(List.of(A, B, C), false))));

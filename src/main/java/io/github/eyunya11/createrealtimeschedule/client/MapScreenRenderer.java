@@ -99,17 +99,22 @@ public class MapScreenRenderer implements BlockEntityRenderer<MapScreenBlockEnti
     private static final float TRAIN_WIDTH = 0.05f;
     /** The sizes of the marks on a screen of one block; a larger screen has them larger. */
     private static final float STATION_SIZE = 0.045f;
-    private static final float POINTER_SIZE = 0.03f;
+    private static final float POINTER_SIZE = 0.018f;
     private static final float LAMP_SIZE = 0.022f;
-    private static final float SIGN_SIZE = 0.055f;
+    private static final float SIGN_SIZE = 0.028f;
     private static final float POST_WIDTH = 0.007f;
     private static final float BESIDE = 0.075f;
     private static final float NAME_SCALE = 0.0055f;
     private static final float LIMIT_SCALE = 0.0035f;
-    /** How far from the track a signal's head may be put, in {@link #BESIDE}s, nearest first. */
-    private static final float[] HEAD_PLACES = {1, 1.6f, 2.2f, 2.8f, 3.4f};
-    /** How far from the track a sign may be put, in {@link #BESIDE}s: to the right of the trains it holds, then to the left. */
-    private static final float[] SIGN_PLACES = {1.4f, 2.2f, 3f, -1.4f, -2.2f};
+    /**
+     * How far from the track a signal's head may be put, in {@link #BESIDE}s, nearest first: on the side
+     * of its block (positive), then on the other.
+     */
+    private static final float[] HEAD_PLACES = {1, 1.6f, 2.2f, 2.8f, 3.4f, -1, -1.6f, -2.2f};
+    /** How far from the track a sign may be put, in {@link #BESIDE}s, as {@link #HEAD_PLACES}. */
+    private static final float[] SIGN_PLACES = {1, 1.6f, 2.2f, 2.8f, -1, -1.6f, -2.2f};
+    /** How many lamps a signal's head has room for, lit or not, so that every head looks alike. */
+    private static final int HEAD_LAMPS = 2;
 
     private final Font font;
     /** What each block drew of the track last, kept until the map, the lines' tracks or the settings change. */
@@ -291,6 +296,16 @@ public class MapScreenRenderer implements BlockEntityRenderer<MapScreenBlockEnti
         List<Rect> fixed = new ArrayList<>();
         List<Pending> pending = new ArrayList<>();
 
+        // The track, drawn or faint: nothing is put over it.
+        for (TrackMap.Track track : map.tracks()) {
+            if (track.dimension() != dimension)
+                continue;
+            for (List<Spot> run : Polyline.runs(track.points(), whole))
+                for (int i = 1; i < run.size(); i++)
+                    fixed.add(Rect.line((run.get(i - 1).x() - whole.minX()) / scale, height - (run.get(i - 1).z() - whole.minZ()) / scale,
+                        (run.get(i).x() - whole.minX()) / scale, height - (run.get(i).z() - whole.minZ()) / scale, TRACK_WIDTH / 2));
+        }
+
         // The stations, pointing the way the trains come in, and their names in the middle of their marks.
         Map<String, double[]> middles = new LinkedHashMap<>();
         for (TrackMap.StationMark station : map.stations()) {
@@ -361,9 +376,10 @@ public class MapScreenRenderer implements BlockEntityRenderer<MapScreenBlockEnti
     }
 
     /**
-     * One side of a signal at ({@code u}, {@code v}): a pointer on the track the way it holds the trains,
-     * in the colour of its first lamp, and a head on a post to the right of the trains, its lamps along
-     * the way they run, as far out as it has to go to be clear.
+     * One side of a signal at ({@code u}, {@code v}): a small triangle on the track pointing the way it
+     * holds the trains, in the colour of its first lamp, and a head on a post, on the side of the track
+     * its block is on if there is room, with room for {@link #HEAD_LAMPS} lamps along the way the trains
+     * run, those not lit grey.
      */
     private static void signal(float u, float v, SignalSide side, float grow, int width, int height, Map<Integer, Quads> quads,
         List<Rect> fixed, List<Pending> pending) {
@@ -372,76 +388,84 @@ public class MapScreenRenderer implements BlockEntityRenderer<MapScreenBlockEnti
             return;
         float du = (float) side.direction().x() / length;
         float dv = (float) -side.direction().z() / length;
-        // To the right of the way the trains run, on the screen.
-        float ru = dv;
-        float rv = -du;
+        // Towards the side of the signal's block: to the right of the way the trains run, on the screen, or the left.
+        float ru = side.left() ? -dv : dv;
+        float rv = side.left() ? du : -du;
         int first = side.lamps().isEmpty() ? UNLIT : lamp(side.lamps().getFirst());
         float pointer = POINTER_SIZE * grow;
         Quads onTrack = quads.computeIfAbsent(tileOf(u, v, width, height), unused -> new Quads());
-        onTrack.pointer(u, v, du, dv, pointer * 1.35f, SIGNAL_LAYER, HEAD);
-        onTrack.pointer(u, v, du, dv, pointer, SIGNAL_LAYER + 1, first);
-        fixed.add(Rect.around(u, v, pointer * 1.4f, pointer * 1.4f));
+        onTrack.triangle(u, v, du, dv, pointer * 1.4f, SIGNAL_LAYER, HEAD);
+        onTrack.triangle(u, v, du, dv, pointer, SIGNAL_LAYER + 1, first);
+        fixed.add(Rect.around(u, v, pointer * 1.2f, pointer * 1.2f));
 
-        int count = Math.max(1, side.lamps().size());
+        int slots = Math.max(HEAD_LAMPS, side.lamps().size());
         float lamp = LAMP_SIZE * grow;
-        float along = count * lamp * 2.6f;
+        float edge = lamp * 0.25f;
+        float along = slots * lamp * 2.6f;
         float across = lamp * 2.6f;
-        float halfU = Math.abs(du) * along / 2 + Math.abs(dv) * across / 2;
-        float halfV = Math.abs(dv) * along / 2 + Math.abs(du) * across / 2;
         List<Rect> places = new ArrayList<>();
         for (float away : HEAD_PLACES) {
-            float reach = BESIDE * grow * away + across / 2;
-            places.add(Rect.around(u + ru * reach, v + rv * reach, halfU, halfV));
+            float reach = BESIDE * grow * away + Math.signum(away) * across / 2;
+            places.add(Rect.along(u + ru * reach, v + rv * reach, du, dv, along / 2 + edge, across / 2 + edge));
         }
         pending.add(new Pending(new MarkLayout.Item(places, false), index -> {
-            float reach = BESIDE * grow * HEAD_PLACES[index] + across / 2;
+            float away = HEAD_PLACES[index];
+            float reach = BESIDE * grow * away + Math.signum(away) * across / 2;
             float cu = u + ru * reach;
             float cv = v + rv * reach;
             Quads out = quads.computeIfAbsent(tileOf(cu, cv, width, height), unused -> new Quads());
-            out.line(u + ru * pointer, v + rv * pointer, cu, cv, POST_WIDTH * grow, POST_LAYER, POST);
+            out.line(u, v, cu, cv, POST_WIDTH * grow, POST_LAYER, POST);
             float half = along / 2 - across / 2;
-            out.line(cu - du * half, cv - dv * half, cu + du * half, cv + dv * half, across + lamp * 0.5f, SIGNAL_LAYER, HEAD_EDGE);
+            out.line(cu - du * half, cv - dv * half, cu + du * half, cv + dv * half, across + edge * 2, SIGNAL_LAYER, HEAD_EDGE);
             out.line(cu - du * half, cv - dv * half, cu + du * half, cv + dv * half, across, SIGNAL_LAYER + 1, HEAD);
-            for (int i = 0; i < side.lamps().size(); i++) {
-                float at = (i - (side.lamps().size() - 1) / 2f) * lamp * 2.6f;
-                out.square(cu + du * at, cv + dv * at, lamp, SIGNAL_LAYER + 2, lamp(side.lamps().get(i)));
+            for (int i = 0; i < slots; i++) {
+                float at = (i - (slots - 1) / 2f) * lamp * 2.6f;
+                out.square(cu + du * at, cv + dv * at, lamp, SIGNAL_LAYER + 2, i < side.lamps().size() ? lamp(side.lamps().get(i)) : UNLIT);
             }
         }));
     }
 
     /**
-     * A speed-limit sign at ({@code u}, {@code v}), on a post to the right of the trains it holds, or
-     * further out or to their left to be clear: its limit in a red ring, or, for a release, black
-     * triangles meeting in the middle of an off-white plate edged in black, as Create Train Next's sign.
+     * A speed-limit sign at ({@code u}, {@code v}), on a post on the side of the track its block is on if
+     * there is room: its limit on a plate edged in red as wide as the number needs, or, for a release,
+     * black triangles meeting in the middle of an off-white plate edged in black, as Create Train Next's
+     * sign.
      */
-    private static void sign(float u, float v, LiveMap.Limit sign, float grow, int width, int height, Map<Integer, Quads> quads,
+    private void sign(float u, float v, LiveMap.Limit sign, float grow, int width, int height, Map<Integer, Quads> quads,
         Map<Integer, List<Label>> labels, List<Pending> pending) {
         float du = (float) sign.direction().x();
         float dv = (float) -sign.direction().z();
         float length = (float) Math.hypot(du, dv);
-        float ru = length < 1e-6f ? 0 : dv / length;
-        float rv = length < 1e-6f ? 1 : -du / length;
-        float size = SIGN_SIZE * grow;
+        float ru = length < 1e-6f ? 0 : (sign.left() ? -dv : dv) / length;
+        float rv = length < 1e-6f ? 1 : (sign.left() ? du : -du) / length;
+        String text = Integer.toString(sign.kmh());
+        float textScale = LIMIT_SCALE * grow;
+        float halfV = SIGN_SIZE * grow;
+        float halfU = sign.release() ? halfV : Math.max(halfV, font.width(text) * textScale / 2 / 0.78f + halfV * 0.1f);
         List<Rect> places = new ArrayList<>();
-        for (float away : SIGN_PLACES)
-            places.add(Rect.around(u + ru * BESIDE * grow * away, v + rv * BESIDE * grow * away, size, size));
+        for (float away : SIGN_PLACES) {
+            float reach = BESIDE * grow * away + Math.signum(away) * Math.max(halfU, halfV);
+            places.add(Rect.around(u + ru * reach, v + rv * reach, halfU, halfV));
+        }
         pending.add(new Pending(new MarkLayout.Item(places, false), index -> {
-            float cu = u + ru * BESIDE * grow * SIGN_PLACES[index];
-            float cv = v + rv * BESIDE * grow * SIGN_PLACES[index];
+            float away = SIGN_PLACES[index];
+            float reach = BESIDE * grow * away + Math.signum(away) * Math.max(halfU, halfV);
+            float cu = u + ru * reach;
+            float cv = v + rv * reach;
             int tile = tileOf(cu, cv, width, height);
             Quads out = quads.computeIfAbsent(tile, unused -> new Quads());
             out.line(u, v, cu, cv, POST_WIDTH * grow, POST_LAYER, POST);
             if (sign.release()) {
-                float inner = size * 0.8f;
-                out.square(cu, cv, size, SIGN_LAYER, RELEASE_BLACK);
+                float inner = halfV * 0.8f;
+                out.square(cu, cv, halfV, SIGN_LAYER, RELEASE_BLACK);
                 out.square(cu, cv, inner, SIGN_LAYER + 1, RELEASE);
                 out.add(cu - inner, cv + inner, cu + inner, cv + inner, cu, cv, cu, cv, SIGN_LAYER + 2, RELEASE_BLACK);
                 out.add(cu, cv, cu, cv, cu + inner, cv - inner, cu - inner, cv - inner, SIGN_LAYER + 2, RELEASE_BLACK);
             } else {
-                out.square(cu, cv, size, SIGN_LAYER, SIGN_EDGE);
-                out.square(cu, cv, size * 0.78f, SIGN_LAYER + 1, SIGN);
-                labels.computeIfAbsent(tile, unused -> new ArrayList<>())
-                    .add(new Label(Integer.toString(sign.kmh()), cu, cv, LIMIT_SCALE * grow, SIGN_TEXT, true, SIGN_LAYER + 2));
+                float rim = halfV * 0.22f;
+                out.box(cu, cv, halfU, halfV, SIGN_LAYER, SIGN_EDGE);
+                out.box(cu, cv, halfU - rim, halfV - rim, SIGN_LAYER + 1, SIGN);
+                labels.computeIfAbsent(tile, unused -> new ArrayList<>()).add(new Label(text, cu, cv, textScale, SIGN_TEXT, true, SIGN_LAYER + 2));
             }
         }));
     }
@@ -459,7 +483,7 @@ public class MapScreenRenderer implements BlockEntityRenderer<MapScreenBlockEnti
             {u - textWidth / 2, v + gapV * 1.6f}, {u - textWidth / 2, v - gapV * 1.6f}};
         List<Rect> places = new ArrayList<>();
         for (float[] start : starts)
-            places.add(new Rect(start[0], start[1] - half, start[0] + textWidth, start[1] + half));
+            places.add(Rect.around(start[0] + textWidth / 2, start[1], textWidth / 2, half));
         pending.add(new Pending(new MarkLayout.Item(places, true), index -> labels
             .computeIfAbsent(tileOf(starts[index][0], starts[index][1], width, height), unused -> new ArrayList<>())
             .add(new Label(name, starts[index][0], starts[index][1], scale, TEXT, false, NAME_LAYER))));
@@ -542,7 +566,22 @@ public class MapScreenRenderer implements BlockEntityRenderer<MapScreenBlockEnti
         }
 
         void square(float u, float v, float half, int layer, int colour) {
-            add(u - half, v - half, u + half, v - half, u + half, v + half, u - half, v + half, layer, colour);
+            box(u, v, half, half, layer, colour);
+        }
+
+        void box(float u, float v, float halfU, float halfV, int layer, int colour) {
+            add(u - halfU, v - halfV, u + halfU, v - halfV, u + halfU, v + halfV, u - halfU, v + halfV, layer, colour);
+        }
+
+        /** A triangle {@code half} each side of ({@code u}, {@code v}), pointing ({@code du}, {@code dv}). */
+        void triangle(float u, float v, float du, float dv, float half, int layer, int colour) {
+            float length = (float) Math.hypot(du, dv);
+            if (length < 1e-6f)
+                return;
+            float au = du / length * half;
+            float av = dv / length * half;
+            add(u + au, v + av, u - au * 0.7f - av * 0.9f, v - av * 0.7f + au * 0.9f, u - au * 0.7f + av * 0.9f, v - av * 0.7f - au * 0.9f,
+                u + au, v + av, layer, colour);
         }
 
         /** A square block with a point on its front, {@code half} each side of ({@code u}, {@code v}), pointing ({@code du}, {@code dv}). */
