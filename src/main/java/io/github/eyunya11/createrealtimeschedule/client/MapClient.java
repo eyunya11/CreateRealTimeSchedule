@@ -1,6 +1,7 @@
 package io.github.eyunya11.createrealtimeschedule.client;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -130,11 +131,17 @@ public final class MapClient {
         }
         WANTED.values().removeIf(at -> ticks - at > KEEP_ASKING);
         VIEWS.keySet().retainAll(WANTED.keySet());
-        if (ticks % VIEW_EVERY == 0)
+        if (ticks % VIEW_EVERY == 0 && !WANTED.isEmpty()) {
+            // All in one request, as the server answers a player only so often; those with no answer yet first.
+            List<MapViewRequestPayload.Asked> asked = new ArrayList<>();
             for (List<List<String>> wanted : WANTED.keySet()) {
                 MapViewPayload known = VIEWS.get(wanted);
-                PacketDistributor.sendToServer(new MapViewRequestPayload(wanted.get(0), wanted.get(1), known == null ? 0 : known.revision()));
+                asked.add(new MapViewRequestPayload.Asked(wanted.get(0), wanted.get(1), known == null ? 0 : known.revision()));
             }
+            asked.sort(Comparator.comparing(question -> question.revision() != 0));
+            PacketDistributor.sendToServer(
+                new MapViewRequestPayload(List.copyOf(asked.subList(0, Math.min(asked.size(), MapViewRequestPayload.MAX_ASKED)))));
+        }
         if (ticks % LIVE_EVERY == 0 && ticks - liveWantedAt <= KEEP_ASKING)
             PacketDistributor.sendToServer(MapLiveRequestPayload.INSTANCE);
     }

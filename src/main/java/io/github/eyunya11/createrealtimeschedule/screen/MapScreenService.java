@@ -96,14 +96,24 @@ public final class MapScreenService {
         ScreenGroup.change(level, pos, settings -> new ScreenSettings(edit.centreX(), edit.centreZ(), edit.scale(), lines, hidden, tagsOff, 0));
     }
 
-    /** A client asks which tracks a screen showing some lines shows; it is answered if its answer is not the one now. */
+    /** A client asks which tracks and stretches the screens it shows show; each is answered if its answer is not the one now. */
     public static void onViewRequest(MapViewRequestPayload request, IPayloadContext context) {
         if (!(context.player() instanceof ServerPlayer player)
             || !VIEW_LIMIT.allow(player.getUUID(), player.server.overworld().getGameTime()))
             return;
-        MapViewPayload view = view(player.server, request.lines(), request.tagsOff());
-        if (view.revision() != request.revision())
+        for (MapViewPayload view : answers(player.server, request.asked()))
             PacketDistributor.sendToPlayer(player, view);
+    }
+
+    /** The answers to the questions {@code asked} that are not the ones the client has. */
+    public static List<MapViewPayload> answers(MinecraftServer server, List<MapViewRequestPayload.Asked> asked) {
+        List<MapViewPayload> answers = new ArrayList<>();
+        for (MapViewRequestPayload.Asked question : asked) {
+            MapViewPayload view = view(server, question.lines(), question.tagsOff());
+            if (view.revision() != question.revision())
+                answers.add(view);
+        }
+        return answers;
     }
 
     /** A client asks what the signals of its dimension show and where the trains are. */

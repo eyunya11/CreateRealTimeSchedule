@@ -13,6 +13,7 @@ import io.github.eyunya11.createrealtimeschedule.map.ScreenLayout.Place;
 import io.github.eyunya11.createrealtimeschedule.map.ScreenSettings;
 import io.github.eyunya11.createrealtimeschedule.map.TrackMap;
 import io.github.eyunya11.createrealtimeschedule.network.MapViewPayload;
+import io.github.eyunya11.createrealtimeschedule.network.MapViewRequestPayload;
 import io.github.eyunya11.createrealtimeschedule.railway.CreateMap;
 import io.github.eyunya11.createrealtimeschedule.screen.MapScreenBlockEntity;
 import io.github.eyunya11.createrealtimeschedule.screen.MapScreenService;
@@ -165,6 +166,26 @@ public class ScreenTests {
                 .noneMatch(stretch -> stretch.tags().contains(tag)), "with " + tag + " off, its stretches are sent not shown: " + off.stretches());
             helper.succeed();
         });
+    }
+
+    /**
+     * Screens set differently are asked about at once, as the server answers a player only so often:
+     * each is answered, but for one whose answer the client has.
+     */
+    @GameTest(template = TRACK_LINE, batch = "realtimescreen_asked", timeoutTicks = TIMEOUT_TICKS)
+    public static void everyScreenAskedAboutAtOnceIsAnswered(GameTestHelper helper) {
+        var server = helper.getLevel().getServer();
+        List<MapViewPayload> first = MapScreenService.answers(server, List.of(
+            new MapViewRequestPayload.Asked(List.of(), List.of(), 0),
+            new MapViewRequestPayload.Asked(List.of(), List.of("", "Off (test)"), 0)));
+        helper.assertTrue(first.size() == 2 && first.get(0).tagsOff().isEmpty() && first.get(1).tagsOff().equals(List.of("", "Off (test)")),
+            "both screens are answered: " + first.stream().map(MapViewPayload::tagsOff).toList());
+        List<MapViewPayload> again = MapScreenService.answers(server, List.of(
+            new MapViewRequestPayload.Asked(List.of(), List.of(), first.get(0).revision()),
+            new MapViewRequestPayload.Asked(List.of(), List.of("", "Off (test)"), 0)));
+        helper.assertTrue(again.size() == 1 && again.get(0).tagsOff().equals(List.of("", "Off (test)")),
+            "only the screen with no answer is answered again: " + again.stream().map(MapViewPayload::tagsOff).toList());
+        helper.succeed();
     }
 
     /** The length of a straight track by its key, from its two ends. */
