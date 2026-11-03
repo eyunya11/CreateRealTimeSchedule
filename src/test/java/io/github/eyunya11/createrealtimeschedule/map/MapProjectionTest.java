@@ -40,6 +40,25 @@ class MapProjectionTest {
     }
 
     @Test
+    void fittingTakesInOnlyTheTrackShown() {
+        TrackMap map = new TrackMap(List.of("minecraft:overworld", "minecraft:the_nether"), List.of(
+            new TrackMap.Track("a", 0, List.of(new TrackMap.Spot(0, 0), new TrackMap.Spot(10, 0))),
+            new TrackMap.Track("b", 0, List.of(new TrackMap.Spot(10, 0), new TrackMap.Spot(10, 40))),
+            new TrackMap.Track("c", 0, List.of(new TrackMap.Spot(-100, -100), new TrackMap.Spot(-90, -100))),
+            new TrackMap.Track("d", 1, List.of(new TrackMap.Spot(500, 500), new TrackMap.Spot(600, 500)))),
+            List.of(), List.of(), List.of(), List.of());
+        // Track b is shown only from a quarter of the way along to halfway; c is not shown, and d is of another dimension.
+        java.util.Map<Integer, List<TagView.Segment>> stretches = java.util.Map.of(1, List.of(
+            new TagView.Segment(0, 0.25, true, false, List.of("T")),
+            new TagView.Segment(0.25, 0.5, true, true, List.of("U")),
+            new TagView.Segment(0.5, 1, false, false, List.of())));
+        assertEquals(new Box(0, 0, 10, 20), MapProjection.bounds(map, 0, java.util.Set.of(0, 1, 3), stretches));
+        assertEquals(new Box(10, 10, 10, 20), MapProjection.bounds(map, 0, java.util.Set.of(1), stretches));
+        assertNull(MapProjection.bounds(map, 0, java.util.Set.of(2), java.util.Map.of(2, List.of(new TagView.Segment(0, 1, false, false, List.of())))));
+        assertNull(MapProjection.bounds(map, 1, java.util.Set.of(0, 1, 2), java.util.Map.of()));
+    }
+
+    @Test
     void theScaleIsKeptToWhatAScreenMayShow() {
         assertEquals(MapProjection.MIN_SCALE, MapProjection.clampScale(0.001));
         assertEquals(MapProjection.MAX_SCALE, MapProjection.clampScale(1e9));

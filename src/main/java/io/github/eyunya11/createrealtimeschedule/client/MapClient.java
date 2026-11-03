@@ -39,6 +39,8 @@ public final class MapClient {
     /** How long after a screen was last drawn its requests go on, in ticks. */
     private static final int KEEP_ASKING = 40;
     private static final int VIEW_EVERY = 40;
+    /** How soon a screen with no answer is asked about after the last request: a little over the server's ten ticks. */
+    private static final int ASK_AGAIN = 12;
     private static final int LIVE_EVERY = 10;
 
     private static TrackMap map = TrackMap.EMPTY;
@@ -54,6 +56,7 @@ public final class MapClient {
     private static final Map<List<List<String>>, Integer> WANTED = new HashMap<>();
     private static LiveMap live = LiveMap.EMPTY;
     private static int liveWantedAt = Integer.MIN_VALUE;
+    private static int askedAt = Integer.MIN_VALUE / 2;
     private static int ticks;
 
     private MapClient() {}
@@ -99,6 +102,17 @@ public final class MapClient {
         return VIEWS.get(wanted(settings));
     }
 
+    /**
+     * The box round what a screen of {@code settings} shows of the track of a dimension; null if it has
+     * no answer yet, and the box round all the track of the dimension if it shows none.
+     */
+    public static MapProjection.@Nullable Box shownBounds(int dimension, ScreenSettings settings) {
+        if (view(settings) == null)
+            return null;
+        MapProjection.Box shown = MapProjection.bounds(map, dimension, shown(settings), stretches(settings));
+        return shown != null ? shown : bounds(dimension);
+    }
+
     /** The box round the tracks of a dimension, or null if it has none. */
     public static MapProjection.@Nullable Box bounds(int dimension) {
         double minX = Double.POSITIVE_INFINITY;
@@ -131,7 +145,10 @@ public final class MapClient {
         }
         WANTED.values().removeIf(at -> ticks - at > KEEP_ASKING);
         VIEWS.keySet().retainAll(WANTED.keySet());
-        if (ticks % VIEW_EVERY == 0 && !WANTED.isEmpty()) {
+        // Every two seconds, and soon for a screen with no answer yet, as one just set is; not more often than the server answers.
+        boolean unanswered = WANTED.keySet().stream().anyMatch(wanted -> !VIEWS.containsKey(wanted));
+        if (!WANTED.isEmpty() && (ticks - askedAt >= VIEW_EVERY || unanswered && ticks - askedAt >= ASK_AGAIN)) {
+            askedAt = ticks;
             // All in one request, as the server answers a player only so often; those with no answer yet first.
             List<MapViewRequestPayload.Asked> asked = new ArrayList<>();
             for (List<List<String>> wanted : WANTED.keySet()) {
@@ -219,5 +236,6 @@ public final class MapClient {
         WANTED.clear();
         live = LiveMap.EMPTY;
         liveWantedAt = Integer.MIN_VALUE;
+        askedAt = Integer.MIN_VALUE / 2;
     }
 }

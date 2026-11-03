@@ -28,8 +28,8 @@ import net.neoforged.neoforge.network.PacketDistributor;
 /**
  * The settings of a map screen: the world's X and Z in the middle of it, how many blocks of the world
  * a block of it shows, the lines whose track it shows (none for all), and what it shows on the track.
- * "Fit all" puts all the track of the dimension on it. Done sends them to the server, which gives them
- * to every block of the screen.
+ * "Fit all" puts on it all the track of the dimension the lines and the tags as ticked show (all of it
+ * if they show none). Done sends them to the server, which gives them to every block of the screen.
  */
 public class MapScreenEditor extends Screen {
 
@@ -45,6 +45,7 @@ public class MapScreenEditor extends Screen {
     private EditBox x;
     private EditBox z;
     private EditBox scale;
+    private Button fit;
     private final Map<String, Checkbox> lineBoxes = new LinkedHashMap<>();
     private final Map<String, Checkbox> layerBoxes = new LinkedHashMap<>();
     /** The track tags listed, "no tag" first, by their names; those that do not fit keep what they had. */
@@ -69,8 +70,9 @@ public class MapScreenEditor extends Screen {
         x = number(left + 90, top, settings.centreX(), "x");
         z = number(left + 90, top + 24, settings.centreZ(), "z");
         scale = number(left + 90, top + 48, settings.scale(), "scale");
-        addRenderableWidget(Button.builder(Component.translatableWithFallback(KEY + "fit", "Fit all track"), button -> fit())
+        fit = addRenderableWidget(Button.builder(Component.translatableWithFallback(KEY + "fit", "Fit all track"), button -> fit())
             .bounds(left, top + 76, 150, 20).build());
+        fit.active = MapClient.view(chosen()) != null;
 
         int y = top + 120;
         for (String layer : ScreenSettings.LAYERS) {
@@ -134,11 +136,23 @@ public class MapScreenEditor extends Screen {
         }
     }
 
-    /** Fills in the middle and the scale that put all the track of the dimension on the screen. */
+    /**
+     * The track the lines and the tags as ticked now show is asked about while the settings are open,
+     * so that "Fit all" can fit it; the button waits for the answer.
+     */
+    @Override
+    public void tick() {
+        super.tick();
+        ScreenSettings chosen = chosen();
+        MapClient.drawn(chosen);
+        fit.active = MapClient.view(chosen) != null;
+    }
+
+    /** Fills in the middle and the scale that put on the screen all the track the lines and the tags as ticked now show. */
     private void fit() {
         if (minecraft == null || minecraft.level == null)
             return;
-        double[] fit = MapProjection.fit(MapClient.bounds(MapClient.dimension(minecraft.level.dimension().location().toString())),
+        double[] fit = MapProjection.fit(MapClient.shownBounds(MapClient.dimension(minecraft.level.dimension().location().toString()), chosen()),
             place.width(), place.height());
         if (fit == null)
             return;
@@ -147,7 +161,8 @@ public class MapScreenEditor extends Screen {
         scale.setValue(show(fit[2]));
     }
 
-    private void done() {
+    /** The settings as they are now, but for the middle and the scale. */
+    private ScreenSettings chosen() {
         List<String> chosen = new ArrayList<>();
         for (MapScreenOpenPayload.Line line : lines) {
             Checkbox box = lineBoxes.get(line.id());
@@ -155,7 +170,7 @@ public class MapScreenEditor extends Screen {
                 chosen.add(line.id());
         }
         // Lines the timetable no longer has are dropped: they show nothing.
-        List<String> hidden = new ArrayList<>();
+        Set<String> hidden = new LinkedHashSet<>();
         layerBoxes.forEach((layer, box) -> {
             if (!box.selected())
                 hidden.add(layer);
@@ -168,8 +183,14 @@ public class MapScreenEditor extends Screen {
             else
                 tagsOff.add(tag);
         });
+        return new ScreenSettings(settings.centreX(), settings.centreZ(), settings.scale(), chosen, hidden, tagsOff, settings.stamp());
+    }
+
+    private void done() {
+        ScreenSettings chosen = chosen();
         PacketDistributor.sendToServer(new MapScreenEditPayload(entity.getBlockPos(), read(x, settings.centreX()), read(z, settings.centreZ()),
-            MapProjection.clampScale(read(scale, settings.scale())), chosen, hidden, new ArrayList<>(tagsOff)));
+            MapProjection.clampScale(read(scale, settings.scale())), chosen.lines(), new ArrayList<>(chosen.hidden()),
+            new ArrayList<>(chosen.tagsOff())));
         onClose();
     }
 

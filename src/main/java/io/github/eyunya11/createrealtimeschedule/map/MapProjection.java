@@ -1,5 +1,10 @@
 package io.github.eyunya11.createrealtimeschedule.map;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
 import org.jetbrains.annotations.Nullable;
 
 /**
@@ -36,6 +41,39 @@ public record MapProjection(double centreX, double centreZ, double scale, int wi
     /** {@code scale} kept to what a screen may show. */
     public static double clampScale(double scale) {
         return Double.isFinite(scale) ? Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale)) : 1;
+    }
+
+    /**
+     * The box round what a screen shows of the track of {@code dimension}: the tracks {@code shown}, by
+     * their indexes on {@code map}, but for their stretches not shown ({@code stretches}, by the same
+     * indexes; a track not there is shown all along). Null if it shows none of it.
+     */
+    public static @Nullable Box bounds(TrackMap map, int dimension, Set<Integer> shown, Map<Integer, List<TagView.Segment>> stretches) {
+        double minX = Double.POSITIVE_INFINITY;
+        double minZ = Double.POSITIVE_INFINITY;
+        double maxX = Double.NEGATIVE_INFINITY;
+        double maxZ = Double.NEGATIVE_INFINITY;
+        for (int index = 0; index < map.tracks().size(); index++) {
+            TrackMap.Track track = map.tracks().get(index);
+            if (track.dimension() != dimension || !shown.contains(index))
+                continue;
+            List<TagView.Segment> segments = stretches.get(index);
+            List<List<TrackMap.Spot>> parts = new ArrayList<>();
+            if (segments == null)
+                parts.add(track.points());
+            else
+                for (TagView.Segment segment : segments)
+                    if (segment.shown())
+                        parts.add(TagView.piece(track.points(), segment.from(), segment.to()));
+            for (List<TrackMap.Spot> part : parts)
+                for (TrackMap.Spot point : part) {
+                    minX = Math.min(minX, point.x());
+                    minZ = Math.min(minZ, point.z());
+                    maxX = Math.max(maxX, point.x());
+                    maxZ = Math.max(maxZ, point.z());
+                }
+        }
+        return minX > maxX ? null : new Box(minX, minZ, maxX, maxZ);
     }
 
     /**
