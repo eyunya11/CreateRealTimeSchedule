@@ -57,7 +57,8 @@ public final class MapClient {
     private static LiveMap live = LiveMap.EMPTY;
     /** Goes up each time the server sends what is live, so that what is worked out from it can be kept until then. */
     private static int liveVersion;
-    private static int liveWantedAt = Integer.MIN_VALUE;
+    // Half the least int, as askedAt: ticks less it must not wrap round to look recent.
+    private static int liveWantedAt = Integer.MIN_VALUE / 2;
     private static int askedAt = Integer.MIN_VALUE / 2;
     private static int ticks;
 
@@ -243,7 +244,7 @@ public final class MapClient {
         WANTED.clear();
         live = LiveMap.EMPTY;
         liveVersion++;
-        liveWantedAt = Integer.MIN_VALUE;
+        liveWantedAt = Integer.MIN_VALUE / 2;
         askedAt = Integer.MIN_VALUE / 2;
     }
 }

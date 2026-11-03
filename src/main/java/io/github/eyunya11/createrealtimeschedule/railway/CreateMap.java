@@ -68,7 +68,11 @@ public final class CreateMap {
     /** About how far apart the points of a curve are, in Create's segments of half a block. */
     private static final int SEGMENTS_PER_POINT = 4;
 
-    /** The looks of colour light signals last read, by signal and side (first, then second). */
+    /**
+     * The looks of colour light signals last read, by signal and side (first, then second). In single
+     * player the client reads the map on its own thread while the server does on its, so it is used
+     * holding its lock.
+     */
     private static final Map<SignalBoundary, TrainNextSignals.Look[]> REMEMBERED = new WeakHashMap<>();
 
     private CreateMap() {}
@@ -339,14 +343,16 @@ public final class CreateMap {
                 if (look != null)
                     break;
             }
-        TrainNextSignals.Look[] remembered = REMEMBERED.get(signal);
         int side = first ? 0 : 1;
-        if (look != null) {
-            if (remembered == null)
-                REMEMBERED.put(signal, remembered = new TrainNextSignals.Look[2]);
-            remembered[side] = look;
-        } else if (remembered != null) {
-            look = remembered[side];
+        synchronized (REMEMBERED) {
+            TrainNextSignals.Look[] remembered = REMEMBERED.get(signal);
+            if (look != null) {
+                if (remembered == null)
+                    REMEMBERED.put(signal, remembered = new TrainNextSignals.Look[2]);
+                remembered[side] = look;
+            } else if (remembered != null) {
+                look = remembered[side];
+            }
         }
         if (look != null)
             return new SignalSide(direction, look.kind(), look.lamps(), left);
