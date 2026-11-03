@@ -34,8 +34,13 @@ import net.neoforged.neoforge.network.PacketDistributor;
 public class MapScreenEditor extends Screen {
 
     private static final String KEY = "gui.createrealtimeschedule.map_screen.";
-    /** The most lines listed, which fit the screen; the others keep what they had. */
+    /** The most lines listed; those that do not fit, or are past these, keep what they had. */
     private static final int MOST_LINES = 12;
+    /** How far apart the rows of boxes to tick are. */
+    private static final int ROW = 20;
+    /** Where the left column starts, and the kinds to show under it. */
+    private static final int TOP = 40;
+    private static final int LAYERS_TOP = TOP + 106;
 
     private final MapScreenBlockEntity entity;
     private final List<MapScreenOpenPayload.Line> lines;
@@ -53,6 +58,10 @@ public class MapScreenEditor extends Screen {
     /** Where the tags are listed from, and how many there are to list. */
     private int tagsTop;
     private int tagCount;
+    /** Where it says how many lines are not listed. */
+    private int moreLinesTop;
+    /** Where the right column, of the lines and the tags, starts. */
+    private int right;
 
     public MapScreenEditor(MapScreenBlockEntity entity, List<MapScreenOpenPayload.Line> lines) {
         super(Component.translatableWithFallback(KEY + "title", "Map screen"));
@@ -65,33 +74,48 @@ public class MapScreenEditor extends Screen {
     @Override
     protected void init() {
         int left = width / 2 - 160;
-        int right = width / 2 + 10;
-        int top = 40;
-        x = number(left + 90, top, settings.centreX(), "x");
-        z = number(left + 90, top + 24, settings.centreZ(), "z");
-        scale = number(left + 90, top + 48, settings.scale(), "scale");
+        // Above the Done and Cancel buttons.
+        int bottom = height - 36;
+        x = number(left + 90, TOP, settings.centreX(), "x");
+        z = number(left + 90, TOP + 22, settings.centreZ(), "z");
+        scale = number(left + 90, TOP + 44, settings.scale(), "scale");
         fit = addRenderableWidget(Button.builder(Component.translatableWithFallback(KEY + "fit", "Fit all track"), button -> fit())
-            .bounds(left, top + 76, 150, 20).build());
+            .bounds(left, TOP + 68, 150, 20).build());
         fit.active = MapClient.view(chosen()) != null;
 
-        int y = top + 120;
-        for (String layer : ScreenSettings.SCREEN_LAYERS) {
-            Checkbox box = Checkbox.builder(Component.translatableWithFallback(KEY + "layer." + layer, layer), font).pos(left, y)
-                .selected(settings.shows(layer)).build();
+        // The kinds to show, in two columns if one does not fit above the buttons.
+        List<String> layers = ScreenSettings.SCREEN_LAYERS;
+        int perColumn = LAYERS_TOP + layers.size() * ROW > bottom ? (layers.size() + 1) / 2 : layers.size();
+        int column = left;
+        int widest = 0;
+        for (int i = 0; i < layers.size(); i++) {
+            if (i > 0 && i % perColumn == 0) {
+                column += widest + 8;
+                widest = 0;
+            }
+            String layer = layers.get(i);
+            Checkbox box = Checkbox.builder(Component.translatableWithFallback(KEY + "layer." + layer, layer), font)
+                .pos(column, LAYERS_TOP + i % perColumn * ROW).selected(settings.shows(layer)).build();
+            widest = Math.max(widest, box.getWidth());
             layerBoxes.put(layer, addRenderableWidget(box));
-            y += 22;
         }
+        // The right column, clear of the kinds to show.
+        right = Math.max(width / 2 + 10, column + widest + 10);
 
-        y = top + 12;
+        // The lines, as many as fit with room under them for the tags' heading and one tag.
+        int y = TOP + 12;
         for (MapScreenOpenPayload.Line line : lines.subList(0, Math.min(MOST_LINES, lines.size()))) {
+            if (y + ROW > bottom - 12 - ROW)
+                break;
             Checkbox box = Checkbox.builder(Component.literal(line.name()), font).pos(right, y).selected(settings.lines().contains(line.id()))
                 .build();
             lineBoxes.put(line.id(), addRenderableWidget(box));
-            y += 22;
+            y += ROW;
         }
+        moreLinesTop = y;
 
         // The track tags under the lines, as many as fit above the buttons.
-        tagsTop = y + (lines.size() > MOST_LINES ? 12 : 0) + 6;
+        tagsTop = y + (lineBoxes.size() < lines.size() ? 12 : 0) + 4;
         List<String> tags = new ArrayList<>();
         tags.add(TagView.NO_TAG);
         tags.addAll(TrackTagClient.names().values());
@@ -103,13 +127,13 @@ public class MapScreenEditor extends Screen {
         });
         y = tagsTop + 12;
         for (String tag : tags) {
-            if (y + 20 > height - 36)
+            if (y + ROW > bottom)
                 break;
             Component label = tag.equals(TagView.NO_TAG) ? Component.translatableWithFallback(KEY + "no_tag", "No tag")
                 : Component.literal(tag).withColor(colours.get(tag) & 0xFFFFFF);
             Checkbox box = Checkbox.builder(label, font).pos(right, y).selected(!settings.tagsOff().contains(tag)).build();
             tagBoxes.put(tag, addRenderableWidget(box));
-            y += 22;
+            y += ROW;
         }
 
         addRenderableWidget(Button.builder(CommonComponents.GUI_DONE, button -> done()).bounds(width / 2 - 104, height - 30, 100, 20).build());
@@ -198,20 +222,18 @@ public class MapScreenEditor extends Screen {
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         super.render(graphics, mouseX, mouseY, partialTick);
         int left = width / 2 - 160;
-        int right = width / 2 + 10;
-        int top = 40;
         graphics.drawCenteredString(font, title, width / 2, 12, 0xFFFFFF);
         graphics.drawString(font, Component.translatableWithFallback(KEY + "size", "%1$s × %2$s blocks", place.width(), place.height()),
-            left, top - 14, 0xA0A0A0);
-        graphics.drawString(font, Component.translatableWithFallback(KEY + "x", "Middle X"), left, top + 5, 0xFFFFFF);
-        graphics.drawString(font, Component.translatableWithFallback(KEY + "z", "Middle Z"), left, top + 29, 0xFFFFFF);
-        graphics.drawString(font, Component.translatableWithFallback(KEY + "scale", "Blocks per block"), left, top + 53, 0xFFFFFF);
-        graphics.drawString(font, Component.translatableWithFallback(KEY + "layers", "Show"), left, top + 106, 0xA0A0A0);
+            left, TOP - 14, 0xA0A0A0);
+        graphics.drawString(font, Component.translatableWithFallback(KEY + "x", "Middle X"), left, TOP + 5, 0xFFFFFF);
+        graphics.drawString(font, Component.translatableWithFallback(KEY + "z", "Middle Z"), left, TOP + 27, 0xFFFFFF);
+        graphics.drawString(font, Component.translatableWithFallback(KEY + "scale", "Blocks per block"), left, TOP + 49, 0xFFFFFF);
+        graphics.drawString(font, Component.translatableWithFallback(KEY + "layers", "Show"), left, LAYERS_TOP - 12, 0xA0A0A0);
         graphics.drawString(font, lines.isEmpty() ? Component.translatableWithFallback(KEY + "no_timetable", "No timetable is run: all the track")
-            : Component.translatableWithFallback(KEY + "lines", "Lines (none: all the track)"), right, top - 2, 0xA0A0A0);
-        if (lines.size() > MOST_LINES)
-            graphics.drawString(font, Component.translatableWithFallback(KEY + "more_lines", "and %1$s more", lines.size() - MOST_LINES),
-                right, top + 12 + MOST_LINES * 22, 0xA0A0A0);
+            : Component.translatableWithFallback(KEY + "lines", "Lines (none: all the track)"), right, TOP - 2, 0xA0A0A0);
+        if (lineBoxes.size() < lines.size())
+            graphics.drawString(font, Component.translatableWithFallback(KEY + "more_lines", "and %1$s more", lines.size() - lineBoxes.size()),
+                right, moreLinesTop + 2, 0xA0A0A0);
         Component tags = Component.translatableWithFallback(KEY + "tags", "Track tags (off: grey)");
         if (tagBoxes.size() < tagCount)
             tags = Component.empty().append(tags).append(" ")
