@@ -15,7 +15,6 @@ import io.github.eyunya11.createrealtimeschedule.map.TagView;
 import io.github.eyunya11.createrealtimeschedule.network.MapScreenEditPayload;
 import io.github.eyunya11.createrealtimeschedule.network.MapScreenOpenPayload;
 import io.github.eyunya11.createrealtimeschedule.screen.MapScreenBlockEntity;
-import io.github.eyunya11.createrealtimeschedule.timetable.TypeColours;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.Checkbox;
@@ -44,7 +43,8 @@ public class MapScreenEditor extends Screen {
 
     private final MapScreenBlockEntity entity;
     private final List<MapScreenOpenPayload.Line> lines;
-    private final ScreenSettings settings;
+    /** The settings to start from: the screen's, or, when the window is resized, those ticked so far. */
+    private ScreenSettings settings;
     private final Place place;
 
     private EditBox x;
@@ -76,9 +76,18 @@ public class MapScreenEditor extends Screen {
         int left = width / 2 - 160;
         // Above the Done and Cancel buttons.
         int bottom = height - 36;
-        x = number(left + 90, TOP, settings.centreX(), "x");
-        z = number(left + 90, TOP + 22, settings.centreZ(), "z");
-        scale = number(left + 90, TOP + 44, settings.scale(), "scale");
+        // Again, as when the window is resized: what was typed and ticked stays.
+        String[] typed = null;
+        if (x != null) {
+            settings = chosen();
+            typed = new String[] {x.getValue(), z.getValue(), scale.getValue()};
+        }
+        lineBoxes.clear();
+        layerBoxes.clear();
+        tagBoxes.clear();
+        x = number(left + 90, TOP, typed != null ? typed[0] : show(settings.centreX()), "x");
+        z = number(left + 90, TOP + 22, typed != null ? typed[1] : show(settings.centreZ()), "z");
+        scale = number(left + 90, TOP + 44, typed != null ? typed[2] : show(settings.scale()), "scale");
         fit = addRenderableWidget(Button.builder(Component.translatableWithFallback(KEY + "fit", "Fit all track"), button -> fit())
             .bounds(left, TOP + 68, 150, 20).build());
         fit.active = MapClient.view(chosen()) != null;
@@ -120,11 +129,7 @@ public class MapScreenEditor extends Screen {
         tags.add(TagView.NO_TAG);
         tags.addAll(TrackTagClient.names().values());
         tagCount = tags.size();
-        Map<String, Integer> colours = new LinkedHashMap<>();
-        TrackTagClient.names().forEach((id, name) -> {
-            String colour = TrackTagClient.colours().get(id);
-            colours.put(name, colour != null && TypeColours.isColour(colour) ? TypeColours.argb(colour) : TypeColours.argb(TypeColours.byName(name)));
-        });
+        Map<String, Integer> colours = TrackTagClient.argbs();
         y = tagsTop + 12;
         for (String tag : tags) {
             if (y + ROW > bottom)
@@ -140,9 +145,9 @@ public class MapScreenEditor extends Screen {
         addRenderableWidget(Button.builder(CommonComponents.GUI_CANCEL, button -> onClose()).bounds(width / 2 + 4, height - 30, 100, 20).build());
     }
 
-    private EditBox number(int left, int top, double value, String name) {
+    private EditBox number(int left, int top, String value, String name) {
         EditBox box = new EditBox(font, left, top, 70, 18, Component.translatableWithFallback(KEY + name, name));
-        box.setValue(show(value));
+        box.setValue(value);
         box.setFilter(text -> text.matches("-?[0-9]*\\.?[0-9]*"));
         return addRenderableWidget(box);
     }

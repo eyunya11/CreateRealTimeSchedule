@@ -32,7 +32,6 @@ import io.github.eyunya11.createrealtimeschedule.network.MapViewPayload;
 import io.github.eyunya11.createrealtimeschedule.screen.MapScreenBlock;
 import io.github.eyunya11.createrealtimeschedule.screen.MapScreenBlockEntity;
 import io.github.eyunya11.createrealtimeschedule.screen.ScreenGroup;
-import io.github.eyunya11.createrealtimeschedule.timetable.TypeColours;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
@@ -264,7 +263,7 @@ public class MapScreenRenderer implements BlockEntityRenderer<MapScreenBlockEnti
 
         TrackMap map = MapClient.map();
         Shown shown = new Shown(MapClient.shown(settings), MapClient.stretches(settings));
-        Map<String, Integer> colours = tagColours();
+        Map<String, Integer> colours = TrackTagClient.argbs();
         Quads out = new Quads();
         double scale = settings.scale();
         for (int index = 0; index < map.tracks().size(); index++) {
@@ -312,17 +311,6 @@ public class MapScreenRenderer implements BlockEntityRenderer<MapScreenBlockEnti
                     layer, colour);
             }
         }
-    }
-
-    /** The colours of the world's track tags, by their names. */
-    private static Map<String, Integer> tagColours() {
-        Map<String, Integer> colours = new HashMap<>();
-        for (Map.Entry<Integer, String> tag : TrackTagClient.names().entrySet()) {
-            String colour = TrackTagClient.colours().get(tag.getKey());
-            colours.put(tag.getValue(), colour != null && TypeColours.isColour(colour) ? TypeColours.argb(colour)
-                : TypeColours.argb(TypeColours.byName(tag.getValue())));
-        }
-        return colours;
     }
 
     /** A thing put beside the track: where it may go, and how to draw it in the place it is given. */
