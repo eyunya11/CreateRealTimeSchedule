@@ -10,6 +10,7 @@ import java.util.function.UnaryOperator;
 import org.jetbrains.annotations.Nullable;
 
 import io.github.eyunya11.createrealtimeschedule.ModRegistry;
+import io.github.eyunya11.createrealtimeschedule.ModSettings;
 import io.github.eyunya11.createrealtimeschedule.map.ScreenLayout;
 import io.github.eyunya11.createrealtimeschedule.map.ScreenLayout.Cell;
 import io.github.eyunya11.createrealtimeschedule.map.ScreenLayout.Place;
@@ -45,7 +46,8 @@ public final class ScreenGroup {
         ArrayDeque<BlockPos> next = new ArrayDeque<>();
         next.add(pos);
         cells.put(cell(pos, pos, right), pos);
-        while (!next.isEmpty() && cells.size() < ScreenLayout.MOST_CELLS) {
+        int limit = ScreenLayout.cellsToFind(ModSettings.mapScreenMaxSize());
+        while (!next.isEmpty() && cells.size() < limit) {
             BlockPos at = next.poll();
             for (BlockPos near : List.of(at.relative(right), at.relative(right.getOpposite()), at.above(), at.below())) {
                 Cell cell = cell(pos, near, right);
@@ -101,7 +103,7 @@ public final class ScreenGroup {
     private static void apply(ServerLevel level, Map<Cell, BlockPos> cells, UnaryOperator<ScreenSettings> change) {
         if (cells.isEmpty())
             return;
-        Map<Cell, Place> places = ScreenLayout.of(cells.keySet());
+        Map<Cell, Place> places = ScreenLayout.of(cells.keySet(), ModSettings.mapScreenMaxSize());
         // The settings set last; of those set together (or never), the ones of the block at the bottom left.
         ScreenSettings settings = cells.entrySet().stream()
             .map(entry -> Map.entry(entry.getKey(), entity(level, entry.getValue())))
