@@ -55,6 +55,8 @@ public final class MapClient {
     /** The lines and the tags turned off of each screen drawn lately, with the tick it was last drawn in. */
     private static final Map<List<List<String>>, Integer> WANTED = new HashMap<>();
     private static LiveMap live = LiveMap.EMPTY;
+    /** Goes up each time the server sends what is live, so that what is worked out from it can be kept until then. */
+    private static int liveVersion;
     private static int liveWantedAt = Integer.MIN_VALUE;
     private static int askedAt = Integer.MIN_VALUE / 2;
     private static int ticks;
@@ -71,6 +73,10 @@ public final class MapClient {
 
     public static LiveMap live() {
         return live;
+    }
+
+    public static int liveVersion() {
+        return liveVersion;
     }
 
     /** The index of the track of a key on {@link #map()}, or -1. */
@@ -178,6 +184,7 @@ public final class MapClient {
 
     public static void onLive(MapLivePayload payload) {
         live = payload.live();
+        liveVersion++;
     }
 
     public static void onOpen(MapScreenOpenPayload open) {
@@ -235,6 +242,7 @@ public final class MapClient {
         VIEWS.clear();
         WANTED.clear();
         live = LiveMap.EMPTY;
+        liveVersion++;
         liveWantedAt = Integer.MIN_VALUE;
         askedAt = Integer.MIN_VALUE / 2;
     }
