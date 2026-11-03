@@ -1,0 +1,38 @@
+{
+  "about": "A siding to a balloon loop, off a place where a stretch shown ends. Track 0 (a to b) and 2 (c to d) are Local, joined by track 1 with no tag. Track 3 with no tag leads from b to e, where a loop with no tag (4, 5 and 6, through f and g) turns back. The loop leads nowhere else, so with no tag off it is not shown, though no end of it is a dead end, and it starts where track 1 meets a stretch shown. Each stretch is [from, to, tagged, shown, the tags on that are on].",
+  "tracks": [
+    {"key": "w a b", "tags": [{"from": 0, "to": 1, "tags": ["Local"]}]},
+    {"key": "w b c", "tags": []},
+    {"key": "w c d", "tags": [{"from": 0, "to": 1, "tags": ["Local"]}]},
+    {"key": "w b e", "tags": []},
+    {"key": "w e f", "tags": []},
+    {"key": "w f g", "tags": []},
+    {"key": "w e g", "tags": []}
+  ],
+  "cases": [
+    {
+      "off": [],
+      "segments": [
+        [[0, 1, true, true, ["Local"]]],
+        [[0, 1, false, true, []]],
+        [[0, 1, true, true, ["Local"]]],
+        [[0, 1, false, true, []]],
+        [[0, 1, false, true, []]],
+        [[0, 1, false, true, []]],
+        [[0, 1, false, true, []]]
+      ]
+    },
+    {
+      "off": [""],
+      "segments": [
+        [[0, 1, true, true, ["Local"]]],
+        [[0, 1, false, true, []]],
+        [[0, 1, true, true, ["Local"]]],
+        [[0, 1, false, false, []]],
+        [[0, 1, false, false, []]],
+        [[0, 1, false, false, []]],
+        [[0, 1, false, false, []]]
+      ]
+    }
+  ]
+}

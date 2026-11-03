@@ -127,11 +127,16 @@ public final class TagView {
                         leaves.add(other);
             }
         }
-        // Of what is left, a run that meets stretches shown in two places or more is shown.
+        // Of what is left, a run that meets stretches shown in two places or more is shown. Runs are not
+        // joined where they meet a stretch shown: a siding from there that leads nowhere else stays a run
+        // of its own, and meets them in one place only.
         int[] parent = new int[bare.size()];
         for (int i = 0; i < parent.length; i++)
             parent[i] = i;
-        for (List<Integer> together : bareAt.values()) {
+        for (Map.Entry<String, List<Integer>> place : bareAt.entrySet()) {
+            if (meeting.contains(place.getKey()))
+                continue;
+            List<Integer> together = place.getValue();
             int first = -1;
             for (int i : together)
                 if (!gone[i]) {

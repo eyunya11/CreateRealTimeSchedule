@@ -20,6 +20,16 @@ class TrackKeysTest {
     }
 
     @Test
+    void anEndRaisedByPixelsIsNotTheEndInThatPlace() {
+        // Create tells such nodes apart; two tracks between them are two keys.
+        String level = TrackKeys.of("d", new int[] {0, 4, 0}, new int[] {20, 4, 0, 0});
+        String raised = TrackKeys.of("d", new int[] {0, 4, 0}, new int[] {20, 4, 0, 8});
+        assertEquals("d 0,2,0 10,2,0", level);
+        assertEquals("d 0,2,0 10,2,0+8px", raised);
+        assertEquals("d -5,2,0-3px 0,2,0", TrackKeys.of("d", new int[] {0, 4, 0}, new int[] {-10, 4, 0, -3}));
+    }
+
+    @Test
     void halfBlocksBelowZeroKeepTheirSign() {
         assertEquals("d -1.5,-1,0 -0.5,0,1", TrackKeys.of("d", new int[] {-1, 0, 2}, new int[] {-3, -2, 0}));
     }

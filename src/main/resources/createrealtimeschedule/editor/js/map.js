@@ -332,7 +332,11 @@
         i = parent[i] = parent[parent[i]];
       return i;
     };
-    for (const together of bareAt.values()) {
+    // Runs are not joined where they meet a stretch shown: a siding from there that leads nowhere else
+    // stays a run of its own, and meets them in one place only.
+    for (const [place, together] of bareAt) {
+      if (meeting.has(place))
+        continue;
       let first = -1;
       for (const i of together)
         if (!gone[i]) {

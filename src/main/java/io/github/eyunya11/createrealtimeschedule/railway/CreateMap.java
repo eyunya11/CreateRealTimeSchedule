@@ -202,9 +202,9 @@ public final class CreateMap {
     /** An edge found, and its graph. */
     private record Found(TrackGraph graph, TrackEdge edge) {}
 
-    /** Create's place of a node, in half blocks. */
+    /** Create's place of a node, in half blocks, and the pixels it is raised by: all that tells Create's nodes apart. */
     private static int[] place(TrackNodeLocation location) {
-        return new int[] {location.getX(), location.getY(), location.getZ()};
+        return new int[] {location.getX(), location.getY(), location.getZ(), location.yOffsetPixels};
     }
 
     private static String dimension(TrackNode node) {
