@@ -74,6 +74,18 @@ class MarkLayoutTest {
     }
 
     @Test
+    void aThingStaysOnTheScreen() {
+        // A screen 4 by 2: a name to the right of a station by its right edge goes to its left instead.
+        Rect right = Rect.around(3.8, 1, 0.5, 0.1);
+        Rect left = Rect.around(2.8, 1, 0.5, 0.1);
+        assertArrayEquals(new int[] {1}, MarkLayout.place(List.of(), List.of(new Item(List.of(right, left), true)), 4, 2));
+        assertArrayEquals(new int[] {-1}, MarkLayout.place(List.of(), List.of(new Item(List.of(right), true)), 4, 2), "a name nowhere on it");
+        // A head with no clear place goes in its best place on the screen, over what is there.
+        assertArrayEquals(new int[] {1}, MarkLayout.place(List.of(left), List.of(new Item(List.of(right, left), false)), 4, 2));
+        assertArrayEquals(new int[] {0}, MarkLayout.place(List.of(), List.of(new Item(List.of(right, left), true))), "with no edges");
+    }
+
+    @Test
     void withNoPlaceClearANameIsLeftOutAndAnythingElseGoesInItsBestPlace() {
         int[] chosen = MarkLayout.place(List.of(A, B), List.of(new Item(List.of(A, B), false), new Item(List.of(B, A), true),
             new Item(List.of(C), true)));

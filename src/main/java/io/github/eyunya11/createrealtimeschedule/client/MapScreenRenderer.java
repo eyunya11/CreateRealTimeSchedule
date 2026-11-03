@@ -31,6 +31,7 @@ import io.github.eyunya11.createrealtimeschedule.map.TrackMap.Spot;
 import io.github.eyunya11.createrealtimeschedule.network.MapViewPayload;
 import io.github.eyunya11.createrealtimeschedule.screen.MapScreenBlock;
 import io.github.eyunya11.createrealtimeschedule.screen.MapScreenBlockEntity;
+import io.github.eyunya11.createrealtimeschedule.screen.ScreenGroup;
 import io.github.eyunya11.createrealtimeschedule.timetable.TypeColours;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.renderer.LightTexture;
@@ -38,9 +39,11 @@ import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.block.HorizontalDirectionalBlock;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.AABB;
 
 /**
  * Draws a block's part of a map screen: the part of the world {@link MapProjection#tile} gives it, on
@@ -193,6 +196,22 @@ public class MapScreenRenderer implements BlockEntityRenderer<MapScreenBlockEnti
     @Override
     public int getViewDistance() {
         return 96;
+    }
+
+    /**
+     * The whole screen: a block draws the marks whose middles are on it, which may reach over the blocks
+     * beside it, so it is drawn while any of the screen is in sight, not only while it is.
+     */
+    @Override
+    public AABB getRenderBoundingBox(MapScreenBlockEntity entity) {
+        BlockState state = entity.getBlockState();
+        if (!(state.getBlock() instanceof MapScreenBlock))
+            return new AABB(entity.getBlockPos());
+        Place place = entity.place();
+        Direction right = ScreenGroup.right(state.getValue(HorizontalDirectionalBlock.FACING));
+        BlockPos bottomLeft = entity.getBlockPos().relative(right, -place.column()).below(place.row());
+        BlockPos topRight = bottomLeft.relative(right, place.width() - 1).above(place.height() - 1);
+        return AABB.encapsulatingFullBlocks(bottomLeft, topRight);
     }
 
     @Override
@@ -394,7 +413,7 @@ public class MapScreenRenderer implements BlockEntityRenderer<MapScreenBlockEnti
                         width, height, labels, pending);
             }
 
-        int[] chosen = MarkLayout.place(fixed, pending.stream().map(Pending::item).toList());
+        int[] chosen = MarkLayout.place(fixed, pending.stream().map(Pending::item).toList(), width, height);
         for (int i = 0; i < pending.size(); i++)
             if (chosen[i] >= 0)
                 pending.get(i).draw().accept(chosen[i]);

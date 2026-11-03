@@ -9,8 +9,9 @@ import java.util.Map;
  * Where to put the things a map screen draws beside the track (the heads of the signals, the
  * speed-limit signs and the stations' names) so that they do not lie over the track, over what is on
  * it, or over one another. Each thing has places it may go, best first; it takes the first that is
- * clear of what is fixed (the track, and the marks on it) and of what has been put before it. A thing
- * with no clear place goes in its best place anyway, or, if it may be left out (a name), is left out.
+ * clear of what is fixed (the track, and the marks on it) and of what has been put before it, and on
+ * the screen. A thing with no clear place goes in its best place on the screen anyway, or, if it may be
+ * left out (a name), is left out.
  * Things are boxes that may lie at a slant, as a signal's head along slanting track does, and a piece
  * of track is a long thin box.
  */
@@ -91,16 +92,32 @@ public final class MarkLayout {
         }
     }
 
-    /** The place each item takes, by its index in its places, or -1 for one left out. */
+    /** The place each item takes, by its index in its places, or -1 for one left out; with no edges to keep within. */
     public static int[] place(List<Rect> fixed, List<Item> items) {
+        return place(fixed, items, Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY);
+    }
+
+    /**
+     * The place each item takes, by its index in its places, or -1 for one left out, on a screen
+     * {@code width} by {@code height} from (0, 0): a place that reaches off it is not clear, as nothing
+     * drawn there would be on the screen.
+     */
+    public static int[] place(List<Rect> fixed, List<Item> items, double width, double height) {
         Grid taken = new Grid();
         fixed.forEach(taken::add);
         int[] chosen = new int[items.size()];
         for (int i = 0; i < items.size(); i++) {
             Item item = items.get(i);
             chosen[i] = item.droppable() ? -1 : 0;
+            if (!item.droppable())
+                for (int k = 0; k < item.places().size(); k++)
+                    if (on(item.places().get(k), width, height)) {
+                        chosen[i] = k;
+                        break;
+                    }
             for (int k = 0; k < item.places().size(); k++)
-                if (taken.clear(item.places().get(k)) && (item.posts().isEmpty() || taken.clear(item.posts().get(k)))) {
+                if (on(item.places().get(k), width, height) && taken.clear(item.places().get(k))
+                    && (item.posts().isEmpty() || taken.clear(item.posts().get(k)))) {
                     chosen[i] = k;
                     break;
                 }
@@ -111,6 +128,14 @@ public final class MarkLayout {
             }
         }
         return chosen;
+    }
+
+    /** Whether a box lies on a screen {@code width} by {@code height} from (0, 0); any box does on one of no edges (infinite). */
+    private static boolean on(Rect rect, double width, double height) {
+        if (Double.isInfinite(width) || Double.isInfinite(height))
+            return true;
+        return rect.u() - rect.reachU() >= -1e-9 && rect.v() - rect.reachV() >= -1e-9 && rect.u() + rect.reachU() <= width + 1e-9
+            && rect.v() + rect.reachV() <= height + 1e-9;
     }
 
     /** The boxes taken, by the squares they reach into. */
