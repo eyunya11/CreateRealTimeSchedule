@@ -1,6 +1,7 @@
 package io.github.eyunya11.createrealtimeschedule.screen;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -62,6 +63,14 @@ public final class MapScreenService {
             return size() > 32;
         }
     };
+
+    /** How long what is live is sent again as it was, in ticks: the players near screens are answered from one reading. */
+    private static final int LIVE_KEPT = 5;
+
+    /** What is live, as last read for each dimension, with the tick it was read in. */
+    private static final Map<String, Live> LIVE = new HashMap<>();
+
+    private record Live(long tick, MapLivePayload payload) {}
 
     private MapScreenService() {}
 
@@ -126,10 +135,23 @@ public final class MapScreenService {
         if (!(context.player() instanceof ServerPlayer player)
             || !LIVE_LIMIT.allow(player.getUUID(), player.server.overworld().getGameTime()))
             return;
-        OperationData operation = OperationData.get(player.server);
-        LiveMap live = CreateMap.live(Create.RAILWAYS.trackNetworks.values(), Create.RAILWAYS.trains.values(), player.server::getLevel,
-            player.level().dimension().location().toString(), train -> operation.tagsOf(train.id));
-        PacketDistributor.sendToPlayer(player, new MapLivePayload(live));
+        String dimension = player.level().dimension().location().toString();
+        long now = player.server.overworld().getGameTime();
+        Live known = LIVE.get(dimension);
+        if (known == null || now < known.tick() || now - known.tick() >= LIVE_KEPT) {
+            OperationData operation = OperationData.get(player.server);
+            LiveMap live = CreateMap.live(Create.RAILWAYS.trackNetworks.values(), Create.RAILWAYS.trains.values(), player.server::getLevel,
+                dimension, train -> operation.tagsOf(train.id));
+            known = new Live(now, new MapLivePayload(live));
+            LIVE.put(dimension, known);
+        }
+        PacketDistributor.sendToPlayer(player, known.payload());
+    }
+
+    /** Forgets what was worked out for a server that has stopped, which a world opened next must not be shown. */
+    static void stopped() {
+        LIVE.clear();
+        VIEWS.clear();
     }
 
     /** Forgets a player who has left. */

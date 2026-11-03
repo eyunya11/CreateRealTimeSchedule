@@ -47,6 +47,17 @@ class MarkLayoutTest {
     }
 
     @Test
+    void longSlantingTrackKeepsThingsOffItAllAlong() {
+        // Taken in pieces: a box anywhere on it is not clear, one beside it is.
+        Rect track = Rect.line(0, 0, 30, 20, 0.05);
+        for (double t : new double[] {0.01, 0.37, 0.5, 0.99}) {
+            Rect on = Rect.around(30 * t, 20 * t, 0.05, 0.05);
+            Rect off = Rect.around(30 * t - 0.4, 20 * t + 0.6, 0.05, 0.05);
+            assertArrayEquals(new int[] {1}, MarkLayout.place(List.of(track), List.of(new Item(List.of(on, off), false))), "at " + t);
+        }
+    }
+
+    @Test
     void aThingOnAPostDoesNotGoWhereThePostCrossesOtherTrack() {
         // A head on a post from track along v = 0 up past track along v = 1, or the same way down.
         Rect other = Rect.line(-10, 1, 10, 1, 0.05);

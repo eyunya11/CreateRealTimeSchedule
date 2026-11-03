@@ -9,8 +9,9 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.BuildCreativeModeTabContentsEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
+import net.neoforged.neoforge.event.server.ServerStoppedEvent;
 
-/** Hooks the map screens into the game: Create's creative tab, and forgetting the players who leave. */
+/** Hooks the map screens into the game: Create's creative tab, and forgetting the players who leave and the server that stops. */
 @EventBusSubscriber(modid = Createrealtimeschedule.MODID)
 public final class MapScreenSetup {
 
@@ -21,6 +22,11 @@ public final class MapScreenSetup {
     public static void onCreativeTabs(BuildCreativeModeTabContentsEvent event) {
         if (event.getTabKey() == AllCreativeModeTabs.BASE_CREATIVE_TAB.getKey())
             event.accept(ModRegistry.MAP_SCREEN_ITEM.get());
+    }
+
+    @SubscribeEvent
+    public static void onServerStopped(ServerStoppedEvent event) {
+        MapScreenService.stopped();
     }
 
     @SubscribeEvent

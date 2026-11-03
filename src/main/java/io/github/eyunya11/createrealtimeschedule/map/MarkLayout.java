@@ -142,8 +142,23 @@ public final class MarkLayout {
     private static final class Grid {
         private final Map<Long, List<Rect>> cells = new HashMap<>();
 
+        /**
+         * Takes a box. A long one is taken as pieces no longer than a square, so that a long slanting
+         * piece of track reaches into the squares along it, not into every square of its upright bounds.
+         */
         void add(Rect rect) {
-            forCells(rect, key -> cells.computeIfAbsent(key, unused -> new ArrayList<>()).add(rect));
+            int pieces = (int) Math.min(100_000, Math.ceil(2 * rect.halfAlong() / CELL));
+            if (pieces <= 1) {
+                forCells(rect, key -> cells.computeIfAbsent(key, unused -> new ArrayList<>()).add(rect));
+                return;
+            }
+            double length = 2 * rect.halfAlong() / pieces;
+            for (int i = 0; i < pieces; i++) {
+                double along = -rect.halfAlong() + (i + 0.5) * length;
+                Rect piece = new Rect(rect.u() + rect.du() * along, rect.v() + rect.dv() * along, rect.du(), rect.dv(), length / 2,
+                    rect.halfAcross());
+                forCells(piece, key -> cells.computeIfAbsent(key, unused -> new ArrayList<>()).add(piece));
+            }
         }
 
         boolean clear(Rect rect) {
