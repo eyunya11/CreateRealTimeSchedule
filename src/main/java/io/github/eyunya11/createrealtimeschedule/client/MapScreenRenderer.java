@@ -468,8 +468,9 @@ public class MapScreenRenderer implements BlockEntityRenderer<MapScreenBlockEnti
     }
 
     /**
-     * A speed-limit sign at ({@code u}, {@code v}): a small triangle on the track pointing the way of the
-     * trains it holds, red for a limit and off-white for a release, as a sign holds one way only, and on
+     * A speed-limit sign at ({@code u}, {@code v}): an open arrow on the track pointing the way of the
+     * trains it holds, as a sign holds one way only (red for a limit, black on white for a release; open,
+     * so that it is not taken for a signal's triangle), and on
      * a post on the side of the track its block is on if there is room, its limit on a plate edged in red
      * as wide as the number needs, or, for a release, black triangles meeting in the middle of an
      * off-white plate edged in black, as Create Train Next's sign.
@@ -483,8 +484,9 @@ public class MapScreenRenderer implements BlockEntityRenderer<MapScreenBlockEnti
         float rv = length < 1e-6f ? 1 : (sign.left() ? du : -du) / length;
         float pointer = POINTER_SIZE * grow;
         Quads onTrack = quads.computeIfAbsent(tileOf(u, v, width, height), unused -> new Quads());
-        onTrack.triangle(u, v, du, dv, pointer * 1.4f, SIGN_LAYER, sign.release() ? RELEASE_BLACK : HEAD);
-        onTrack.triangle(u, v, du, dv, pointer, SIGN_LAYER + 1, sign.release() ? RELEASE : SIGN_EDGE);
+        float stroke = pointer * 0.35f;
+        onTrack.chevron(u, v, du, dv, pointer, stroke * 2.2f, SIGN_LAYER, sign.release() ? RELEASE : HEAD);
+        onTrack.chevron(u, v, du, dv, pointer, stroke, SIGN_LAYER + 1, sign.release() ? RELEASE_BLACK : SIGN_EDGE);
         fixed.add(Rect.around(u, v, pointer * 1.2f, pointer * 1.2f));
         String text = Integer.toString(sign.kmh());
         float textScale = LIMIT_SCALE * grow;
@@ -622,6 +624,19 @@ public class MapScreenRenderer implements BlockEntityRenderer<MapScreenBlockEnti
 
         void box(float u, float v, float halfU, float halfV, int layer, int colour) {
             add(u - halfU, v - halfV, u + halfU, v - halfV, u + halfU, v + halfV, u - halfU, v + halfV, layer, colour);
+        }
+
+        /** An open arrow, two strokes {@code width} wide meeting in a point, {@code half} each side of ({@code u}, {@code v}), pointing ({@code du}, {@code dv}). */
+        void chevron(float u, float v, float du, float dv, float half, float width, int layer, int colour) {
+            float length = (float) Math.hypot(du, dv);
+            if (length < 1e-6f)
+                return;
+            float au = du / length * half;
+            float av = dv / length * half;
+            float tipU = u + au * 0.6f;
+            float tipV = v + av * 0.6f;
+            line(u - au * 0.6f - av, v - av * 0.6f + au, tipU, tipV, width, layer, colour);
+            line(u - au * 0.6f + av, v - av * 0.6f - au, tipU, tipV, width, layer, colour);
         }
 
         /** A triangle {@code half} each side of ({@code u}, {@code v}), pointing ({@code du}, {@code dv}). */
