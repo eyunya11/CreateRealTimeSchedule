@@ -3,8 +3,10 @@ package io.github.eyunya11.createrealtimeschedule.screen;
 import java.util.ArrayDeque;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.UnaryOperator;
 
 import org.jetbrains.annotations.Nullable;
@@ -36,8 +38,13 @@ public final class ScreenGroup {
         return facing.getCounterClockWise();
     }
 
-    /** The blocks of the group of the screen block at {@code pos}, by their cells; empty if there is none there. */
-    static Map<Cell, BlockPos> find(ServerLevel level, BlockPos pos) {
+    /**
+     * The blocks of the group of the screen block at {@code pos}, by their cells; empty if there is none
+     * there. A group too large to be a screen of at most {@code most} blocks each way is not looked
+     * through to its end; with it come the whole screens its blocks found were of, which it ends, so
+     * that none of their blocks is left with its place on one.
+     */
+    static Map<Cell, BlockPos> find(ServerLevel level, BlockPos pos, int most) {
         Map<Cell, BlockPos> cells = new HashMap<>();
         Direction facing = facing(level.getBlockState(pos));
         if (facing == null)
@@ -46,7 +53,7 @@ public final class ScreenGroup {
         ArrayDeque<BlockPos> next = new ArrayDeque<>();
         next.add(pos);
         cells.put(cell(pos, pos, right), pos);
-        int limit = ScreenLayout.cellsToFind(ModSettings.mapScreenMaxSize());
+        int limit = ScreenLayout.cellsToFind(most);
         while (!next.isEmpty() && cells.size() < limit) {
             BlockPos at = next.poll();
             for (BlockPos near : List.of(at.relative(right), at.relative(right.getOpposite()), at.above(), at.below())) {
@@ -55,6 +62,24 @@ public final class ScreenGroup {
                     continue;
                 cells.put(cell, near);
                 next.add(near);
+            }
+        }
+        if (cells.size() >= limit) {
+            Set<BlockPos> screens = new HashSet<>();
+            for (BlockPos found : List.copyOf(cells.values())) {
+                MapScreenBlockEntity entity = entity(level, found);
+                if (entity == null || entity.place().equals(Place.ALONE))
+                    continue;
+                Place place = entity.place();
+                BlockPos bottomLeft = found.relative(right, -place.column()).below(place.row());
+                if (!screens.add(bottomLeft))
+                    continue;
+                for (int u = 0; u < place.width(); u++)
+                    for (int v = 0; v < place.height(); v++) {
+                        BlockPos block = bottomLeft.relative(right, u).above(v);
+                        if (level.isLoaded(block) && facing(level.getBlockState(block)) == facing)
+                            cells.putIfAbsent(cell(pos, block, right), block);
+                    }
             }
         }
         return cells;
@@ -72,7 +97,12 @@ public final class ScreenGroup {
 
     /** Puts the group of the block at {@code pos} together again, keeping the settings set last. */
     public static void regroup(ServerLevel level, BlockPos pos) {
-        apply(level, find(level, pos), settings -> settings);
+        regroup(level, pos, ModSettings.mapScreenMaxSize());
+    }
+
+    /** {@link #regroup(ServerLevel, BlockPos)}, for screens of at most {@code most} blocks each way. */
+    public static void regroup(ServerLevel level, BlockPos pos, int most) {
+        apply(level, find(level, pos, most), most, settings -> settings);
     }
 
     /** Puts together again the groups of the blocks around {@code pos} that face {@code facing}, as when a block there is gone. */
@@ -88,11 +118,12 @@ public final class ScreenGroup {
      * stamped now; false if there is no screen there.
      */
     public static boolean change(ServerLevel level, BlockPos pos, UnaryOperator<ScreenSettings> change) {
-        Map<Cell, BlockPos> cells = find(level, pos);
+        int most = ModSettings.mapScreenMaxSize();
+        Map<Cell, BlockPos> cells = find(level, pos, most);
         if (cells.isEmpty())
             return false;
         long now = level.getGameTime();
-        apply(level, cells, settings -> {
+        apply(level, cells, most, settings -> {
             ScreenSettings changed = change.apply(settings);
             return new ScreenSettings(changed.centreX(), changed.centreZ(), changed.scale(), changed.lines(), changed.hidden(),
                 changed.tagsOff(), now);
@@ -100,10 +131,10 @@ public final class ScreenGroup {
         return true;
     }
 
-    private static void apply(ServerLevel level, Map<Cell, BlockPos> cells, UnaryOperator<ScreenSettings> change) {
+    private static void apply(ServerLevel level, Map<Cell, BlockPos> cells, int most, UnaryOperator<ScreenSettings> change) {
         if (cells.isEmpty())
             return;
-        Map<Cell, Place> places = ScreenLayout.of(cells.keySet(), ModSettings.mapScreenMaxSize());
+        Map<Cell, Place> places = ScreenLayout.of(cells.keySet(), most);
         // The settings set last; of those set together (or never), the ones of the block at the bottom left.
         ScreenSettings settings = cells.entrySet().stream()
             .map(entry -> Map.entry(entry.getKey(), entity(level, entry.getValue())))

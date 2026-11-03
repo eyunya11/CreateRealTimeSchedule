@@ -80,7 +80,10 @@ public class MapScreenBlock extends HorizontalDirectionalBlock implements Entity
 
     @Override
     protected InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hit) {
-        if (player instanceof ServerPlayer serverPlayer)
+        // One who may not build here (in adventure mode, or by spawn) may not set the screen either.
+        if (!player.mayBuild())
+            return InteractionResult.PASS;
+        if (player instanceof ServerPlayer serverPlayer && MapScreenService.mayChange(serverPlayer, pos))
             MapScreenService.open(serverPlayer, pos);
         return InteractionResult.sidedSuccess(level.isClientSide);
     }

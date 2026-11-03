@@ -76,13 +76,18 @@ public final class MapScreenService {
         PacketDistributor.sendToPlayer(player, new MapScreenOpenPayload(pos, lines));
     }
 
-    /** A player sets what a screen shows: from near it, and only the kinds of things there are. */
+    /** Whether a player may set the screen at {@code pos}: one who may build there, as for breaking it. */
+    static boolean mayChange(ServerPlayer player, BlockPos pos) {
+        return player.mayBuild() && player.serverLevel().mayInteract(player, pos);
+    }
+
+    /** A player sets what a screen shows: from near it, one who may build there, and only the kinds of things there are. */
     public static void onEdit(MapScreenEditPayload edit, IPayloadContext context) {
         if (!(context.player() instanceof ServerPlayer player))
             return;
         ServerLevel level = player.serverLevel();
         BlockPos pos = edit.pos();
-        if (!level.isLoaded(pos) || player.distanceToSqr(Vec3.atCenterOf(pos)) > REACH * REACH
+        if (!level.isLoaded(pos) || player.distanceToSqr(Vec3.atCenterOf(pos)) > REACH * REACH || !mayChange(player, pos)
             || !(level.getBlockEntity(pos) instanceof MapScreenBlockEntity))
             return;
         if (!Double.isFinite(edit.centreX()) || !Double.isFinite(edit.centreZ()) || Math.abs(edit.centreX()) > 3e7

@@ -95,6 +95,26 @@ public class ScreenTests {
         });
     }
 
+    @GameTest(template = TRACK_LINE, batch = "realtimescreen_large", timeoutTicks = TIMEOUT_TICKS)
+    public static void screensJoinedTooLargeAreScreensOfOneBlockAll(GameTestHelper helper) {
+        // Two screens of 2 by 2 with a gap of one block between them.
+        for (int u : new int[] {0, 1, 3, 4})
+            for (int v = 0; v < 2; v++)
+                place(helper, at(u, v), Direction.NORTH);
+        helper.runAfterDelay(3, () -> {
+            helper.assertValueEqual(new Place(1, 1, 2, 2), entity(helper, at(1, 1)).place(), "the place of a block of the first screen");
+            helper.assertValueEqual(new Place(0, 0, 2, 2), entity(helper, at(3, 0)).place(), "the place of a block of the second screen");
+            // The gap filled: for screens of at most 2 by 2, a group of 9 is looked through only to 5 blocks.
+            place(helper, at(2, 0), Direction.NORTH);
+            ScreenGroup.regroup(helper.getLevel(), helper.absolutePos(at(2, 0)), 2);
+            for (int u = 0; u < 5; u++)
+                for (int v = 0; v < 2; v++)
+                    if (u != 2 || v == 0)
+                        helper.assertValueEqual(Place.ALONE, entity(helper, at(u, v)).place(), "the place of the block " + u + ", " + v);
+            helper.succeed();
+        });
+    }
+
     @GameTest(template = TRACK_LINE, batch = "realtimescreen_live", timeoutTicks = 1500)
     public static void theLivePartOfTheMapNamesTheTracksAsTheMapDoes(GameTestHelper helper) {
         TrackLine line = new TrackLine(helper, 50, new int[] {6, 26, 46}, new String[] {"Alpha", "Beta", "Gamma"},
