@@ -15,7 +15,7 @@ import net.neoforged.neoforge.network.codec.NeoForgeStreamCodecs;
  * {@link TrackTagOpenPayload}.
  *
  * @param tag  the tag to give the block or take off it, rename or delete
- * @param name the name of a tag to make, or the new name of one
+ * @param name the name of a tag to make, or the new name of one; for a colour, the colour
  */
 public record TrackTagEditPayload(BlockPos pos, Action action, int tag, String name) implements CustomPacketPayload {
 
@@ -29,7 +29,9 @@ public record TrackTagEditPayload(BlockPos pos, Action action, int tag, String n
         /** Names {@code tag} {@code name}. */
         RENAME,
         /** Takes {@code tag} out of the list. */
-        DELETE
+        DELETE,
+        /** Chooses the colour {@code name}, {@code #rrggbb}, for {@code tag}; an empty one gives it back the colour its name picks. */
+        COLOUR
     }
 
     public static final Type<TrackTagEditPayload> TYPE =

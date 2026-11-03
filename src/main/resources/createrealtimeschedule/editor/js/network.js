@@ -8,6 +8,9 @@
  * and the ways from each platform: where a train of each tag comes to when it is sent to a name. A
  * network of before has none of them; its tags are taken to change nothing, and each station to be
  * one platform.
+ *
+ * Version 4 adds the map of the track (TrackMapJson in the mod), with the tracks each leg runs along,
+ * and has all that version 3 has; a network of before has no map (map null).
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports)
@@ -20,8 +23,14 @@
   /** The format member of a network in JSON. */
   const FORMAT = 'createrealtimeschedule.network';
 
-  /** The newest version of the JSON the editor reads. Version 2 added the signs of a leg, and version 3 the track tags. */
-  const VERSION = 3;
+  /**
+   * The newest version of the JSON the editor reads. Version 2 added the signs of a leg, version 3 the
+   * track tags, and version 4 the map.
+   */
+  const VERSION = 4;
+
+  /** The colours a lamp of a signal may have, as the map writes them. */
+  const LAMPS = ['R', 'Y', 'G'];
 
   const TICKS_PER_SECOND = 20;
 
@@ -31,6 +40,128 @@
 
   function isStrings(value) {
     return Array.isArray(value) && value.every(item => typeof item === 'string');
+  }
+
+  function isNumber(value) {
+    return typeof value === 'number' && Number.isFinite(value);
+  }
+
+  function isIndex(value, count) {
+    return Number.isInteger(value) && value >= 0 && value < count;
+  }
+
+  /** The map of a network of version 4, or null after saying in problems what is wrong with it. */
+  function readMap(map, problems) {
+    if (!isObject(map)) {
+      problems.push('map: must be an object');
+      return null;
+    }
+    const before = problems.length;
+    const list = (key) => {
+      if (Array.isArray(map[key]))
+        return map[key];
+      problems.push('map.' + key + ': must be an array');
+      return [];
+    };
+    if (!isStrings(map.dimensions))
+      problems.push('map.dimensions: must be an array of strings');
+    const dimensions = isStrings(map.dimensions) ? map.dimensions.slice() : [];
+    const tracks = list('tracks').map((track, i) => {
+      if (!isObject(track) || typeof track.key !== 'string' || !isIndex(track.dimension, dimensions.length)
+          || !Array.isArray(track.points) || track.points.length < 4 || track.points.length % 2 !== 0
+          || !track.points.every(isNumber)) {
+        problems.push('map.tracks[' + i + ']: must have a key, the index of its dimension, and points, X and Z in turn, at least two');
+        return null;
+      }
+      // The stretches that track tags are on, as shares of the track's length from its first point.
+      const isPiece = piece => isObject(piece) && isNumber(piece.from) && isNumber(piece.to)
+        && piece.from >= 0 && piece.from < piece.to && piece.to <= 1 && isStrings(piece.tags) && piece.tags.length > 0;
+      if (track.tags !== undefined && (!Array.isArray(track.tags) || !track.tags.every(isPiece))) {
+        problems.push('map.tracks[' + i + '].tags: must be an array of stretches, each with a from and a to between 0 and 1 and its tags');
+        return null;
+      }
+      const tags = track.tags === undefined ? [] : track.tags.map(piece => ({ from: piece.from, to: piece.to, tags: piece.tags.slice() }));
+      return { key: track.key, dimension: track.dimension, points: track.points.slice(), tags };
+    });
+    const onTrack = (thing, at) => {
+      if (!isObject(thing) || !isIndex(thing.track, tracks.length) || !isNumber(thing.x) || !isNumber(thing.z)) {
+        problems.push(at + ': must have the index of its track, and an x and a z');
+        return false;
+      }
+      return true;
+    };
+    const direction = (thing, at) => {
+      if (!isNumber(thing.dx) || !isNumber(thing.dz)) {
+        problems.push(at + ': must have a direction, dx and dz');
+        return false;
+      }
+      return true;
+    };
+    const stations = list('stations').map((station, i) => {
+      const at = 'map.stations[' + i + ']';
+      if (!onTrack(station, at))
+        return null;
+      if (typeof station.name !== 'string') {
+        problems.push(at + '.name: must be a string');
+        return null;
+      }
+      return { name: station.name, track: station.track, x: station.x, z: station.z };
+    });
+    const signals = list('signals').map((signal, i) => {
+      const at = 'map.signals[' + i + ']';
+      if (!onTrack(signal, at))
+        return null;
+      if (!Array.isArray(signal.sides)) {
+        problems.push(at + '.sides: must be an array');
+        return null;
+      }
+      const sides = signal.sides.map((side, j) => {
+        const where = at + '.sides[' + j + ']';
+        if (!isObject(side) || !direction(side, where))
+          return null;
+        if (typeof side.kind !== 'string' || !Array.isArray(side.lamps) || !side.lamps.every(lamp => LAMPS.includes(lamp))) {
+          problems.push(where + ': must have a kind, and lamps of R, Y and G');
+          return null;
+        }
+        return { dx: side.dx, dz: side.dz, kind: side.kind, lamps: side.lamps.slice() };
+      });
+      return { track: signal.track, x: signal.x, z: signal.z, sides };
+    });
+    const speedLimits = list('speedLimits').map((sign, i) => {
+      const at = 'map.speedLimits[' + i + ']';
+      if (!onTrack(sign, at) || !direction(sign, at))
+        return null;
+      const release = sign.release === true;
+      if (!release && !(Number.isInteger(sign.kmh) && sign.kmh > 0)) {
+        problems.push(at + ': must have a limit in km/h, or be a release');
+        return null;
+      }
+      return { track: sign.track, x: sign.x, z: sign.z, dx: sign.dx, dz: sign.dz, kmh: release ? 0 : sign.kmh, release };
+    });
+    const trains = list('trains').map((train, i) => {
+      const at = 'map.trains[' + i + ']';
+      if (!isObject(train) || typeof train.name !== 'string' || !Array.isArray(train.carriages)) {
+        problems.push(at + ': must have a name and carriages');
+        return null;
+      }
+      const carriages = train.carriages.map((carriage, j) => {
+        if (!isObject(carriage) || !Array.isArray(carriage.points) || carriage.points.length !== 4 || !carriage.points.every(isNumber)
+            || !Array.isArray(carriage.tracks) || carriage.tracks.length !== 2 || !carriage.tracks.every(t => isIndex(t, tracks.length))) {
+          problems.push(at + '.carriages[' + j + ']: must have the points of its two ends, and the indexes of their tracks');
+          return null;
+        }
+        return { points: carriage.points.slice(), tracks: carriage.tracks.slice() };
+      });
+      // The track tags it runs on in its duty, '' for the ways on none; none if it runs no duty.
+      if (train.tags !== undefined && !isStrings(train.tags)) {
+        problems.push(at + '.tags: must be an array of strings');
+        return null;
+      }
+      return { name: train.name, carriages, tags: train.tags === undefined ? [] : train.tags.slice() };
+    });
+    if (problems.length > before)
+      return null;
+    return { dimensions, tracks, stations, signals, speedLimits, trains };
   }
 
   /**
@@ -60,6 +191,9 @@
       };
 
     const problems = [];
+    const map = root.version >= 4 ? readMap(root.map, problems) : null;
+    // A map that could not be read has said so; the legs are not held to it as well.
+    const trackCount = map === null ? Infinity : map.tracks.length;
     if (!isStrings(root.stations))
       problems.push('stations: must be an array of strings');
     if (!Array.isArray(root.legs))
@@ -79,6 +213,8 @@
         problems.push(at + '.via: must be an array of strings');
       if (leg.ticks !== undefined && (!Number.isInteger(leg.ticks) || leg.ticks < 0))
         problems.push(at + '.ticks: must be a whole number, 0 or more');
+      if (leg.tracks !== undefined && (!Array.isArray(leg.tracks) || !leg.tracks.every(t => isIndex(t, trackCount))))
+        problems.push(at + '.tracks: must be an array of the indexes of tracks of the map');
       if (leg.tag !== undefined && typeof leg.tag !== 'string')
         problems.push(at + '.tag: must be a string');
       if (leg.otherTag !== undefined && typeof leg.otherTag !== 'boolean')
@@ -89,6 +225,7 @@
         distance: leg.distance,
         via: leg.via === undefined ? [] : leg.via,
         ticks: leg.ticks === undefined ? null : leg.ticks,
+        tracks: Array.isArray(leg.tracks) ? leg.tracks.slice() : [],
       };
       tagged(made, leg);
       legs.push(made);
@@ -105,12 +242,16 @@
             to[each.to] = stations.indexOf(each.to);
         return { from, to };
       });
-      return { network: { stations, legs, tagged: false, tags: [], tagProblems: [], platforms: stations.map(station => ({ station })), ways },
+      return { network: { stations, legs, tagged: false, tags: [], tagColours: {}, tagProblems: [], platforms: stations.map(station => ({ station })), ways, map },
         problems: [] };
     }
 
     if (!isStrings(root.tags))
       problems.push('tags: must be an array of strings');
+    // Version 4 gives each tag its colour; a tag with none is drawn in the one its name picks.
+    if (root.tagColours !== undefined && (!isObject(root.tagColours)
+        || !Object.values(root.tagColours).every(colour => typeof colour === 'string' && /^#[0-9a-fA-F]{6}$/.test(colour))))
+      problems.push('tagColours: must be an object of colours, #rrggbb, by the tags\' names');
     if (!Array.isArray(root.tagProblems) || !root.tagProblems.every(isObject))
       problems.push('tagProblems: must be an array of objects');
     if (!Array.isArray(root.platforms) || !root.platforms.every(platform => isObject(platform) && typeof platform.station === 'string'))
@@ -136,8 +277,9 @@
       return { network: null, problems };
     return {
       network: {
-        stations, legs, tagged: true, tags: root.tags.slice(), tagProblems: root.tagProblems.map(problem => Object.assign({}, problem)),
-        platforms: root.platforms.map(platform => ({ station: platform.station })), ways,
+        stations, legs, tagged: true, tags: root.tags.slice(), tagColours: Object.assign({}, root.tagColours),
+        tagProblems: root.tagProblems.map(problem => Object.assign({}, problem)),
+        platforms: root.platforms.map(platform => ({ station: platform.station })), ways, map,
       },
       problems: [],
     };

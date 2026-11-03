@@ -8,9 +8,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.OptionalInt;
 
+import org.jetbrains.annotations.Nullable;
+
 import io.github.eyunya11.createrealtimeschedule.json.JsonOutput;
 import io.github.eyunya11.createrealtimeschedule.json.JsonOutput.ListNode;
 import io.github.eyunya11.createrealtimeschedule.json.JsonOutput.MapNode;
+import io.github.eyunya11.createrealtimeschedule.map.TrackMapJson;
 import io.github.eyunya11.createrealtimeschedule.tag.TrackTags;
 import io.github.eyunya11.createrealtimeschedule.travel.SpeedSign;
 import io.github.eyunya11.createrealtimeschedule.travel.TrainSpec;
@@ -27,15 +30,21 @@ import io.github.eyunya11.createrealtimeschedule.travel.TrainSpec;
  * <p>A network with track tags, or tag blocks, is written as version 3, which adds them: the tags, what
  * is wrong with the blocks' sections, the platforms, the legs for a train held to each tag (and to a
  * tag the world has none of), and where a train standing at each platform comes to on each tag. One
- * with neither is written as version 2, as it was before them.
+ * with neither is written as version 2, as it was before them. With a map of the track, it is written
+ * as version 4, which has all that version 3 has and adds the map, with the stretches of each of its
+ * tracks that tags are on, the colours of the tags, and for each leg the tracks of the map it runs
+ * along, by their indexes.
  */
 public final class NetworkJson {
 
     /** The {@code format} member of a network in JSON. */
     public static final String FORMAT = "createrealtimeschedule.network";
 
-    /** The newest version of the JSON written. Version 2 added the signs of a leg, and version 3 the track tags. */
-    public static final int VERSION = 3;
+    /**
+     * The newest version of the JSON written. Version 2 added the signs of a leg, version 3 the track
+     * tags, and version 4 the map of the track. A network is written in the oldest version that holds it.
+     */
+    public static final int VERSION = 4;
 
     private NetworkJson() {}
 
@@ -49,7 +58,7 @@ public final class NetworkJson {
         MapNode root = head(2, names, spec, throttle);
         ListNode list = new ListNode();
         for (Leg leg : legs)
-            list.add(leg(leg, Held.NONE, spec, throttle));
+            list.add(leg(leg, Held.NONE, spec, throttle, null));
         root.put("legs", list);
         return JsonOutput.render(root);
     }
@@ -59,6 +68,11 @@ public final class NetworkJson {
         return write(network, network.routes(network.names(), OptionalInt.empty()), tags, spec, throttle);
     }
 
+    /** {@link #write(RailNetwork, RailNetwork.Routes, TrackTags, TrainSpec, double, NetworkMap)} with the routes of no tag worked out here. */
+    public static String write(RailNetwork network, TrackTags tags, TrainSpec spec, double throttle, @Nullable NetworkMap map) {
+        return write(network, network.routes(network.names(), OptionalInt.empty()), tags, spec, throttle, map);
+    }
+
     /**
      * {@code network} with the world's track tags {@code tags}: as version 3 if there are tags or tag
      * blocks, and else as {@link #write(List, List, TrainSpec, double)} writes it.
@@ -66,8 +80,20 @@ public final class NetworkJson {
      * @param untagged the legs and ways of {@code network} for a train held to no tag, between all its names
      */
     public static String write(RailNetwork network, RailNetwork.Routes untagged, TrackTags tags, TrainSpec spec, double throttle) {
+        return write(network, untagged, tags, spec, throttle, null);
+    }
+
+    /**
+     * {@link #write(RailNetwork, RailNetwork.Routes, TrackTags, TrainSpec, double)} with the map of the
+     * track, if there is one: as version 4 if there is, with all that version 3 has even if there are no
+     * tags.
+     *
+     * @param map the map, and which track of it each edge of the legs is; null for none
+     */
+    public static String write(RailNetwork network, RailNetwork.Routes untagged, TrackTags tags, TrainSpec spec, double throttle,
+        @Nullable NetworkMap map) {
         List<String> names = network.names();
-        if (tags.names().isEmpty() && network.markers().isEmpty())
+        if (map == null && tags.names().isEmpty() && network.markers().isEmpty())
             return write(names, untagged.legs(), spec, throttle);
         List<Held> held = new ArrayList<>();
         held.add(Held.NONE);
@@ -75,8 +101,14 @@ public final class NetworkJson {
             held.add(new Held(tag.getValue(), OptionalInt.of(tag.getKey()), false));
         held.add(new Held("", OptionalInt.of(TrackTags.UNKNOWN), true));
 
-        MapNode root = head(3, names, spec, throttle);
+        MapNode root = head(map != null ? 4 : 3, names, spec, throttle);
         root.put("tags", JsonOutput.texts(new ArrayList<>(tags.names().values())));
+        if (map != null) {
+            MapNode colours = new MapNode();
+            for (Map.Entry<Integer, String> tag : tags.names().entrySet())
+                colours.put(tag.getValue(), JsonOutput.text(tags.colour(tag.getKey())));
+            root.put("tagColours", JsonOutput.inline(colours));
+        }
         ListNode problems = new ListNode();
         List<RailNetwork.Marker> markers = network.markers();
         for (TagSections.Problem problem : network.tagSections().problems()) {
@@ -100,7 +132,7 @@ public final class NetworkJson {
         for (Held tag : held) {
             RailNetwork.Routes routes = tag == Held.NONE ? untagged : network.routes(names, tag.id());
             for (Leg leg : routes.legs())
-                legs.add(leg(leg, tag, spec, throttle));
+                legs.add(leg(leg, tag, spec, throttle, map));
             Map<Integer, MapNode> from = new LinkedHashMap<>();
             for (RailNetwork.Way way : routes.ways())
                 from.computeIfAbsent(way.from(), f -> new MapNode()).put(way.to(), JsonOutput.raw(Integer.toString(way.station())));
@@ -112,6 +144,8 @@ public final class NetworkJson {
         }
         root.put("legs", legs);
         root.put("ways", ways);
+        if (map != null)
+            root.put("map", TrackMapJson.write(map.map(), map.tagPieces(network, tags)));
         return JsonOutput.render(root);
     }
 
@@ -153,8 +187,8 @@ public final class NetworkJson {
         return JsonOutput.inline(new ListNode().add(number(place.x())).add(number(place.y())).add(number(place.z())));
     }
 
-    /** A leg, for a train held to {@code tag}. */
-    private static MapNode leg(Leg leg, Held tag, TrainSpec spec, double throttle) {
+    /** A leg, for a train held to {@code tag}, with the tracks of {@code map} it runs along if there is one. */
+    private static MapNode leg(Leg leg, Held tag, TrainSpec spec, double throttle, @Nullable NetworkMap map) {
         MapNode node = new MapNode();
         node.put("from", JsonOutput.text(leg.from()));
         node.put("to", JsonOutput.text(leg.to()));
@@ -183,6 +217,8 @@ public final class NetworkJson {
         OptionalInt ticks = leg.ticks(spec, throttle);
         if (ticks.isPresent())
             node.put("ticks", JsonOutput.raw(Integer.toString(ticks.getAsInt())));
+        if (map != null)
+            node.put("tracks", TrackMapJson.indexes(map.tracks(leg)));
         return node;
     }
 

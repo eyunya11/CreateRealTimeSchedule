@@ -79,6 +79,18 @@ public final class ClipboardService {
         RtNetworkCommand.Written written = RtNetworkCommand.write(source);
         if (written == null)
             return null;
+        if (written.json().length() > ClipboardPayload.MAX_LENGTH) {
+            // The map is most of it on a large network; the stations and the legs may still go.
+            RtNetworkCommand.Written bare = RtNetworkCommand.write(source, false);
+            if (bare == null)
+                return null;
+            if (bare.json().length() > ClipboardPayload.MAX_LENGTH)
+                return new Copy(bare.json(), Component.empty()); // too long even so, which copy() says
+            return new Copy(bare.json(), Component.translatableWithFallback(RtNetworkCommand.KEY + "copied_without_map",
+                "Copied %1$s stations and %2$s legs to your clipboard, without the map: with it, that is %3$s characters, "
+                    + "more than the %4$s the clipboard is sent",
+                bare.stations(), bare.legs(), written.json().length(), ClipboardPayload.MAX_LENGTH));
+        }
         return new Copy(written.json(), Component.translatableWithFallback(RtNetworkCommand.KEY + "copied",
             "Copied %1$s stations and %2$s legs to your clipboard", written.stations(), written.legs()));
     }

@@ -46,10 +46,36 @@
       </section>
     </aside>
 
-    <main id="diagram-area">
-      <svg id="diagram" xmlns="http://www.w3.org/2000/svg"></svg>
-      <p id="empty-message"></p>
-    </main>
+    <div class="centre">
+      <div class="view-bar">
+        <div class="view-switch">
+          <button id="view-diagram" type="button" data-i18n="viewDiagram">運行図</button>
+          <button id="view-map" type="button" data-i18n="viewMap">地図</button>
+        </div>
+        <div id="map-tools" class="map-tools" hidden>
+          <details class="menu">
+            <summary id="map-lines-summary"></summary>
+            <div id="map-lines-list" class="menu-list"></div>
+          </details>
+          <details class="menu">
+            <summary id="map-tags-summary"></summary>
+            <div id="map-tags-list" class="menu-list"></div>
+          </details>
+          <details class="menu">
+            <summary data-i18n="mapLayers">表示するもの</summary>
+            <div id="map-layers-list" class="menu-list"></div>
+          </details>
+          <select id="map-dimension" hidden></select>
+          <button id="map-fit" type="button" data-i18n="mapFit">全体を表示</button>
+          <span class="note" data-i18n="mapAsExported">信号と列車は、書き出したときの様子です。</span>
+        </div>
+      </div>
+      <main id="diagram-area">
+        <svg id="diagram" xmlns="http://www.w3.org/2000/svg"></svg>
+        <svg id="map" xmlns="http://www.w3.org/2000/svg" hidden></svg>
+        <p id="empty-message"></p>
+      </main>
+    </div>
 
     <aside class="side right" id="inspector"></aside>
   </div>
@@ -71,6 +97,7 @@
   <script src="js/network.js"></script>
   <script src="js/axis.js"></script>
   <script src="js/layout.js"></script>
+  <script src="js/map.js"></script>
   <script src="js/edit.js"></script>
   <script src="js/duties.js"></script>
   <script src="js/i18n.js"></script>

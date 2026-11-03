@@ -1,0 +1,52 @@
+{
+  "format": "createrealtimeschedule.network",
+  "version": 4,
+  "train": {"topSpeed": 28, "turnSpeed": 14, "acceleration": 3, "throttle": 1},
+  "stations": ["Alpha", "Beta", "Gamma"],
+  "tags": [],
+  "tagColours": {},
+  "tagProblems": [],
+  "platforms": [{"station": "Alpha"}, {"station": "Beta"}, {"station": "Gamma"}],
+  "legs": [
+    {"from": "Alpha", "to": "Beta", "distance": 20, "ticks": 96, "tracks": [0]},
+    {"from": "Alpha", "to": "Gamma", "distance": 40, "via": ["Beta"], "ticks": 133, "tracks": [0]},
+    {"from": "Beta", "to": "Gamma", "distance": 20, "ticks": 96, "tracks": [0]},
+    {"from": "Alpha", "to": "Beta", "otherTag": true, "distance": 20, "ticks": 96, "tracks": [0]},
+    {
+      "from": "Alpha",
+      "to": "Gamma",
+      "otherTag": true,
+      "distance": 40,
+      "via": ["Beta"],
+      "ticks": 133,
+      "tracks": [0]
+    },
+    {"from": "Beta", "to": "Gamma", "otherTag": true, "distance": 20, "ticks": 96, "tracks": [0]}
+  ],
+  "ways": [
+    {"from": 0, "to": {"Beta": 1, "Gamma": 2}},
+    {"from": 1, "to": {"Gamma": 2}},
+    {"from": 0, "otherTag": true, "to": {"Beta": 1, "Gamma": 2}},
+    {"from": 1, "otherTag": true, "to": {"Gamma": 2}}
+  ],
+  "map": {
+    "dimensions": ["minecraft:overworld"],
+    "tracks": [
+      {"key": "minecraft:overworld 0.5,2,3.5 60.5,2,3.5", "dimension": 0, "points": [0.5, 3.5, 60.5, 3.5]},
+      {"key": "minecraft:overworld 60.5,2,3.5 70.5,2,13.5", "dimension": 0, "points": [60.5, 3.5, 66.4, 5.8, 68.7, 8.1, 70.5, 13.5]}
+    ],
+    "stations": [
+      {"name": "Alpha", "track": 0, "x": 10.5, "z": 3.5},
+      {"name": "Beta", "track": 0, "x": 30.5, "z": 3.5},
+      {"name": "Gamma", "track": 0, "x": 50.5, "z": 3.5}
+    ],
+    "signals": [
+      {"track": 0, "x": 40.5, "z": 3.5, "sides": [{"dx": 1, "dz": 0, "kind": "create", "lamps": ["G"]}, {"dx": -1, "dz": 0, "kind": "light4", "lamps": ["Y", "G"]}]}
+    ],
+    "speedLimits": [
+      {"track": 0, "x": 20.5, "z": 3.5, "dx": 1, "dz": 0, "kmh": 60},
+      {"track": 1, "x": 68.7, "z": 8.1, "dx": 0.71, "dz": 0.71, "release": true}
+    ],
+    "trains": [{"name": "Train 1", "carriages": [{"points": [25, 3.5, 16, 3.5], "tracks": [0, 0]}]}]
+  }
+}

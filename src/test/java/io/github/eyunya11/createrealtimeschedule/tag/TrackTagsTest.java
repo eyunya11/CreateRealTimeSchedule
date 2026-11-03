@@ -9,6 +9,7 @@ import java.util.OptionalInt;
 import org.junit.jupiter.api.Test;
 
 import io.github.eyunya11.createrealtimeschedule.tag.TrackTags.Refusal;
+import io.github.eyunya11.createrealtimeschedule.timetable.TypeColours;
 
 /** The world's list of track tags. */
 class TrackTagsTest {
@@ -81,5 +82,28 @@ class TrackTagsTest {
         TrackTags kept = new TrackTags(Map.of(1, "Local", 4, "Rapid"), 2);
         assertEquals(5, kept.nextId(), "past the ids it has, whatever was kept");
         assertEquals(new TrackTags.Created(5, null), kept.create("Siding"));
+    }
+
+    /** A tag is drawn in the colour chosen for it, or else in the one its name picks, as a train's type is. */
+    @Test
+    void aTagHasTheColourChosenForItOrTheOneItsNamePicks() {
+        TrackTags tags = new TrackTags();
+        tags.create("Local");
+        tags.create("Rapid");
+        assertEquals(TypeColours.byName("Local"), tags.colour(1));
+        assertNull(tags.recolour(1, "#A1B2C3"));
+        assertEquals("#a1b2c3", tags.colour(1), "kept as the editor writes a colour");
+        assertEquals(Map.of(1, "#a1b2c3"), tags.colours(), "only the colour chosen is kept");
+        assertEquals(Refusal.COLOUR, tags.recolour(2, "red"));
+        assertEquals(Refusal.COLOUR, tags.recolour(2, "#12345"));
+        assertEquals(Refusal.UNKNOWN, tags.recolour(7, "#123456"));
+        assertNull(tags.colour(7));
+        assertNull(tags.recolour(1, ""));
+        assertEquals(TypeColours.byName("Local"), tags.colour(1), "an empty colour gives back the one the name picks");
+        tags.recolour(2, "#123456");
+        tags.delete(2, false);
+        assertEquals(Map.of(), tags.colours(), "a tag taken out takes its colour with it");
+        TrackTags kept = new TrackTags(Map.of(1, "Local"), 2, Map.of(1, "#123456", 3, "#654321"));
+        assertEquals(Map.of(1, "#123456"), kept.colours(), "the colour of a tag the list does not have is left out");
     }
 }

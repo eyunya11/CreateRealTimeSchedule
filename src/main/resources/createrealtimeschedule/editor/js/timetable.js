@@ -1,5 +1,5 @@
 /*
- * Reads and writes a timetable as JSON (up to version 6 of the format), as TimetableJson does in the mod.
+ * Reads and writes a timetable as JSON (up to version 8 of the format), as TimetableJson does in the mod.
  *
  * Writing gives the same text as the mod, member for member and line for line. Reading checks the
  * same things in the same order and says them in the same words, with one difference: the browser's
@@ -25,12 +25,13 @@
   /**
    * The newest version of the JSON the editor reads. Version 3 added the stations' times and the
    * stops' minimum stops, version 4 the trains that are never cancelled to get a late set back on time
-   * (keep), version 5 the trains a stop waits for (waits), and version 6 the types' colours (types) and
-   * the stops that change a train's type, and version 7 the track tags trains run on (tag); a timetable
-   * is written in the oldest version that holds it (version()), so that a mod that reads only version 2
-   * still takes one that has none of them.
+   * (keep), version 5 the trains a stop waits for (waits), version 6 the types' colours (types) and
+   * the stops that change a train's type, version 7 the track tags trains run on (tag), and version 8
+   * the tracks a map shows and hides for a line (mapAdd, mapRemove) and hides for all (mapHidden); a
+   * timetable is written in the oldest version that holds it (version()), so that a mod that reads
+   * only version 2 still takes one that has none of them.
    */
-  const VERSION = 7;
+  const VERSION = 8;
 
   /**
    * The colours of the types of train, in the order they are offered: TypeColours.TEMPLATE of the mod.
@@ -158,10 +159,11 @@
     }
 
     /** The elements of an array of strings; the array has to be there. */
-    strings(key) {
+    strings(key, required = true) {
       const value = this.get(key);
       if (value === null) {
-        this.problems.add(this.at(key), 'is missing');
+        if (required)
+          this.problems.add(this.at(key), 'is missing');
         return [];
       }
       if (!Array.isArray(value)) {
@@ -232,8 +234,10 @@
     const name = f.string('name', false);
     const stations = f.strings('stations');
     const loop = f.bool('loop', false);
+    const mapAdd = f.strings('map_add', false);
+    const mapRemove = f.strings('map_remove', false);
     f.finish();
-    return { id, name: name === null ? id : name, stations, loop };
+    return { id, name: name === null ? id : name, stations, loop, mapAdd, mapRemove };
   }
 
   function readStation(f) {
@@ -327,8 +331,9 @@
     const types = top.objects('types', false).map(readType);
     const trains = top.objects('trains', false).map(readTrain);
     const duties = top.objects('duties', false).map(readDuty);
+    const mapHidden = top.strings('map_hidden', false);
     top.finish();
-    return { name: name === null ? '' : name, lines, stations, types, trains, duties };
+    return { name: name === null ? '' : name, lines, stations, types, trains, duties, mapHidden };
   }
 
   /**
@@ -414,13 +419,30 @@
     return own !== undefined ? own.color : colourByName(type);
   }
 
+  /** The tracks a map of the line shows besides those its trains run along; none for a line from before version 8. */
+  function mapAdd(line) {
+    return line.mapAdd === undefined ? [] : line.mapAdd;
+  }
+
+  /** The tracks a map of the line does not show although its trains run along them. */
+  function mapRemove(line) {
+    return line.mapRemove === undefined ? [] : line.mapRemove;
+  }
+
+  /** The tracks no map shows. */
+  function mapHidden(timetable) {
+    return timetable.mapHidden === undefined ? [] : timetable.mapHidden;
+  }
+
   /**
-   * The oldest version of the JSON that holds the timetable: 7 if a train or a stop has a track tag,
-   * else 6 if it gives a type a colour or a stop changes a train's type, else 5 if a stop waits for a
-   * train, else 4 if it has a train that is never cancelled, else 3 if it has anything version 3
-   * added, else 2.
+   * The oldest version of the JSON that holds the timetable: 8 if it adds a track to a map, takes one
+   * away or hides one, else 7 if a train or a stop has a track tag, else 6 if it gives a type a colour
+   * or a stop changes a train's type, else 5 if a stop waits for a train, else 4 if it has a train
+   * that is never cancelled, else 3 if it has anything version 3 added, else 2.
    */
   function version(timetable) {
+    if (mapHidden(timetable).length > 0 || timetable.lines.some(line => mapAdd(line).length > 0 || mapRemove(line).length > 0))
+      return 8;
     if (timetable.trains.some(train => hasTag(train) || train.stops.some(hasTag)))
       return 7;
     if (typesOf(timetable).length > 0 || timetable.trains.some(train => train.stops.some(changesType)))
@@ -443,6 +465,10 @@
       const entries = [['id', out.text(line.id)], ['name', out.text(line.name)], ['stations', out.texts(line.stations)]];
       if (line.loop)
         entries.push(['loop', out.raw('true')]);
+      if (mapAdd(line).length > 0)
+        entries.push(['map_add', out.texts(mapAdd(line))]);
+      if (mapRemove(line).length > 0)
+        entries.push(['map_remove', out.texts(mapRemove(line))]);
       return out.map(entries);
     });
     const stations = stationsOf(timetable).map(station => {
@@ -503,13 +529,15 @@
     if (types.length > 0)
       top.push(['types', out.list(types)]);
     top.push(['trains', out.list(trains)], ['duties', out.list(duties)]);
+    if (mapHidden(timetable).length > 0)
+      top.push(['map_hidden', out.texts(mapHidden(timetable))]);
     return out.render(out.map(top));
   }
 
   /** A timetable with nothing in it. */
   function empty() {
-    return { name: '', lines: [], stations: [], types: [], trains: [], duties: [] };
+    return { name: '', lines: [], stations: [], types: [], trains: [], duties: [], mapHidden: [] };
   }
 
-  return { FORMAT, VERSION, NONE, TYPE_COLOURS, read, write, empty, version, typeAt, tagAt, colourByName, colour };
+  return { FORMAT, VERSION, NONE, TYPE_COLOURS, read, write, empty, version, typeAt, tagAt, colourByName, colour, mapAdd, mapRemove, mapHidden };
 });

@@ -14,8 +14,11 @@ import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.context.CommandContext;
 import com.simibubi.create.Create;
 
+import io.github.eyunya11.createrealtimeschedule.operation.OperationData;
+import io.github.eyunya11.createrealtimeschedule.railway.CreateMap;
 import io.github.eyunya11.createrealtimeschedule.railway.CreateNetwork;
 import io.github.eyunya11.createrealtimeschedule.railway.NetworkJson;
+import io.github.eyunya11.createrealtimeschedule.railway.NetworkMap;
 import io.github.eyunya11.createrealtimeschedule.railway.RailNetwork;
 import io.github.eyunya11.createrealtimeschedule.railway.TagSections;
 import io.github.eyunya11.createrealtimeschedule.tag.TrackTagData;
@@ -41,7 +44,8 @@ import net.minecraft.world.level.storage.LevelResource;
  * <p>{@code /rteditor copy network}, a command of the client, puts it on the player's clipboard (see
  * {@link ClipboardService}).
  *
- * <p>The times are for a train without fuel at full throttle, by the server's config.
+ * <p>The times are for a train without fuel at full throttle, by the server's config. The map of the
+ * track ({@link CreateMap}) goes with them, with the signals and the trains as they are now.
  */
 public final class RtNetworkCommand {
 
@@ -62,8 +66,13 @@ public final class RtNetworkCommand {
     /** The network as JSON, with how many stations and legs it has. */
     record Written(String json, int stations, int legs) {}
 
-    /** The network as JSON; null after saying why there is none. */
+    /** The network as JSON, with the map; null after saying why there is none. */
     static @Nullable Written write(CommandSourceStack source) {
+        return write(source, true);
+    }
+
+    /** The network as JSON, with the map or without; null after saying why there is none. */
+    static @Nullable Written write(CommandSourceStack source, boolean withMap) {
         TrainSpec spec;
         try {
             spec = TrainSpecs.unpowered();
@@ -72,11 +81,21 @@ public final class RtNetworkCommand {
                 "Create's config leaves no train that can move (%1$s)", e.getMessage()));
             return null;
         }
-        RailNetwork network = CreateNetwork.read(Create.RAILWAYS.trackNetworks.values());
+        CreateNetwork.All all = CreateNetwork.readAll(Create.RAILWAYS.trackNetworks.values());
+        RailNetwork network = all.network();
         List<String> names = network.names();
         RailNetwork.Routes untagged = network.routes(names, OptionalInt.empty());
         TrackTags tags = TrackTagData.get(source.getServer()).tags();
-        return new Written(NetworkJson.write(network, untagged, tags, spec, 1.0), names.size(), untagged.legs().size());
+        NetworkMap map = withMap ? map(source, all) : null;
+        return new Written(NetworkJson.write(network, untagged, tags, spec, 1.0, map), names.size(), untagged.legs().size());
+    }
+
+    /** The map of the track now, and which track of it each edge of the network is. */
+    private static NetworkMap map(CommandSourceStack source, CreateNetwork.All all) {
+        OperationData operation = OperationData.get(source.getServer());
+        CreateMap.Read read = CreateMap.read(Create.RAILWAYS.trackNetworks.values(), Create.RAILWAYS.trains.values(),
+            source.getServer()::getLevel, train -> operation.tagsOf(train.id));
+        return NetworkMap.of(read.map(), all.edges(), read.trackOf(), read.backward());
     }
 
     private static int tags(CommandContext<CommandSourceStack> context) {

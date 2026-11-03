@@ -171,8 +171,9 @@ public final class TimetableJson {
         List<Timetable.Duty> duties = new ArrayList<>();
         for (Fields duty : top.objects("duties", false))
             duties.add(readDuty(duty));
+        List<String> mapHidden = top.strings("map_hidden", false);
         top.finish();
-        return new Timetable(name == null ? "" : name, lines, stations, types, trains, duties);
+        return new Timetable(name == null ? "" : name, lines, stations, types, trains, duties, mapHidden);
     }
 
     /** False if the text is of a newer version: nothing else in it can be read, and that is all there is to say. */
@@ -202,8 +203,10 @@ public final class TimetableJson {
         String name = f.string("name", false);
         List<String> stations = f.strings("stations");
         boolean loop = f.bool("loop", false);
+        List<String> mapAdd = f.strings("map_add", false);
+        List<String> mapRemove = f.strings("map_remove", false);
         f.finish();
-        return new Timetable.Line(id, name == null ? id : name, stations, loop);
+        return new Timetable.Line(id, name == null ? id : name, stations, loop, mapAdd, mapRemove);
     }
 
     private static Timetable.Station readStation(Fields f) {
@@ -375,10 +378,16 @@ public final class TimetableJson {
 
         /** The elements of an array of strings; the array has to be there. */
         List<String> strings(String key) {
+            return strings(key, true);
+        }
+
+        /** The strings of an array; none, with nothing to say, if it is not there and not {@code required}. */
+        List<String> strings(String key, boolean required) {
             List<String> out = new ArrayList<>();
             Object value = get(key);
             if (value == null) {
-                problems.add(at(key), "is missing");
+                if (required)
+                    problems.add(at(key), "is missing");
                 return out;
             }
             if (!(value instanceof List<?> list)) {
@@ -455,6 +464,10 @@ public final class TimetableJson {
             node.put("stations", texts(line.stations()));
             if (line.loop())
                 node.put("loop", raw("true"));
+            if (!line.mapAdd().isEmpty())
+                node.put("map_add", texts(line.mapAdd()));
+            if (!line.mapRemove().isEmpty())
+                node.put("map_remove", texts(line.mapRemove()));
             lines.add(node);
         }
         root.put("lines", lines);
@@ -540,6 +553,8 @@ public final class TimetableJson {
             duties.add(node);
         }
         root.put("duties", duties);
+        if (!timetable.mapHidden().isEmpty())
+            root.put("map_hidden", texts(timetable.mapHidden()));
         return JsonOutput.render(root);
     }
 }

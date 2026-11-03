@@ -27,7 +27,7 @@ The clock is the game time plus an offset that is saved in the world. Twenty tic
 | `/rtclock get` | everyone | Shows the day and the time of the clock |
 | `/rtclock set <H:MM[:SS]>` | operators | Sets the time of day and keeps the day. Trains that are waiting follow it: a later time lets them go, an earlier one makes them wait longer |
 | `/rtclock align` | operators | Sets the time of day to the server's own |
-| `/rtnetwork export` | operators | Writes the stations of the track network and the running time between them (for a train without fuel at full throttle) to `createrealtimeschedule/network.json` in the world folder. It is meant for the timetable editor that is still to come |
+| `/rtnetwork export` | operators | Writes the stations of the track network and the running time between them (for a train without fuel at full throttle) to `createrealtimeschedule/network.json` in the world folder, with a map of the track seen from above, for the timetable editor |
 | `/rtnetwork tags` | operators | Lists the track tags, how many blocks on the track have each, and what is wrong with their stretches (see "Track tags") |
 
 ## The sky
@@ -63,7 +63,7 @@ The departure time is kept in the train as a clock value, so it survives saving 
 
 ## Running a timetable
 
-The mod can also run trains to a whole day's timetable by itself, without Create's schedules. The timetable is a JSON file of lines, trains and duties, in the format of [docs/proposal.md](docs/proposal.md) (version 7; a timetable is written in the oldest version that holds it, so one with nothing of versions 3 to 7 is still version 2). A duty is what one train does in a day: it leaves its depot, runs a string of trains one after another, and comes back. Deadhead trains (`"deadhead": true`) take it from the depot to where its first train starts, and back, and are timed like any other train. The timetable editor, a web page, makes such files by drawing the trains on a diagram (see below).
+The mod can also run trains to a whole day's timetable by itself, without Create's schedules. The timetable is a JSON file of lines, trains and duties, in the format of [docs/proposal.md](docs/proposal.md) (version 8; a timetable is written in the oldest version that holds it, so one with nothing of versions 3 to 8 is still version 2). A duty is what one train does in a day: it leaves its depot, runs a string of trains one after another, and comes back. Deadhead trains (`"deadhead": true`) take it from the depot to where its first train starts, and back, and are timed like any other train. The timetable editor, a web page, makes such files by drawing the trains on a diagram (see below).
 
 | Command | Who | What it does |
 | --- | --- | --- |
@@ -72,7 +72,7 @@ The mod can also run trains to a whole day's timetable by itself, without Create
 | `/rttimetable unload` | operators | Stops running the timetable |
 | `/rteditor copy timetable` | operators | Puts the timetable being run on your clipboard, for the editor (a command of the client, like the two below: only they touch your clipboard, and only when you type them) |
 | `/rteditor paste` | operators | Loads the timetable on your clipboard, as `load` does the file |
-| `/rteditor copy network` | operators | Puts the track network (stations and running times) on your clipboard, for the editor; `/rtnetwork export` writes it to `createrealtimeschedule/network.json` |
+| `/rteditor copy network` | operators | Puts the track network (stations, running times and the map of the track) on your clipboard, for the editor; `/rtnetwork export` writes it to `createrealtimeschedule/network.json` |
 | `/rteditor` | anyone | Opens the timetable editor in your browser (a command of the client) |
 | `/rtdiagram` | anyone | Opens the diagram of the timetable's first line; `/rtdiagram line <id>` opens that of another |
 | `/rtdiagram refresh` | operators | Works the distances between the stations out from the track again at once; the server also does so by itself 5 seconds after the track has stopped changing |
@@ -101,6 +101,8 @@ The editor is a web page. `/rteditor` copies it out of the mod into `createrealt
 
 A train's panel marks it never to be cancelled to get a late train back on time ("Never cancel"), as for the last train of the day, and each of its stops' rows sets the type the train has from there on ("Type from here", such as a local that runs on as a rapid) and the trains it waits for there, with the station each leaves or runs through and the longest wait; the diagram draws a wait as a dashed arrow. "Types" gives each type its colour, picked from the samples or the palette or written as #rrggbb, and their order; a type renamed there is renamed on its trains too. A type without a colour of its own is drawn in one picked from its name, the same in the game and in the editor.
 
+"Map", above the diagram, shows the track as it lies in the world, seen from above (north up), with its curves, the stations, the signals with the lamps they showed and Create Train Next's speed limits, and the trains, each of which can be shown or not. The signals and the trains are as they were when the network was copied. Choosing lines shows the track their trains run along, on the ways of the track tags they are held to too, the rest faint grey. Stretches with track tags are drawn in the tags' colours, in turn for more than one. "Tags" turns each tag, and "No tag", on or off: the stretches of a tag turned off are greyed out, and so are its trains; with "No tag" off, track with no tag is shown only where it joins stretches shown, not out to a siding or to a tag turned off. A track clicked on can be added to the chosen line's map though its trains do not run along it (a depot, say), taken away from it, or hidden from every map (track still being built); the timetable keeps this (version 8). A track is named by where its two ends are, so laying track on from one end renames it, and the editor lists a name the map no longer has as a warning.
+
 The editor checks a timetable by the same rules as the mod and words its problems the same way, undoes and redoes, keeps the draft in the browser, and speaks Japanese and English.
 
 ## Track tags
@@ -109,7 +111,7 @@ A track tag block gives a stretch of track tags, such as "Local" or "Siding", wh
 
 - There are two blocks, Track Tag (Both Ways) and Track Tag (One Way). Each is placed as a station is: use the item on the track first, facing the way the stretch is to run, then place the block near it. A railway casing and a paper make two blocks for both ways, and either block can be crafted into the other. Both are in Create's creative tab.
 - Its stretch runs the way it faces, to the next block of its kind that faces the same way, or to the end of the track. The tags of a block for both ways hold for trains running either way along its stretch; those of a one-way block hold only for trains running the way it faces, so that one track can have a tag for each way. A block may have more than one tag, and where stretches overlap, the track has the tags of them all. A block with no tag only ends the stretch of the block before it. A block facing the other way, or of the other kind, does not end it.
-- Anyone can use the block, from up to 64 blocks away, to open its screen. The screen lists the world's tags, with a mark by those the block has: pick one and press "Give" or "Take Off", or press "Take All Off". Type a name to "Create" a tag, which the block is then given, or to "Rename" the tag picked; "Delete" takes out the tag picked if no block on the track has it. A tag renamed is renamed on every block (a timetable that names it will have to be changed by hand). The names of the block's tags show over it while you look at it.
+- Anyone can use the block, from up to 64 blocks away, to open its screen. The screen lists the world's tags, with a mark by those the block has: pick one and press "Give" or "Take Off", or press "Take All Off". Type a name to "Create" a tag, which the block is then given, or to "Rename" the tag picked; "Delete" takes out the tag picked if no block on the track has it. A tag renamed is renamed on every block (a timetable that names it will have to be changed by hand). Pick a colour for the tag picked, from the types' colours or as `#rrggbb`, for the maps to draw its stretches in; "Colour by Name" goes back to the colour its name picks, as a type's does. The names of the block's tags show over it while you look at it.
 - A stretch must not come to a junction, where the track goes on more than one way, before its end: put a block just past the junction on each way instead. Nor may the two kinds be mixed: a stretch must not overlap that of a block of the other kind, or have a block of the other kind in it. The screen says what is wrong with the block's stretch, and `/rtnetwork tags` lists every such problem.
 
 ## Settings

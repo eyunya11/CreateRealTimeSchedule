@@ -22,8 +22,10 @@ import io.github.eyunya11.createrealtimeschedule.travel.TravelTime;
  * @param signs    the speed-limit signs of Create Train Next that the train meets, as distances from
  *                 the start; those past {@code distance} are beyond the stop, where the track goes
  *                 on without a choice of way, and the train brakes for them on the way in
+ * @param edges    the indexes of the network's edges the route runs along, in order; empty if not known
  */
-public record Leg(String from, String to, double distance, List<Curve> curves, List<String> via, List<SpeedSign> signs) {
+public record Leg(String from, String to, double distance, List<Curve> curves, List<String> via, List<SpeedSign> signs,
+                  List<Integer> edges) {
 
     /** A curve from {@code start} to {@code end}, in blocks from the start of the route. */
     public record Curve(double start, double end) {}
@@ -32,6 +34,12 @@ public record Leg(String from, String to, double distance, List<Curve> curves, L
         curves = List.copyOf(curves);
         via = List.copyOf(via);
         signs = List.copyOf(signs);
+        edges = List.copyOf(edges);
+    }
+
+    /** A leg whose edges are not known. */
+    public Leg(String from, String to, double distance, List<Curve> curves, List<String> via, List<SpeedSign> signs) {
+        this(from, to, distance, curves, via, signs, List.of());
     }
 
     /** A leg with no signs on it. */

@@ -45,15 +45,20 @@
     return made;
   }
 
-  /** A copy to change; a timetable from before version 3 gets its (empty) stations, and one from before version 6 its types. */
+  /**
+   * A copy to change; a timetable from before version 3 gets its (empty) stations, one from before
+   * version 6 its types, and one from before version 8 its lists of tracks for the map.
+   */
   function copy(timetable) {
     return {
       name: timetable.name,
-      lines: timetable.lines.map(line => ({ id: line.id, name: line.name, stations: line.stations.slice(), loop: line.loop })),
+      lines: timetable.lines.map(line => ({ id: line.id, name: line.name, stations: line.stations.slice(), loop: line.loop,
+        mapAdd: (line.mapAdd || []).slice(), mapRemove: (line.mapRemove || []).slice() })),
       stations: (timetable.stations || []).map(station => ({ name: station.name, dwell: station.dwell, minimumStop: station.minimumStop })),
       types: (timetable.types || []).map(type => ({ name: type.name, color: type.color })),
       trains: timetable.trains.map(copyTrain),
       duties: timetable.duties.map(duty => ({ id: duty.id, depot: duty.depot, trains: duty.trains.slice() })),
+      mapHidden: (timetable.mapHidden || []).slice(),
     };
   }
 
@@ -82,8 +87,10 @@
    */
   function putLine(timetable, oldId, line) {
     const next = copy(timetable);
-    const made = { id: line.id, name: line.name, stations: line.stations.slice(), loop: !!line.loop };
     const at = oldId === null ? -1 : next.lines.findIndex(each => each.id === oldId);
+    // The tracks the line's map adds and takes away stay with it.
+    const made = { id: line.id, name: line.name, stations: line.stations.slice(), loop: !!line.loop,
+      mapAdd: at < 0 ? [] : next.lines[at].mapAdd, mapRemove: at < 0 ? [] : next.lines[at].mapRemove };
     if (at < 0) {
       next.lines.push(made);
     } else {
@@ -105,6 +112,35 @@
     for (const duty of next.duties)
       duty.trains = duty.trains.filter(number => !gone.has(number));
     return dropStationsOffTheLines(next);
+  }
+
+  // ------------------------------------------------------------------ the map
+
+  /**
+   * How a line's map is to have a track: 'add' it, though the line's trains do not run along it;
+   * 'remove' it, though they do; or 'route', as the trains have it, neither added nor taken away.
+   */
+  function setLineTrack(timetable, lineId, key, how) {
+    const next = copy(timetable);
+    const line = next.lines.find(each => each.id === lineId);
+    if (line === undefined)
+      return timetable;
+    line.mapAdd = line.mapAdd.filter(each => each !== key);
+    line.mapRemove = line.mapRemove.filter(each => each !== key);
+    if (how === 'add')
+      line.mapAdd.push(key);
+    else if (how === 'remove')
+      line.mapRemove.push(key);
+    return next;
+  }
+
+  /** Hides a track from every map, or shows it again. */
+  function setTrackHidden(timetable, key, hidden) {
+    const next = copy(timetable);
+    next.mapHidden = next.mapHidden.filter(each => each !== key);
+    if (hidden)
+      next.mapHidden.push(key);
+    return next;
   }
 
   // ------------------------------------------------------------------ the stations' times
@@ -768,7 +804,7 @@
   }
 
   return {
-    NONE, copy, setName, putLine, removeLine, stationTimes, dwellAt, setStations, typeList, setTypes, typeChanges, trainsOfType,
+    NONE, copy, setName, putLine, removeLine, setLineTrack, setTrackHidden, stationTimes, dwellAt, setStations, typeList, setTypes, typeChanges, trainsOfType,
     nextNumber, addTrain, removeTrain, setTrain, stopLimits, moveStop, moveRun, moveArrival, stretchStop, draggedTime, drag, sameStops, shiftTrain, setStopTime, setDwell, setStopMinimum, setStopType, setStopWaits, setStopStation,
     removeStop, tooFast, setStopTag, tagsOf, noWay,
     snap, snapUp, snapDown, drawStop, drawClick, setDrawnDwell, finishDrawing,

@@ -67,10 +67,10 @@ test('a timetable not of the right shape is not read', () => {
 });
 
 test('a newer version is not read, and says the editor needs updating', () => {
-  const result = timetable.read('{"format": "createrealtimeschedule.timetable", "version": 8, "whatever": 1}');
+  const result = timetable.read('{"format": "createrealtimeschedule.timetable", "version": 9, "whatever": 1}');
   assert.equal(result.timetable, null);
   assert.deepEqual(result.problems,
-    ['version: is 8, but this editor reads timetables up to version 7; the editor needs updating to read this one']);
+    ['version: is 9, but this editor reads timetables up to version 8; the editor needs updating to read this one']);
 });
 
 test('the types\' colours and the stops that change a train\'s type are read and written back as the mod writes them, as version 6', () => {
@@ -86,6 +86,23 @@ test('the types\' colours and the stops that change a train\'s type are read and
   assert.equal(timetable.version(waits), 5, 'a timetable with no types of its own is no version 6');
   waits.trains[0].stops[1].type = 'rapid';
   assert.equal(timetable.version(waits), 6, 'a stop that changes the type is version 6');
+});
+
+test('the tracks a map shows and hides are read and written back as the mod writes them, as version 8', () => {
+  const text = readText(path.join(RESOURCES, 'timetable', 'example-map.json'));
+  const result = timetable.read(text);
+  assert.deepEqual(result.problems, []);
+  const line = result.timetable.lines[0];
+  assert.deepEqual(line.mapAdd, ['minecraft:overworld 60.5,2,3.5 70.5,2,13.5']);
+  assert.deepEqual(line.mapRemove, ['minecraft:overworld 0.5,2,3.5 60.5,2,3.5']);
+  assert.deepEqual(result.timetable.mapHidden, ['minecraft:overworld 60.5,2,3.5 70.5,2,13.5']);
+  assert.equal(timetable.version(result.timetable), 8);
+  assert.equal(timetable.write(result.timetable), text);
+  line.mapAdd = [];
+  line.mapRemove = [];
+  result.timetable.mapHidden = [];
+  assert.equal(timetable.version(result.timetable), 2, 'a timetable that shows and hides no track is no version 8');
+  assert.ok(!timetable.write(result.timetable).includes('map_'), 'a timetable that shows and hides no track says nothing of the map');
 });
 
 test('the track tags of trains and stops are read and written back as the mod writes them, as version 7', () => {

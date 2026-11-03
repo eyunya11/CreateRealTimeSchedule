@@ -36,6 +36,10 @@ import org.jetbrains.annotations.Nullable;
  * a type that has none is drawn in a colour picked from its name ({@link TypeColours}). A stop may
  * change the train's type from there on, such as a local that runs on as a rapid.
  *
+ * <p>A map of the track shows the track a line's trains run along, for the lines it shows; a line may
+ * add tracks to that, or take some away, and the timetable may hide tracks from every map, such as
+ * track that is still being built. A track is named by its key on the map ({@code TrackKeys}).
+ *
  * <p>The records hold whatever they are given. {@link #problems()} says what is wrong with them.
  *
  * @param name     what to call the timetable; may be empty
@@ -44,9 +48,10 @@ import org.jetbrains.annotations.Nullable;
  * @param types    the types that have a colour of their own, in the order they are listed in
  * @param trains   the trains, on any of the lines
  * @param duties   the duties, each made of trains from {@code trains}
+ * @param mapHidden the keys of the tracks no map shows, whatever its lines run along
  */
 public record Timetable(String name, List<Line> lines, List<Station> stations, List<TrainType> types, List<Train> trains,
-                        List<Duty> duties) {
+                        List<Duty> duties, List<String> mapHidden) {
 
     /** The {@code format} member of a timetable in JSON. */
     public static final String FORMAT = "createrealtimeschedule.timetable";
@@ -55,11 +60,12 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
      * The newest version of the JSON this mod reads. Version 2 added deadhead trains, version 3 the
      * stations' times and the stops' minimum stops, version 4 the trains that are never cancelled to
      * get a late set back on time, version 5 the trains a stop waits for, and version 6 the types'
-     * colours and the stops that change a train's type, and version 7 the track tags trains run on. A
-     * timetable is written in the oldest version that holds it ({@link #version()}), so that a mod that
-     * reads only version 2 still takes one that has none of what the later versions added.
+     * colours and the stops that change a train's type, version 7 the track tags trains run on, and
+     * version 8 the tracks a map shows and hides for a line, and hides for all. A timetable is written
+     * in the oldest version that holds it ({@link #version()}), so that a mod that reads only version 2
+     * still takes one that has none of what the later versions added.
      */
-    public static final int VERSION = 7;
+    public static final int VERSION = 8;
 
     /** The longest line id, train number or duty id. */
     public static final int MAX_ID_LENGTH = 32;
@@ -77,6 +83,13 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
         types = List.copyOf(types);
         trains = List.copyOf(trains);
         duties = List.copyOf(duties);
+        mapHidden = List.copyOf(mapHidden);
+    }
+
+    /** A timetable that hides no track from a map. */
+    public Timetable(String name, List<Line> lines, List<Station> stations, List<TrainType> types, List<Train> trains,
+                     List<Duty> duties) {
+        this(name, lines, stations, types, trains, duties, List.of());
     }
 
     /** A timetable whose types have no colours of their own. */
@@ -95,12 +108,21 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
      * @param stations the stations in order, at least two, none twice
      * @param loop     whether the last station is followed by the first, so that a train may go on
      *                 past the end of the list and the order of its stops is not checked
+     * @param mapAdd    the keys of the tracks a map of the line shows besides those its trains run along
+     * @param mapRemove the keys of the tracks a map of the line does not show although its trains run along them
      */
-    public record Line(String id, String name, List<String> stations, boolean loop) {
+    public record Line(String id, String name, List<String> stations, boolean loop, List<String> mapAdd, List<String> mapRemove) {
         public Line {
             Objects.requireNonNull(id, "id");
             Objects.requireNonNull(name, "name");
             stations = List.copyOf(stations);
+            mapAdd = List.copyOf(mapAdd);
+            mapRemove = List.copyOf(mapRemove);
+        }
+
+        /** A line whose map is the track its trains run along. */
+        public Line(String id, String name, List<String> stations, boolean loop) {
+            this(id, name, stations, loop, List.of(), List.of());
         }
 
         /**
@@ -375,12 +397,14 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
     }
 
     /**
-     * The oldest version of the JSON that holds this timetable: 7 if a train or a stop has a track tag,
-     * else 6 if it gives a type a colour or a stop changes a train's type, else 5 if a stop waits for a
-     * train, else 4 if it has a train that is never cancelled, else 3 if it has anything version 3
-     * added, else 2.
+     * The oldest version of the JSON that holds this timetable: 8 if it adds a track to a map, takes one
+     * away or hides one, else 7 if a train or a stop has a track tag, else 6 if it gives a type a colour
+     * or a stop changes a train's type, else 5 if a stop waits for a train, else 4 if it has a train
+     * that is never cancelled, else 3 if it has anything version 3 added, else 2.
      */
     public int version() {
+        if (!mapHidden.isEmpty() || lines.stream().anyMatch(line -> !line.mapAdd().isEmpty() || !line.mapRemove().isEmpty()))
+            return 8;
         if (trains.stream().anyMatch(train -> !train.tag().isEmpty() || train.stops().stream().anyMatch(Stop::hasTag)))
             return 7;
         if (!types.isEmpty() || trains.stream().anyMatch(train -> train.stops().stream().anyMatch(Stop::changesType)))
@@ -416,6 +440,7 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
         Map<String, Line> lineById = checkLines(problems);
         checkStations(problems);
         checkTypes(problems);
+        checkMap(problems);
         Map<String, Train> trainByNumber = checkTrains(lineById, problems);
         checkWaits(lineById, trainByNumber, problems);
         checkDuties(trainByNumber, problems);
@@ -468,6 +493,35 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
                 problems.add(label + ": the dwell " + STOP_RULE);
             if (station.minimumStop() != Stop.NONE && !isStopSeconds(station.minimumStop()))
                 problems.add(label + ": the minimum stop " + STOP_RULE);
+        }
+    }
+
+    // ------------------------------------------------------------------ the map
+
+    private void checkMap(List<String> problems) {
+        for (int i = 0; i < lines.size(); i++) {
+            Line line = lines.get(i);
+            String label = label("line", "lines", i, line.id());
+            checkTracks(label, "map_add", line.mapAdd(), problems);
+            checkTracks(label, "map_remove", line.mapRemove(), problems);
+            Set<String> added = new HashSet<>(line.mapAdd());
+            Set<String> both = new HashSet<>();
+            for (String key : line.mapRemove())
+                if (added.contains(key) && both.add(key))
+                    problems.add(label + ": track \"" + key + "\" is both in map_add and in map_remove");
+        }
+        checkTracks("map_hidden", "map_hidden", mapHidden, problems);
+    }
+
+    /** The keys of a list of tracks, at {@code label}: each a text, and each once. */
+    private static void checkTracks(String label, String list, List<String> keys, List<String> problems) {
+        Set<String> seen = new HashSet<>();
+        Set<String> twice = new HashSet<>();
+        for (String key : keys) {
+            if (!isText(key))
+                problems.add(label + ": a track in " + list + " " + TEXT_RULE);
+            else if (!seen.add(key) && twice.add(key))
+                problems.add(label + ": track \"" + key + "\" is listed twice in " + list);
         }
     }
 

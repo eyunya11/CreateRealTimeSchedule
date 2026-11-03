@@ -1,0 +1,26 @@
+{
+  "format": "createrealtimeschedule.timetable",
+  "version": 8,
+  "name": "Map",
+  "lines": [
+    {
+      "id": "main",
+      "name": "Main line",
+      "stations": ["Alpha", "Beta", "Gamma"],
+      "map_add": ["minecraft:overworld 60.5,2,3.5 70.5,2,13.5"],
+      "map_remove": ["minecraft:overworld 0.5,2,3.5 60.5,2,3.5"]
+    }
+  ],
+  "trains": [
+    {
+      "number": "1",
+      "line": "main",
+      "stops": [
+        {"station": "Alpha", "depart": "08:00"},
+        {"station": "Gamma", "arrive": "08:10"}
+      ]
+    }
+  ],
+  "duties": [],
+  "map_hidden": ["minecraft:overworld 60.5,2,3.5 70.5,2,13.5"]
+}

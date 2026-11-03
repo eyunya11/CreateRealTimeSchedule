@@ -1,0 +1,37 @@
+{
+  "about": "Which tracks a map shows. Tracks: 0 from A to B, 1 from B to C, 2 to the depot, 3 still being built (hidden), 4 from X to Y, 5 a way round from C back to A. Line l adds the depot and a track that is no longer there; n, from A to C and back the way round, takes away the track from B to C; o is a loop.",
+  "tracks": ["t0", "t1", "t2", "t3", "t4", "t5"],
+  "legs": [
+    {"from": "A", "to": "B", "tracks": [0]},
+    {"from": "B", "to": "A", "tracks": [0]},
+    {"from": "B", "to": "C", "tracks": [1]},
+    {"from": "C", "to": "B", "tracks": [1]},
+    {"from": "A", "to": "C", "tracks": [0, 1]},
+    {"from": "C", "to": "A", "tracks": [5]},
+    {"from": "X", "to": "Y", "tracks": [4]}
+  ],
+  "timetable": {
+    "format": "createrealtimeschedule.timetable",
+    "version": 8,
+    "name": "",
+    "lines": [
+      {"id": "l", "name": "L", "stations": ["A", "B", "C"], "map_add": ["t2", "t9"], "map_remove": ["t5"]},
+      {"id": "m", "name": "M", "stations": ["X", "Y"]},
+      {"id": "n", "name": "N", "stations": ["A", "C"], "map_remove": ["t1"]},
+      {"id": "o", "name": "O", "stations": ["A", "B", "C"], "loop": true}
+    ],
+    "trains": [],
+    "duties": [],
+    "map_hidden": ["t3"]
+  },
+  "cases": [
+    {"lines": [], "visible": [0, 1, 2, 4, 5]},
+    {"lines": ["l"], "visible": [0, 1, 2]},
+    {"lines": ["m"], "visible": [4]},
+    {"lines": ["l", "m"], "visible": [0, 1, 2, 4]},
+    {"lines": ["n"], "visible": [0, 5]},
+    {"lines": ["o"], "visible": [0, 1, 5]},
+    {"lines": ["nope"], "visible": []}
+  ],
+  "missing": ["t9"]
+}
