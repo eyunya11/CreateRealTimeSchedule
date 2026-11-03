@@ -1,5 +1,5 @@
 /*
- * Reads and writes a timetable as JSON (up to version 7 of the format), as TimetableJson does in the mod.
+ * Reads and writes a timetable as JSON (up to version 8 of the format), as TimetableJson does in the mod.
  *
  * Writing gives the same text as the mod, member for member and line for line. Reading checks the
  * same things in the same order and says them in the same words, with one difference: the browser's
@@ -419,7 +419,7 @@
     return own !== undefined ? own.color : colourByName(type);
   }
 
-  /** The tracks a map of the line shows besides those its trains run along; none for a line from before version 7. */
+  /** The tracks a map of the line shows besides those its trains run along; none for a line from before version 8. */
   function mapAdd(line) {
     return line.mapAdd === undefined ? [] : line.mapAdd;
   }

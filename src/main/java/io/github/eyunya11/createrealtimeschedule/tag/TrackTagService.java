@@ -111,8 +111,9 @@ public final class TrackTagService {
                 yield new Outcome(null, true);
             }
         };
+        // A colour changes no tag's name, and so no way of a train held to one.
         if (outcome.listChanged())
-            listChanged(player.server);
+            listChanged(player.server, edit.action() != TrackTagEditPayload.Action.COLOUR);
         open(player, pos, outcome.message());
     }
 
@@ -121,8 +122,14 @@ public final class TrackTagService {
      * names over the blocks show it.
      */
     public static void listChanged(MinecraftServer server) {
+        listChanged(server, true);
+    }
+
+    private static void listChanged(MinecraftServer server, boolean names) {
         TrackTagData.get(server).setDirty();
         PacketDistributor.sendToAllPlayers(list(server));
+        if (!names)
+            return;
         // A timetable that holds trains to tags names them: its ways are worked out again by the names as they are now.
         OperationData data = OperationData.get(server);
         Timetable timetable = data.timetable();

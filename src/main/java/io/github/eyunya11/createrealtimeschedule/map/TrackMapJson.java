@@ -18,7 +18,7 @@ import io.github.eyunya11.createrealtimeschedule.map.TrackMap.Track;
 import io.github.eyunya11.createrealtimeschedule.map.TrackMap.TrainMark;
 
 /**
- * Writes a {@link TrackMap} as the {@code map} member of the network JSON (version 3), which the
+ * Writes a {@link TrackMap} as the {@code map} member of the network JSON (version 4), which the
  * editor draws. The format is described in the proposal, in the section on the map.
  *
  * <p>Places are given to a tenth of a block, and directions to a hundredth. A track's points are a

@@ -47,7 +47,7 @@
 
   /**
    * A copy to change; a timetable from before version 3 gets its (empty) stations, one from before
-   * version 6 its types, and one from before version 7 its lists of tracks for the map.
+   * version 6 its types, and one from before version 8 its lists of tracks for the map.
    */
   function copy(timetable) {
     return {
