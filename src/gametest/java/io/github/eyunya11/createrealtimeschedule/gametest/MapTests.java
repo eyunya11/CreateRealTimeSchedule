@@ -90,6 +90,9 @@ public class MapTests {
             helper.assertTrue(near(beta.at(), centre(helper, new BlockPos(QUARTER_TURN.toX(), TrackLine.TRACK_Y, BETA_Z))),
                 "Beta is at " + beta.at());
             helper.assertTrue(tracks.contains(map.tracks().get(alpha.track())), "Alpha's track is not one of the line's");
+            // The trains come in east to Alpha, and south, past the turn, to Beta.
+            helper.assertTrue(near(alpha.direction(), new Spot(1, 0)), "trains come in to Alpha running " + alpha.direction());
+            helper.assertTrue(near(beta.direction(), new Spot(0, 1)), "trains come in to Beta running " + beta.direction());
 
             List<TrainMark> trains = map.trains().stream()
                 .filter(train -> inside(helper, train.carriages().getFirst().front())).toList();

@@ -148,7 +148,8 @@ public final class CreateMap {
                 At at = at(graph, station);
                 Integer track = at == null ? null : trackOf.get(at.edge());
                 if (track != null && station.name != null && !station.name.isBlank())
-                    stations.add(new StationMark(station.name, track, at.spot()));
+                    // A station takes the trains running from the first node of its place to the second (GlobalStation.canApproachFrom).
+                    stations.add(new StationMark(station.name, track, at.spot(), at.direction()));
             }
         stations.sort(Comparator.comparing(StationMark::name).thenComparingDouble(mark -> mark.at().x())
             .thenComparingDouble(mark -> mark.at().z()));

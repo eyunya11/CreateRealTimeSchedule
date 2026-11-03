@@ -67,11 +67,13 @@ public record TrackMap(List<String> dimensions, List<Track> tracks, List<Station
     }
 
     /**
-     * @param name  the station's name
-     * @param track the index of the track its marker is on
-     * @param at    where the marker is
+     * @param name      the station's name
+     * @param track     the index of the track its marker is on
+     * @param at        where the marker is
+     * @param direction the way trains run as they come in to stop there (Create's trains stop at a station
+     *                  running one way only); the map screen shows it, the network file does not
      */
-    public record StationMark(String name, int track, Spot at) {
+    public record StationMark(String name, int track, Spot at, Spot direction) {
         public StationMark {
             Objects.requireNonNull(name, "name");
         }
