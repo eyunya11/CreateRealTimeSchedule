@@ -107,12 +107,13 @@ public class MapScreenRenderer implements BlockEntityRenderer<MapScreenBlockEnti
     private static final float NAME_SCALE = 0.0055f;
     private static final float LIMIT_SCALE = 0.0035f;
     /**
-     * How far from the track a signal's head may be put, in {@link #BESIDE}s, nearest first: on the side
-     * of its block (positive), then on the other.
+     * Where a signal's head or a sign may be put, best first: how far from the track, in {@link #BESIDE}s,
+     * on the side of its block (positive) or the other, and how far along the track, in its own lengths,
+     * forwards (positive) or back. The side of the block is tried all along before the other side, so
+     * that a thing crowded off its place moves along the track rather than across it.
      */
-    private static final float[] HEAD_PLACES = {1, 1.6f, 2.2f, 2.8f, 3.4f, -1, -1.6f, -2.2f};
-    /** How far from the track a sign may be put, in {@link #BESIDE}s, as {@link #HEAD_PLACES}. */
-    private static final float[] SIGN_PLACES = {1, 1.6f, 2.2f, 2.8f, -1, -1.6f, -2.2f};
+    private static final float[][] BESIDE_PLACES = places(new float[] {1, 1.6f, 2.2f, 2.8f}, new float[] {0, 0.7f, -0.7f, 1.4f, -1.4f},
+        new float[] {-1, -1.6f}, new float[] {0, 0.7f, -0.7f});
     /** How many lamps a signal's head has room for, lit or not, so that every head looks alike. */
     private static final int HEAD_LAMPS = 2;
 
@@ -129,6 +130,43 @@ public class MapScreenRenderer implements BlockEntityRenderer<MapScreenBlockEnti
 
     public MapScreenRenderer(BlockEntityRendererProvider.Context context) {
         this.font = context.getFont();
+    }
+
+    /** Each way out on the block's side with each shift along, then each way out on the other side with each of its shifts. */
+    private static float[][] places(float[] out, float[] along, float[] otherOut, float[] otherAlong) {
+        List<float[]> places = new ArrayList<>();
+        for (float away : out)
+            for (float shift : along)
+                places.add(new float[] {away, shift});
+        for (float away : otherOut)
+            for (float shift : otherAlong)
+                places.add(new float[] {away, shift});
+        return places.toArray(float[][]::new);
+    }
+
+    /**
+     * The middle of a thing put beside the track at ({@code u}, {@code v}), for each of {@link #BESIDE_PLACES}:
+     * {@code out} from the track, towards (ru, rv), at least {@code clear} besides, and {@code length}
+     * along (du, dv) for each length shifted.
+     */
+    private static float[][] middles(float u, float v, float du, float dv, float ru, float rv, float out, float clear, float length) {
+        float[][] middles = new float[BESIDE_PLACES.length][];
+        for (int i = 0; i < BESIDE_PLACES.length; i++) {
+            float away = BESIDE_PLACES[i][0];
+            float reach = out * away + Math.signum(away) * clear;
+            float shift = BESIDE_PLACES[i][1] * length;
+            middles[i] = new float[] {u + ru * reach + du * shift, v + rv * reach + dv * shift};
+        }
+        return middles;
+    }
+
+    /** The post from beside the track at ({@code u}, {@code v}), {@code from} off it, to {@code middle}. */
+    private static Rect post(float u, float v, float[] middle, float from, float width) {
+        float lu = middle[0] - u;
+        float lv = middle[1] - v;
+        float length = (float) Math.hypot(lu, lv);
+        float start = Math.min(from, length);
+        return Rect.line(u + lu / length * start, v + lv / length * start, middle[0], middle[1], width / 2);
     }
 
     /** A label: its text, where it starts on the screen, its size, colour and layer. */
@@ -405,16 +443,18 @@ public class MapScreenRenderer implements BlockEntityRenderer<MapScreenBlockEnti
         float edge = lamp * 0.25f;
         float along = slots * lamp * 2.6f;
         float across = lamp * 2.6f;
+        float[][] middles = middles(u, v, du, dv, ru, rv, BESIDE * grow, across / 2, along);
+        // The post from clear of the mark on the track, which reaches 1.2 pointers each way.
+        float postFrom = pointer * 1.8f;
         List<Rect> places = new ArrayList<>();
-        for (float away : HEAD_PLACES) {
-            float reach = BESIDE * grow * away + Math.signum(away) * across / 2;
-            places.add(Rect.along(u + ru * reach, v + rv * reach, du, dv, along / 2 + edge, across / 2 + edge));
+        List<Rect> posts = new ArrayList<>();
+        for (float[] middle : middles) {
+            places.add(Rect.along(middle[0], middle[1], du, dv, along / 2 + edge, across / 2 + edge));
+            posts.add(post(u, v, middle, postFrom, POST_WIDTH * grow));
         }
-        pending.add(new Pending(new MarkLayout.Item(places, false), index -> {
-            float away = HEAD_PLACES[index];
-            float reach = BESIDE * grow * away + Math.signum(away) * across / 2;
-            float cu = u + ru * reach;
-            float cv = v + rv * reach;
+        pending.add(new Pending(new MarkLayout.Item(places, posts, false), index -> {
+            float cu = middles[index][0];
+            float cv = middles[index][1];
             Quads out = quads.computeIfAbsent(tileOf(cu, cv, width, height), unused -> new Quads());
             out.line(u, v, cu, cv, POST_WIDTH * grow, POST_LAYER, POST);
             float half = along / 2 - across / 2;
@@ -444,16 +484,19 @@ public class MapScreenRenderer implements BlockEntityRenderer<MapScreenBlockEnti
         float textScale = LIMIT_SCALE * grow;
         float halfV = SIGN_SIZE * grow;
         float halfU = sign.release() ? halfV : Math.max(halfV, font.width(text) * textScale / 2 / 0.78f + halfV * 0.1f);
+        float[][] middles = middles(u, v, length < 1e-6f ? 0 : du / length, length < 1e-6f ? 0 : dv / length, ru, rv, BESIDE * grow,
+            Math.max(halfU, halfV), Math.max(halfU, halfV) * 2);
+        // The post from clear of the track, and of a signal's mark at the same place.
+        float postFrom = POINTER_SIZE * grow * 1.8f;
         List<Rect> places = new ArrayList<>();
-        for (float away : SIGN_PLACES) {
-            float reach = BESIDE * grow * away + Math.signum(away) * Math.max(halfU, halfV);
-            places.add(Rect.around(u + ru * reach, v + rv * reach, halfU, halfV));
+        List<Rect> posts = new ArrayList<>();
+        for (float[] middle : middles) {
+            places.add(Rect.around(middle[0], middle[1], halfU, halfV));
+            posts.add(post(u, v, middle, postFrom, POST_WIDTH * grow));
         }
-        pending.add(new Pending(new MarkLayout.Item(places, false), index -> {
-            float away = SIGN_PLACES[index];
-            float reach = BESIDE * grow * away + Math.signum(away) * Math.max(halfU, halfV);
-            float cu = u + ru * reach;
-            float cv = v + rv * reach;
+        pending.add(new Pending(new MarkLayout.Item(places, posts, false), index -> {
+            float cu = middles[index][0];
+            float cv = middles[index][1];
             int tile = tileOf(cu, cv, width, height);
             Quads out = quads.computeIfAbsent(tile, unused -> new Quads());
             out.line(u, v, cu, cv, POST_WIDTH * grow, POST_LAYER, POST);

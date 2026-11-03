@@ -70,13 +70,24 @@ public final class MarkLayout {
      * A thing to put.
      *
      * @param places    where it may go, best first
+     * @param posts     for each place, the post it stands on there, from beside the track; none for a
+     *                  thing on no post. A place is clear only if its post is too, so that a post does
+     *                  not cross other track or other things
      * @param droppable whether it is left out if no place is clear
      */
-    public record Item(List<Rect> places, boolean droppable) {
+    public record Item(List<Rect> places, List<Rect> posts, boolean droppable) {
         public Item {
             places = List.copyOf(places);
+            posts = List.copyOf(posts);
             if (places.isEmpty())
                 throw new IllegalArgumentException("a thing with nowhere to go");
+            if (!posts.isEmpty() && posts.size() != places.size())
+                throw new IllegalArgumentException(posts.size() + " posts for " + places.size() + " places");
+        }
+
+        /** A thing on no post. */
+        public Item(List<Rect> places, boolean droppable) {
+            this(places, List.of(), droppable);
         }
     }
 
@@ -89,12 +100,15 @@ public final class MarkLayout {
             Item item = items.get(i);
             chosen[i] = item.droppable() ? -1 : 0;
             for (int k = 0; k < item.places().size(); k++)
-                if (taken.clear(item.places().get(k))) {
+                if (taken.clear(item.places().get(k)) && (item.posts().isEmpty() || taken.clear(item.posts().get(k)))) {
                     chosen[i] = k;
                     break;
                 }
-            if (chosen[i] >= 0)
+            if (chosen[i] >= 0) {
                 taken.add(item.places().get(chosen[i]));
+                if (!item.posts().isEmpty())
+                    taken.add(item.posts().get(chosen[i]));
+            }
         }
         return chosen;
     }

@@ -47,6 +47,20 @@ class MarkLayoutTest {
     }
 
     @Test
+    void aThingOnAPostDoesNotGoWhereThePostCrossesOtherTrack() {
+        // A head on a post from track along v = 0 up past track along v = 1, or the same way down.
+        Rect other = Rect.line(-10, 1, 10, 1, 0.05);
+        List<Rect> places = List.of(Rect.around(0, 1.5, 0.2, 0.2), Rect.around(0, -0.5, 0.2, 0.2));
+        List<Rect> posts = List.of(Rect.line(0, 0.1, 0, 1.3, 0.01), Rect.line(0, -0.1, 0, -0.3, 0.01));
+        assertArrayEquals(new int[] {1}, MarkLayout.place(List.of(other), List.of(new Item(places, posts, false))));
+        assertArrayEquals(new int[] {0}, MarkLayout.place(List.of(other), List.of(new Item(places, false))), "with no posts the head may go over");
+        // A post put keeps later things off it.
+        int[] chosen = MarkLayout.place(List.of(), List.of(new Item(places.subList(0, 1), posts.subList(0, 1), false),
+            new Item(List.of(Rect.around(0, 0.7, 0.1, 0.1), Rect.around(3, 0.7, 0.1, 0.1)), false)));
+        assertArrayEquals(new int[] {0, 1}, chosen);
+    }
+
+    @Test
     void aThingTakesItsBestPlaceThatIsClear() {
         assertArrayEquals(new int[] {0}, MarkLayout.place(List.of(), List.of(new Item(List.of(A, B), false))));
         assertArrayEquals(new int[] {1}, MarkLayout.place(List.of(A), List.of(new Item(List.of(A, B, C), false))));
