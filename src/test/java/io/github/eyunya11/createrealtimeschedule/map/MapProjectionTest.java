@@ -87,4 +87,14 @@ class MapProjectionTest {
         List<String> names = Arrays.stream(matcher.group(1).split(",")).map(name -> name.trim().replace("'", "")).toList();
         assertEquals(ScreenSettings.LAYERS, names);
     }
+
+    /** A screen has the editor's kinds and the signals' heads, which only it draws, and the settings may hide them. */
+    @Test
+    void aScreenMayHideTheSignalsHeadsToo() {
+        List<String> others = ScreenSettings.SCREEN_LAYERS.stream().filter(layer -> !ScreenSettings.LAYERS.contains(layer)).toList();
+        assertEquals(List.of("signalHeads"), others);
+        assertTrue(ScreenSettings.SCREEN_LAYERS.containsAll(ScreenSettings.LAYERS));
+        ScreenSettings settings = new ScreenSettings(0, 0, 1, List.of(), java.util.Set.of("signalHeads"), 0);
+        assertTrue(settings.shows("signals") && !settings.shows("signalHeads"));
+    }
 }

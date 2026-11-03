@@ -89,7 +89,7 @@ public final class MapScreenService {
             || Math.abs(edit.centreZ()) > 3e7)
             return;
         Set<String> hidden = new HashSet<>(edit.hidden());
-        hidden.retainAll(ScreenSettings.LAYERS);
+        hidden.retainAll(ScreenSettings.SCREEN_LAYERS);
         List<String> lines = new ArrayList<>(new LinkedHashSet<>(edit.lines()));
         // A tag the world does not have may be turned off: it is kept, and hides its stretches once there are any.
         Set<String> tagsOff = new HashSet<>(edit.tagsOff());

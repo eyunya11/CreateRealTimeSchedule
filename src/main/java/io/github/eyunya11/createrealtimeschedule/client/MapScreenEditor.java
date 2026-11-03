@@ -75,7 +75,7 @@ public class MapScreenEditor extends Screen {
         fit.active = MapClient.view(chosen()) != null;
 
         int y = top + 120;
-        for (String layer : ScreenSettings.LAYERS) {
+        for (String layer : ScreenSettings.SCREEN_LAYERS) {
             Checkbox box = Checkbox.builder(Component.translatableWithFallback(KEY + "layer." + layer, layer), font).pos(left, y)
                 .selected(settings.shows(layer)).build();
             layerBoxes.put(layer, addRenderableWidget(box));

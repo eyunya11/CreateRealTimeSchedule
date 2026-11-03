@@ -109,6 +109,7 @@
   "gui.createrealtimeschedule.map_screen.layer.stations": "駅",
   "gui.createrealtimeschedule.map_screen.layer.stationNames": "駅名",
   "gui.createrealtimeschedule.map_screen.layer.signals": "信号",
+  "gui.createrealtimeschedule.map_screen.layer.signalHeads": "信号の柱と灯",
   "gui.createrealtimeschedule.map_screen.layer.speedLimits": "制限速度",
   "gui.createrealtimeschedule.map_screen.layer.trains": "列車",
   "gui.createrealtimeschedule.map_screen.lines": "路線(選ばなければ全部の線路)",

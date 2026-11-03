@@ -109,6 +109,7 @@
   "gui.createrealtimeschedule.map_screen.layer.stations": "Stations",
   "gui.createrealtimeschedule.map_screen.layer.stationNames": "Station names",
   "gui.createrealtimeschedule.map_screen.layer.signals": "Signals",
+  "gui.createrealtimeschedule.map_screen.layer.signalHeads": "Signal heads",
   "gui.createrealtimeschedule.map_screen.layer.speedLimits": "Speed limits",
   "gui.createrealtimeschedule.map_screen.layer.trains": "Trains",
   "gui.createrealtimeschedule.map_screen.lines": "Lines (none: all the track)",

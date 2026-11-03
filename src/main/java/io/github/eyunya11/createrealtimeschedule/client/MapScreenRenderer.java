@@ -335,7 +335,7 @@ public class MapScreenRenderer implements BlockEntityRenderer<MapScreenBlockEnti
                 float u = (float) ((signal.at().x() - whole.minX()) / scale);
                 float v = (float) (height - (signal.at().z() - whole.minZ()) / scale);
                 for (SignalSide side : signal.sides())
-                    signal(u, v, side, grow, width, height, quads, fixed, pending);
+                    signal(u, v, side, settings.shows("signalHeads"), grow, width, height, quads, fixed, pending);
             }
 
         if (settings.shows("speedLimits"))
@@ -377,11 +377,11 @@ public class MapScreenRenderer implements BlockEntityRenderer<MapScreenBlockEnti
 
     /**
      * One side of a signal at ({@code u}, {@code v}): a small triangle on the track pointing the way it
-     * holds the trains, in the colour of its first lamp, and a head on a post, on the side of the track
-     * its block is on if there is room, with room for {@link #HEAD_LAMPS} lamps along the way the trains
-     * run, those not lit grey.
+     * holds the trains, in the colour of its first lamp, and, if {@code head}, a head on a post, on the
+     * side of the track its block is on if there is room, with room for {@link #HEAD_LAMPS} lamps along
+     * the way the trains run, those not lit grey.
      */
-    private static void signal(float u, float v, SignalSide side, float grow, int width, int height, Map<Integer, Quads> quads,
+    private static void signal(float u, float v, SignalSide side, boolean head, float grow, int width, int height, Map<Integer, Quads> quads,
         List<Rect> fixed, List<Pending> pending) {
         float length = (float) Math.hypot(side.direction().x(), side.direction().z());
         if (length < 1e-6f)
@@ -397,6 +397,8 @@ public class MapScreenRenderer implements BlockEntityRenderer<MapScreenBlockEnti
         onTrack.triangle(u, v, du, dv, pointer * 1.4f, SIGNAL_LAYER, HEAD);
         onTrack.triangle(u, v, du, dv, pointer, SIGNAL_LAYER + 1, first);
         fixed.add(Rect.around(u, v, pointer * 1.2f, pointer * 1.2f));
+        if (!head)
+            return;
 
         int slots = Math.max(HEAD_LAMPS, side.lamps().size());
         float lamp = LAMP_SIZE * grow;
