@@ -67,6 +67,22 @@ test('the path of a stretch of a track runs from where it starts to where it end
   assert.equal(map.piecePath(track, 0, 1, view), 'M0 0L10 0L10 10');
 });
 
+test('a line\'s route is the tracks its trains run along, the ways of their tags too, whatever the maps add, take away or hide', () => {
+  const root = JSON.parse(fs.readFileSync(path.join(CASES, 'tags.json'), 'utf8'));
+  const read = timetable.read(JSON.stringify(root.timetable)).timetable;
+  const line = Object.assign({}, read.lines[0], { mapAdd: ['t3'], mapRemove: ['t0'] });
+  const changed = Object.assign({}, read, { lines: [line, read.lines[1]], mapHidden: ['t1'] });
+  assert.deepEqual(map.route(root.tracks, root.legs, changed, line), [0, 1, 2, 3]);
+  assert.deepEqual(map.route(root.tracks, root.legs, changed, read.lines[1]), [0]);
+});
+
+test('the lines chosen are those the timetable still has, in its order', () => {
+  const read = timetable.read(JSON.stringify(JSON.parse(fs.readFileSync(path.join(CASES, 'tags.json'), 'utf8')).timetable)).timetable;
+  assert.deepEqual(map.chosenLines(read, ['m', 'gone', 'l']), ['l', 'm']);
+  assert.deepEqual(map.chosenLines(read, ['gone']), []);
+  assert.deepEqual(map.chosenLines(read, undefined), []);
+});
+
 test('with no timetable every track is shown', () => {
   assert.deepEqual(map.visible(['a', 'b'], [], null, ['l']), [0, 1]);
 });

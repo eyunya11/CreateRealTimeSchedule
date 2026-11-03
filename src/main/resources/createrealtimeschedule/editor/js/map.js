@@ -95,6 +95,21 @@
     return [...shown].filter(track => track >= 0 && track < keys.length).sort((a, b) => a - b);
   }
 
+  /**
+   * The indexes of the tracks a line's trains run along, as if the line added and took away none and
+   * no map hid any: those of its stations' legs, and the ways of the tags its trains are held to.
+   */
+  function route(keys, legs, timetable, line) {
+    const bare = Object.assign({}, timetable, { lines: [Object.assign({}, line, { mapAdd: [], mapRemove: [] })], mapHidden: [] });
+    return visible(keys, legs, bare, [line.id]);
+  }
+
+  /** The ids of the lines chosen that the timetable has, in its order: a line taken away or renamed is no longer chosen. */
+  function chosenLines(timetable, ids) {
+    const chosen = new Set(Array.isArray(ids) ? ids : []);
+    return timetable.lines.map(line => line.id).filter(id => chosen.has(id));
+  }
+
   /** The keys a timetable names that are not keys of the map's tracks (MapSelection.missing in the mod). */
   function missing(keys, timetable) {
     const known = new Set(keys);
@@ -437,7 +452,7 @@
   }
 
   return {
-    LAYERS, MIN_SCALE, MAX_SCALE, NO_TAG, visible, missing, bounds, View, pathData, nearestTrack,
+    LAYERS, MIN_SCALE, MAX_SCALE, NO_TAG, visible, route, chosenLines, missing, bounds, View, pathData, nearestTrack,
     tagSegments, shownAt, shareOf, trainShown, piecePath,
   };
 });

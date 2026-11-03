@@ -133,6 +133,12 @@
         localStorage.setItem(NETWORK_STORE, state.networkText);
     } catch (e) {
       // Too large to keep: the network lasts as long as the page, and has to be loaded again after.
+      // The one kept before is not this one, and is not brought back beside this timetable.
+      try {
+        localStorage.removeItem(NETWORK_STORE);
+      } catch (ignored) {
+        // Nothing kept to take away.
+      }
     }
   }
 
@@ -1012,21 +1018,19 @@
 
   /** The tracks of the dimension shown that a line's trains run along, as if it added and took away none. */
   function routeOf(map, line) {
-    const keys = map.tracks.map(track => track.key);
-    const bare = { lines: [Object.assign({}, line, { mapAdd: [], mapRemove: [] })] };
-    return new Set(rt.map.visible(keys, state.network.legs, bare, [line.id]));
+    return new Set(rt.map.route(map.tracks.map(track => track.key), state.network.legs, state.timetable, line));
   }
 
   function renderMapTools() {
     const lines = $('map-lines-list');
     lines.replaceChildren();
-    const chosen = new Set(state.settings.mapLines || []);
+    const chosen = new Set(rt.map.chosenLines(state.timetable, state.settings.mapLines));
     lines.append(h('p', { class: 'note' }, t('mapLinesHelp')));
     for (const line of state.timetable.lines)
       lines.append(h('label', { class: 'check' }, h('input', {
         type: 'checkbox', checked: chosen.has(line.id),
         onchange: event => {
-          const next = new Set(state.settings.mapLines || []);
+          const next = new Set(chosen);
           if (event.target.checked)
             next.add(line.id);
           else
@@ -1126,7 +1130,7 @@
     }
 
     const keys = map.tracks.map(track => track.key);
-    const shownTracks = new Set(rt.map.visible(keys, network.legs, state.timetable, state.settings.mapLines || []));
+    const shownTracks = new Set(rt.map.visible(keys, network.legs, state.timetable, rt.map.chosenLines(state.timetable, state.settings.mapLines)));
     const hidden = new Set(rt.timetable.mapHidden(state.timetable));
     const here = [];
     map.tracks.forEach((track, i) => {
