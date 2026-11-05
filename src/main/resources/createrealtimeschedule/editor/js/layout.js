@@ -138,9 +138,24 @@
   const MAX_SPAN = 48 * 3600;
   /** The steps the time scale can be marked in, in seconds. */
   const STEPS = [60, 5 * 60, 10 * 60, 30 * 60, 3600, 2 * 3600, 6 * 3600];
+  /**
+   * How much a notch of the wheel zooms: three notches as much as one did at first (a quarter), as
+   * DiagramView.WHEEL in the mod, and the map the same.
+   */
+  const WHEEL = Math.cbrt(1.25);
 
   function clampSpan(span) {
     return Math.max(MIN_SPAN, Math.min(MAX_SPAN, span));
+  }
+
+  /**
+   * How many notches a wheel event turned, away from the one turning it (to zoom in) positive and
+   * towards them negative: a notch of a mouse's wheel is one however the browser counts it (100 pixels,
+   * three lines or a page), a touchpad's small move a part of one, and no event more than three.
+   */
+  function wheelNotches(deltaY, deltaMode) {
+    const notch = deltaMode === 1 ? 3 : deltaMode === 2 ? 1 : 100;
+    return Math.max(-3, Math.min(3, -deltaY / notch));
   }
 
   /** Which part of a diagram is on the screen, and where a point of it goes, as DiagramView has it. */
@@ -184,6 +199,11 @@
     /** The position on an axis this long at y down the screen. */
     position(y, length) {
       return length <= 0 ? 0 : (y - this.top) / this.height * length;
+    }
+
+    /** Zooms for the wheel turned notches away (in) or, below nought, towards (out), as DiagramView.wheel. */
+    wheel(notches, x) {
+      this.zoom(Math.pow(WHEEL, -notches), x);
     }
 
     zoom(factor, x) {
@@ -316,5 +336,5 @@
     return null;
   }
 
-  return { plannedTrain, plannedTrains, waitMarks, View, MIN_SPAN, MAX_SPAN };
+  return { plannedTrain, plannedTrains, waitMarks, View, MIN_SPAN, MAX_SPAN, WHEEL, wheelNotches };
 });

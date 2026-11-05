@@ -18,6 +18,8 @@
   /** The least and the most pixels a block may take. */
   const MIN_SCALE = 1 / 64;
   const MAX_SCALE = 64;
+  /** How much a notch of the wheel zooms, as on the diagram (layout.js) and the mod's map screens. */
+  const WHEEL = Math.cbrt(1.25);
 
   /**
    * The indexes of the tracks shown, in order (MapSelection.visible in the mod).
@@ -195,6 +197,11 @@
 
     worldZ(y) {
       return this.top + y / this.scale;
+    }
+
+    /** Zooms for the wheel turned notches away (in) or, below nought, towards (out), about (x, y). */
+    wheel(notches, x, y) {
+      this.zoom(Math.pow(WHEEL, notches), x, y);
     }
 
     /** Zooms by factor, keeping the world's point under (x, y) where it is. */
@@ -456,7 +463,7 @@
   }
 
   return {
-    LAYERS, MIN_SCALE, MAX_SCALE, NO_TAG, visible, route, chosenLines, missing, bounds, View, pathData, nearestTrack,
+    LAYERS, MIN_SCALE, MAX_SCALE, WHEEL, NO_TAG, visible, route, chosenLines, missing, bounds, View, pathData, nearestTrack,
     tagSegments, shownAt, shareOf, trainShown, piecePath,
   };
 });

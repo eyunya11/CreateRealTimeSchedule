@@ -17,6 +17,11 @@ public final class DiagramView {
     public static final double MAX_SPAN = 48 * 3600;
     /** The steps the time scale can be marked in, in seconds. */
     private static final int[] STEPS = {60, 5 * 60, 10 * 60, 30 * 60, 3600, 2 * 3600, 6 * 3600};
+    /**
+     * How much a notch of the wheel zooms: three notches as much as one did at first (a quarter), as on
+     * the editor's diagram and map and on a map screen's map.
+     */
+    public static final double WHEEL = Math.cbrt(1.25);
 
     private double start;
     private double span;
@@ -64,6 +69,15 @@ public final class DiagramView {
     /** The time at {@code x} across the screen. */
     public double second(double x) {
         return start + (x - left) / width * span;
+    }
+
+    /**
+     * Zooms for the wheel turned {@code notches} notches away from the one turning it (in) or, below
+     * nought, towards them (out), a part of a notch as much as it is turned, keeping the time at {@code x}
+     * where it is.
+     */
+    public void wheel(double notches, double x) {
+        zoom(Math.pow(WHEEL, -notches), x);
     }
 
     /** Shows {@code factor} times as much time, keeping the time at {@code x} where it is. */

@@ -895,7 +895,7 @@
         return;
       event.preventDefault();
       const box = svg.getBoundingClientRect();
-      view.zoom(event.deltaY > 0 ? 1.25 : 0.8, event.clientX - box.left);
+      view.wheel(rt.layout.wheelNotches(event.deltaY, event.deltaMode), event.clientX - box.left);
       renderDiagram();
     }, { passive: false });
 
@@ -1301,7 +1301,7 @@
         return;
       event.preventDefault();
       const box = svg.getBoundingClientRect();
-      mapView.zoom(event.deltaY > 0 ? 0.8 : 1.25, event.clientX - box.left, event.clientY - box.top);
+      mapView.wheel(rt.layout.wheelNotches(event.deltaY, event.deltaMode), event.clientX - box.left, event.clientY - box.top);
       renderMap();
     }, { passive: false });
     let gesture = null;

@@ -26,6 +26,12 @@ public record MapProjection(double centreX, double centreZ, double scale, int wi
      */
     public static final List<Double> STEPS = steps();
 
+    /**
+     * How much a notch of the wheel zooms a screen's map where it is not kept to {@link #STEPS}: three
+     * notches as much as one did at first (a quarter), as on the diagram and the editor's map.
+     */
+    public static final double WHEEL = Math.cbrt(1.25);
+
     private static List<Double> steps() {
         List<Double> steps = new ArrayList<>(List.of(MIN_SCALE, 0.5, 0.75));
         for (double power = 1; power <= MAX_SCALE; power *= 2) {

@@ -381,7 +381,7 @@ public final class DiagramScreen extends Screen {
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
         if (scrollY == 0)
             return false;
-        view.zoom(scrollY > 0 ? 0.8 : 1.25, mouseX);
+        view.wheel(scrollY, mouseX);
         return true;
     }
 

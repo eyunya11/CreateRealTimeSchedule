@@ -11,6 +11,7 @@ import io.github.eyunya11.createrealtimeschedule.map.MapProjection;
 import io.github.eyunya11.createrealtimeschedule.map.MapProjection.Box;
 import io.github.eyunya11.createrealtimeschedule.map.ScreenLayout.Place;
 import io.github.eyunya11.createrealtimeschedule.map.ScreenSettings;
+import io.github.eyunya11.createrealtimeschedule.map.WheelSteps;
 import io.github.eyunya11.createrealtimeschedule.network.MapViewPayload;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -30,8 +31,9 @@ import net.minecraft.network.chat.MutableComponent;
  * is outlined in dashes, until the frame is back on it.
  *
  * <p>As the map is dragged and zoomed, the middle snaps to whole blocks and the scale to round steps
- * ({@link MapProjection#STEPS}), so that the settings read well; with Shift held neither does, and the
- * wheel zooms a little at a time, for a place in between.
+ * ({@link MapProjection#STEPS}), a step for every three notches of the wheel ({@link WheelSteps}), so
+ * that the settings read well; with Shift held neither does, and the wheel zooms a little each notch
+ * ({@link MapProjection#WHEEL}), for a place in between.
  *
  * <p>Nothing here is coloured but the map: the frames are white, a solid line for now and dashes for
  * before, and the words white for the values and grey for the rest, so that every colour on the map
@@ -41,8 +43,6 @@ import net.minecraft.network.chat.MutableComponent;
 public class MapAreaScreen extends Screen {
 
     private static final String KEY = "gui.createrealtimeschedule.map_screen.";
-    /** How much a notch of the wheel zooms with Shift held, as on the editor's map. */
-    private static final double ZOOM = 1.25;
     /** The bar under the map, with the values over the buttons. */
     private static final int BAR = 52;
     /** Room round the frame, and over it for the hint. */
@@ -71,6 +71,8 @@ public class MapAreaScreen extends Screen {
      * drag of less than a block at a time still moves it.
      */
     private MapProjection free;
+    /** The wheel's notches towards the next step of the scale. */
+    private WheelSteps wheel = new WheelSteps();
     private final MapPainter painter;
 
     /** Whether the map has been dragged or zoomed yet: the hint is shown until it has. */
@@ -164,18 +166,28 @@ public class MapAreaScreen extends Screen {
         return super.mouseReleased(mouseX, mouseY, button);
     }
 
-    /** Up zooms in and down out, about the place under the mouse: a step at a time, or a little with Shift held. */
+    /**
+     * Up zooms in and down out, about the place under the mouse: a step every three notches, or a little
+     * each notch with Shift held.
+     */
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
         if (scrollY == 0 || !onMap(mouseY))
             return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
         double right = (mouseX - (frameLeft + frameWidth / 2.0)) / block;
         double down = (mouseY - (frameTop + frameHeight / 2.0)) / block;
-        if (hasShiftDown())
-            projection = projection.zoomed(scrollY > 0 ? 1 / ZOOM : ZOOM, right, down);
-        else
-            projection = projection.zoomedTo(MapProjection.nextStep(projection.scale(), scrollY < 0), right, down).rounded();
         touched = true;
+        if (hasShiftDown()) {
+            projection = projection.zoomed(Math.pow(MapProjection.WHEEL, -scrollY), right, down);
+            wheel = new WheelSteps();
+            return true;
+        }
+        int steps = wheel.turn(scrollY);
+        double scale = projection.scale();
+        for (int step = 0; step < Math.abs(steps); step++)
+            scale = MapProjection.nextStep(scale, steps < 0);
+        if (steps != 0)
+            projection = projection.zoomedTo(scale, right, down).rounded();
         return true;
     }
 

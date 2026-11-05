@@ -178,6 +178,21 @@ test('zooming keeps the world under the pointer where it is, and the drawing and
   assert.ok(Math.abs(view.worldZ(view.y(-12)) - -12) < 1e-9);
 });
 
+test('three notches of the wheel zoom the map a quarter about the pointer, as on the diagram', () => {
+  assert.equal(map.WHEEL, script('layout').WHEEL);
+  const view = new map.View(400, 300);
+  view.fit({ minX: 0, minZ: 0, maxX: 100, maxZ: 100 }, 0);
+  const scale = view.scale;
+  const worldX = view.worldX(123);
+  const worldZ = view.worldZ(45);
+  view.wheel(3, 123, 45);
+  assert.ok(Math.abs(view.scale - scale * 1.25) < 1e-9, 'turned away from the one turning it, it zooms in');
+  assert.ok(Math.abs(view.x(worldX) - 123) < 1e-9);
+  assert.ok(Math.abs(view.y(worldZ) - 45) < 1e-9);
+  view.wheel(-3, 123, 45);
+  assert.ok(Math.abs(view.scale - scale) < 1e-9, 'and towards them, back out');
+});
+
 test('zooming stops at the least and the most pixels a block may take', () => {
   const view = new map.View(100, 100);
   view.zoom(1e9, 50, 50);
