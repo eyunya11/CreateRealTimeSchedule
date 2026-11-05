@@ -103,6 +103,7 @@
   "gui.createrealtimeschedule.map_screen.size": "%1$s × %2$s blocks",
   "gui.createrealtimeschedule.map_screen.x": "Middle X",
   "gui.createrealtimeschedule.map_screen.z": "Middle Z",
+  "gui.createrealtimeschedule.map_screen.centre_out": "The middle's X and Z must be from %1$s to %2$s",
   "gui.createrealtimeschedule.map_screen.scale": "Blocks per block",
   "gui.createrealtimeschedule.map_screen.fit": "Fit all track",
   "gui.createrealtimeschedule.map_screen.layers": "Show",

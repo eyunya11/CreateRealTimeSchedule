@@ -28,6 +28,14 @@ public record ScreenSettings(double centreX, double centreZ, double scale, List<
     public static final List<String> SCREEN_LAYERS = List.of("stations", "stationNames", "signals", "signalHeads", "speedLimits",
         "trains");
 
+    /** The farthest from the middle of the world, each way, the middle of a screen may be: the world's border at its widest. */
+    public static final double MAX_CENTRE = 30_000_000;
+
+    /** Whether {@code value} may be the X or the Z of the middle of a screen. */
+    public static boolean isCentre(double value) {
+        return Double.isFinite(value) && Math.abs(value) <= MAX_CENTRE;
+    }
+
     /** What a new screen shows: all the track, everything on it, round the middle of the world. */
     public static final ScreenSettings DEFAULT = new ScreenSettings(0, 0, 16, List.of(), Set.of(), Set.of(), 0);
 
