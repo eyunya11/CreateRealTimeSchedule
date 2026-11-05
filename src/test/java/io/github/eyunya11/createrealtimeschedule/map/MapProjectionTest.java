@@ -59,6 +59,38 @@ class MapProjectionTest {
     }
 
     @Test
+    void aScreenMovesByItsOwnBlocks() {
+        MapProjection moved = new MapProjection(100, 50, 10, 3, 2).moved(1.5, -2);
+        assertEquals(new MapProjection(115, 30, 10, 3, 2), moved, "a block and a half east, two blocks north");
+    }
+
+    @Test
+    void zoomingKeepsThePlaceUnderTheMouse() {
+        MapProjection projection = new MapProjection(100, 50, 10, 3, 2);
+        // The place a block right and half a block down of the middle shows x 110, z 55.
+        MapProjection closer = projection.zoomed(0.8, 1, 0.5);
+        assertEquals(8, closer.scale(), 1e-9);
+        assertEquals(110, closer.centreX() + 1 * closer.scale(), 1e-9);
+        assertEquals(55, closer.centreZ() + 0.5 * closer.scale(), 1e-9);
+        MapProjection further = projection.zoomed(1.25, -1.5, 1);
+        assertEquals(12.5, further.scale(), 1e-9);
+        assertEquals(85, further.centreX() - 1.5 * further.scale(), 1e-9);
+        assertEquals(60, further.centreZ() + 1 * further.scale(), 1e-9);
+        MapProjection middle = projection.zoomed(1.25, 0, 0);
+        assertEquals(100, middle.centreX(), "zooming at the middle keeps the middle");
+        assertEquals(50, middle.centreZ());
+    }
+
+    @Test
+    void zoomingStopsAtWhatAScreenMayShow() {
+        MapProjection close = new MapProjection(0, 0, MapProjection.MIN_SCALE, 4, 4).zoomed(0.8, 1, 1);
+        assertEquals(new MapProjection(0, 0, MapProjection.MIN_SCALE, 4, 4), close, "nothing moves at the least scale");
+        MapProjection far = new MapProjection(0, 0, 4000, 4, 4).zoomed(1.25, 1, 0);
+        assertEquals(MapProjection.MAX_SCALE, far.scale(), 1e-9);
+        assertEquals(4000, far.centreX() + far.scale(), 1e-9, "the place under the mouse stays at the most scale too");
+    }
+
+    @Test
     void theScaleIsKeptToWhatAScreenMayShow() {
         assertEquals(MapProjection.MIN_SCALE, MapProjection.clampScale(0.001));
         assertEquals(MapProjection.MAX_SCALE, MapProjection.clampScale(1e9));

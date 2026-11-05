@@ -38,6 +38,21 @@ public record MapProjection(double centreX, double centreZ, double scale, int wi
         return new Box(centreX - width * scale / 2, centreZ - height * scale / 2, centreX + width * scale / 2, centreZ + height * scale / 2);
     }
 
+    /** The screen moved {@code right} and {@code down} (south) of its blocks over the world. */
+    public MapProjection moved(double right, double down) {
+        return new MapProjection(centreX + right * scale, centreZ + down * scale, scale, width, height);
+    }
+
+    /**
+     * The screen showing {@code factor} times as many blocks of the world each way, kept to what a screen
+     * may show, with the place {@code right} and {@code down} of its blocks from its middle showing the
+     * same part of the world as before.
+     */
+    public MapProjection zoomed(double factor, double right, double down) {
+        double zoomed = clampScale(scale * factor);
+        return new MapProjection(centreX + right * (scale - zoomed), centreZ + down * (scale - zoomed), zoomed, width, height);
+    }
+
     /** {@code scale} kept to what a screen may show. */
     public static double clampScale(double scale) {
         return Double.isFinite(scale) ? Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale)) : 1;
