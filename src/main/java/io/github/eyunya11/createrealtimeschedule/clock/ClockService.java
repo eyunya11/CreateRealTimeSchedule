@@ -52,13 +52,19 @@ public final class ClockService {
     }
 
     /**
-     * Sets the clock to the time of day the given wall clock reads, in its own time zone.
+     * Sets the clock to the time of day the given wall clock reads, in its own time zone: the nearest
+     * such time, so that a clock that fell behind while the server was stopped over midnight goes on
+     * into the next day ({@link RealClock#offsetToNearestTimeOfDay}).
      *
      * @return the time of day the clock was set to, in ticks
      */
     public static long alignToWallClock(MinecraftServer server, Clock wallClock) {
         long timeOfDay = RealClock.timeOfDay(LocalTime.now(wallClock));
-        setTimeOfDay(server, timeOfDay);
+        long gameTime = server.overworld().getGameTime();
+        RealClockData data = data(server);
+        long current = RealClock.clockTicks(gameTime, data.offset());
+        data.setOffset(RealClock.offsetToNearestTimeOfDay(gameTime, current, timeOfDay));
+        broadcast(server);
         return timeOfDay;
     }
 
