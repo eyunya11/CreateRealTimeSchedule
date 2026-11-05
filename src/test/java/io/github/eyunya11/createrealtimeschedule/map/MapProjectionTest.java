@@ -91,6 +91,45 @@ class MapProjectionTest {
     }
 
     @Test
+    void theStepsAreRoundScalesFromTheLeastToTheMost() {
+        assertEquals(List.of(0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0, 8.0, 12.0, 16.0), MapProjection.STEPS.subList(0, 12));
+        assertEquals(MapProjection.MIN_SCALE, MapProjection.STEPS.getFirst());
+        assertEquals(List.of(2048.0, 3072.0, MapProjection.MAX_SCALE), MapProjection.STEPS.subList(MapProjection.STEPS.size() - 3,
+            MapProjection.STEPS.size()));
+        for (int i = 1; i < MapProjection.STEPS.size(); i++) {
+            double ratio = MapProjection.STEPS.get(i) / MapProjection.STEPS.get(i - 1);
+            assertTrue(ratio > 1.3 && ratio <= 2, "from " + MapProjection.STEPS.get(i - 1) + " to " + MapProjection.STEPS.get(i));
+        }
+    }
+
+    @Test
+    void zoomingAStepGoesToTheNextStepPastTheScale() {
+        assertEquals(24, MapProjection.nextStep(16, true));
+        assertEquals(12, MapProjection.nextStep(16, false));
+        assertEquals(24, MapProjection.nextStep(20, true), "a scale typed between the steps goes to the step past it");
+        assertEquals(16, MapProjection.nextStep(20, false));
+        assertEquals(1, MapProjection.nextStep(1.5, false));
+        assertEquals(0.5, MapProjection.nextStep(0.75, false));
+        assertEquals(MapProjection.MAX_SCALE, MapProjection.nextStep(MapProjection.MAX_SCALE, true), "nothing is past the most");
+        assertEquals(MapProjection.MIN_SCALE, MapProjection.nextStep(MapProjection.MIN_SCALE, false), "nothing is past the least");
+    }
+
+    @Test
+    void zoomingToAScaleKeepsThePlaceUnderTheMouse() {
+        MapProjection zoomed = new MapProjection(100, 50, 10, 3, 2).zoomedTo(12, 1, 0.5);
+        assertEquals(12, zoomed.scale());
+        assertEquals(110, zoomed.centreX() + 1 * zoomed.scale(), 1e-9);
+        assertEquals(55, zoomed.centreZ() + 0.5 * zoomed.scale(), 1e-9);
+        assertEquals(MapProjection.MAX_SCALE, new MapProjection(0, 0, 10, 3, 2).zoomedTo(1e6, 0, 0).scale());
+    }
+
+    @Test
+    void aScreenRoundedHasItsMiddleOnWholeBlocks() {
+        assertEquals(new MapProjection(12, -4, 1.5, 3, 2), new MapProjection(12.4, -3.6, 1.5, 3, 2).rounded());
+        assertEquals(new MapProjection(-29999984, 13, 16, 3, 2), new MapProjection(-29999984.3, 12.5, 16, 3, 2).rounded());
+    }
+
+    @Test
     void theScaleIsKeptToWhatAScreenMayShow() {
         assertEquals(MapProjection.MIN_SCALE, MapProjection.clampScale(0.001));
         assertEquals(MapProjection.MAX_SCALE, MapProjection.clampScale(1e9));
