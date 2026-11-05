@@ -25,7 +25,8 @@ import net.minecraft.client.gui.Font;
 
 /**
  * What a map screen shows, as quads and labels in the screen's blocks, for the blocks of a screen
- * ({@link MapScreenRenderer}) to draw.
+ * ({@link MapScreenRenderer}) and for the map the part of the world it shows is picked on
+ * ({@link MapAreaScreen}) to draw the same.
  *
  * <p>A stretch of track shown is drawn in the colours of its track tags that are on, a dash each in
  * turn for more than one, or light grey with no tag; track not shown, by the lines or by the tags, is
