@@ -11,13 +11,17 @@
  *
  * Version 4 adds the map of the track (TrackMapJson in the mod), with the tracks each leg runs along,
  * and has all that version 3 has; a network of before has no map (map null).
+ *
+ * The ticks of a leg are for a train that leaves under no speed limit. A train still under the limit
+ * of a sign it passed before takes longer until it passes the next sign; that is worked out here from
+ * the leg's curves and signs and the network's train (travel.js), as the mod works it out.
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports)
-    module.exports = factory();
+    module.exports = factory(require('./travel.js'));
   else
-    (root.rt = root.rt || {}).network = factory();
-})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+    (root.rt = root.rt || {}).network = factory(root.rt.travel);
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (travel) {
   'use strict';
 
   /** The format member of a network in JSON. */
@@ -36,6 +40,30 @@
 
   function isObject(value) {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
+  }
+
+  /** Whether value is a curve of a leg: [start, end], blocks from the leg's start. */
+  function isCurve(value) {
+    return Array.isArray(value) && value.length === 2 && value.every(Number.isFinite) && value[1] >= value[0];
+  }
+
+  /** Whether value is a speed-limit sign of a leg: {at, kmh} or {at, release: true}. */
+  function isSign(value) {
+    return isObject(value) && Number.isFinite(value.at)
+      && (value.release === true ? value.kmh === undefined : Number.isInteger(value.kmh) && value.kmh >= 1);
+  }
+
+  /**
+   * The train the network's ticks are for, or null where it has none that can move: {topSpeed,
+   * turnSpeed, acceleration, throttle}.
+   */
+  function trainOf(train) {
+    if (!isObject(train))
+      return null;
+    const { topSpeed, turnSpeed, acceleration, throttle } = train;
+    if (!(topSpeed > 0) || !(turnSpeed > 0) || !(acceleration > 0) || !(throttle > 0) || throttle > 1)
+      return null;
+    return { topSpeed, turnSpeed, acceleration, throttle };
   }
 
   function isStrings(value) {
@@ -219,18 +247,28 @@
         problems.push(at + '.tag: must be a string');
       if (leg.otherTag !== undefined && typeof leg.otherTag !== 'boolean')
         problems.push(at + '.otherTag: must be true or false');
+      const curvesRead = leg.curves === undefined || (Array.isArray(leg.curves) && leg.curves.every(isCurve));
+      if (!curvesRead)
+        problems.push(at + '.curves: must be an array of [start, end], each a number and the end not before the start');
+      const signsRead = leg.signs === undefined || (Array.isArray(leg.signs) && leg.signs.every(isSign));
+      if (!signsRead)
+        problems.push(at + '.signs: must be an array of objects with a number at and either a kmh of 1 or more or release: true');
       const made = {
         from: leg.from,
         to: leg.to,
         distance: leg.distance,
         via: leg.via === undefined ? [] : leg.via,
         ticks: leg.ticks === undefined ? null : leg.ticks,
+        curves: curvesRead && leg.curves !== undefined ? leg.curves.map(curve => [curve[0], curve[1]]) : [],
+        signs: signsRead && leg.signs !== undefined
+          ? leg.signs.map(sign => sign.release === true ? { at: sign.at, release: true } : { at: sign.at, kmh: sign.kmh }) : [],
         tracks: Array.isArray(leg.tracks) ? leg.tracks.slice() : [],
       };
       tagged(made, leg);
       legs.push(made);
     });
     const stations = isStrings(root.stations) ? root.stations.slice() : [];
+    const train = trainOf(root.train);
     if (root.version < 3) {
       if (problems.length > 0)
         return { network: null, problems };
@@ -242,7 +280,7 @@
             to[each.to] = stations.indexOf(each.to);
         return { from, to };
       });
-      return { network: { stations, legs, tagged: false, tags: [], tagColours: {}, tagProblems: [], platforms: stations.map(station => ({ station })), ways, map },
+      return { network: { stations, legs, tagged: false, tags: [], tagColours: {}, tagProblems: [], platforms: stations.map(station => ({ station })), ways, map, train },
         problems: [] };
     }
 
@@ -279,7 +317,7 @@
       network: {
         stations, legs, tagged: true, tags: root.tags.slice(), tagColours: Object.assign({}, root.tagColours),
         tagProblems: root.tagProblems.map(problem => Object.assign({}, problem)),
-        platforms: root.platforms.map(platform => ({ station: platform.station })), ways, map,
+        platforms: root.platforms.map(platform => ({ station: platform.station })), ways, map, train,
       },
       problems: [],
     };
@@ -316,10 +354,39 @@
   /**
    * The seconds a train held to tag (none if left out) takes from one station to another, its ticks
    * rounded up to the next whole second; null if the network has no running time for the way.
+   *
+   * @param limit the limit in km/h of a speed-limit sign the train passed before and is still under
+   *   as it leaves (limitAfter), or null (or left out) for none
    */
-  function seconds(network, from, to, tag) {
+  function seconds(network, from, to, tag, limit) {
     const way = leg(network, from, to, tag);
-    return way === null || way.ticks === null ? null : Math.ceil(way.ticks / TICKS_PER_SECOND);
+    return way === null || way.ticks === null ? null : Math.ceil(ticksUnder(network, way, limit) / TICKS_PER_SECOND);
+  }
+
+  /**
+   * The ticks of way for a train that leaves under limit: the leg's own ticks, and what the limit adds
+   * to them until the train passes the next sign. The leg's distance and signs are written to a
+   * hundredth of a block and its ticks were worked out before that, so what is added is the
+   * difference between two runs worked out here, not a run worked out here in place of the leg's.
+   */
+  function ticksUnder(network, way, limit) {
+    if (limit === null || limit === undefined || network.train === null || network.train === undefined)
+      return way.ticks;
+    const train = network.train;
+    const free = travel.ticks(train, train.throttle, way.distance, way.curves, way.signs, null);
+    const limited = travel.ticks(train, train.throttle, way.distance, way.curves, way.signs, limit);
+    return free === null || limited === null ? way.ticks : way.ticks + Math.max(0, limited - free);
+  }
+
+  /**
+   * The limit in km/h of a speed-limit sign a train held to tag is under when it stops at to, having
+   * left from under limit (null for none): that of the last sign on the way, or the one it left under
+   * if there is none. Null for no limit; a way the network does not know keeps the one it left under.
+   */
+  function limitAfter(network, from, to, tag, limit) {
+    const start = limit === undefined ? null : limit;
+    const way = leg(network, from, to, tag);
+    return way === null ? start : travel.limitAfter(way.signs, start, way.distance);
   }
 
   /** The legs a train held to no tag runs, from which the diagram's axis is drawn. */
@@ -345,5 +412,5 @@
     return -1;
   }
 
-  return { FORMAT, VERSION, read, leg, seconds, untaggedLegs, platforms, way };
+  return { FORMAT, VERSION, read, leg, seconds, limitAfter, untaggedLegs, platforms, way };
 });

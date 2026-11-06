@@ -458,3 +458,41 @@ test('a line\'s map adds a track or takes it away, and a track is hidden from ev
   assert.deepEqual(edit.setTrackHidden(hidden, 'k2', false).mapHidden, []);
   assert.deepEqual(problems.problems(edit.setTrackHidden(removed, 'k2', true)), []);
 });
+
+/**
+ * The track of threeWithTrack with a 40 km/h sign before Y that nothing releases: a train that leaves
+ * Y still under it takes 5 minutes to Z, not 3.
+ */
+const SIGNED = {
+  seconds: (from, to, tag, limit) => (from === 'X' && to === 'Y' ? 240 : from === 'Y' && to === 'Z' ? (limit === null ? 180 : 300) : null),
+  limitAfter: (from, to, tag, limit) => (from === 'X' && to === 'Y' ? 40 : limit),
+};
+
+test('a train runs on from a stop under the limit of a sign it passed before it', () => {
+  const { tt } = threeWithTrack();
+  const way = edit.forTrain(SIGNED, tt.trains[2]);
+  const stop = (next, i) => next.trains[2].stops[i];
+  assert.equal(way(tt.trains[2].stops, 0), 240);
+  assert.equal(way(tt.trains[2].stops, 1), 300);
+  assert.equal(edit.forTrain(way, tt.trains[2]), way, 'what forTrain gave is taken as it is');
+  // Y left at 09:06 cannot come in at Z before 09:11.
+  assert.deepEqual(edit.tooFast(tt, SIGNED), [{ number: '3', from: 'Y', to: 'Z', given: 240, needed: 300 }]);
+  const later = edit.setStopTime(tt, '3', 2, 'arrive', t('09:20'), SIGNED);
+  assert.equal(stop(edit.setStopTime(later, '3', 2, 'arrive', t('09:08'), SIGNED), 2).arrive, t('09:11'));
+  assert.equal(stop(edit.setDwell(later, '3', 1, 900, SIGNED), 1).depart, t('09:15'), 'leaving Y no later than 5 minutes before Z');
+  assert.equal(edit.moveArrival(later, '3', 2, -1200, SIGNED).trains[2].stops[2].arrive, t('09:11'));
+});
+
+test('each train starts under no limit', () => {
+  const { tt } = threeWithTrack();
+  const fromY = { number: '4', line: 'a', stops: [{ station: 'Y', arrive: NONE, depart: t('10:00') }, { station: 'Z', arrive: t('10:03'), depart: NONE }] };
+  assert.equal(edit.forTrain(SIGNED, fromY)(fromY.stops, 0), 180);
+  assert.deepEqual(edit.tooFast(edit.addTrain(tt, fromY), SIGNED).map(way => way.number), ['3']);
+});
+
+test('running times as a function know of no signs', () => {
+  const { tt, running } = threeWithTrack();
+  assert.equal(edit.forTrain(running, tt.trains[2])(tt.trains[2].stops, 1), 180);
+  assert.equal(edit.trackOf(running).limitAfter('X', 'Y', '', 25), 25);
+  assert.equal(edit.forTrain(null, tt.trains[2]), null);
+});

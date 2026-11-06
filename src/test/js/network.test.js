@@ -88,3 +88,55 @@ test('a network with track tags whose ways come to no platform it has is not rea
   assert.deepEqual(read({ ways: [{ from: 0, otherTag: 'yes', to: { A: 1 } }] }), ['ways[0].otherTag: must be true or false']);
   assert.deepEqual(read({ legs: [{ from: 'A', to: 'B', distance: 1, otherTag: 1 }] }), ['legs[0].otherTag: must be true or false']);
 });
+
+/**
+ * A 20 km/h sign 90 blocks into the 100 from A to B, and from B to C the 1000 blocks of the shared
+ * travel cases: a 40 km/h sign at 400 and a release at 700 (1293 ticks, 2340 under 20 km/h).
+ */
+function signed(train) {
+  return network.read(JSON.stringify({
+    format: 'createrealtimeschedule.network', version: 2, train, stations: ['A', 'B', 'C'],
+    legs: [
+      { from: 'A', to: 'B', distance: 100, signs: [{ at: 90, kmh: 20 }], ticks: 200 },
+      { from: 'B', to: 'C', distance: 1000, signs: [{ at: 400, kmh: 40 }, { at: 700, release: true }], ticks: 1293 },
+      { from: 'C', to: 'A', distance: 500, curves: [[100, 150]], ticks: 600 },
+    ],
+  }));
+}
+
+const TRAIN = { topSpeed: 28, turnSpeed: 14, acceleration: 3, throttle: 1 };
+
+test('a train still under the limit of a sign it passed before is slower until the next sign', () => {
+  const read = signed(TRAIN);
+  assert.deepEqual(read.problems, []);
+  assert.equal(network.limitAfter(read.network, 'A', 'B', '', null), 20);
+  assert.equal(network.seconds(read.network, 'B', 'C'), 65, '1293 ticks');
+  assert.equal(network.seconds(read.network, 'B', 'C', '', null), 65);
+  assert.equal(network.seconds(read.network, 'B', 'C', '', 20), 117, '2340 ticks, as the mod has it');
+  assert.equal(network.limitAfter(read.network, 'B', 'C', '', 20), null, 'released before C');
+  assert.equal(network.limitAfter(read.network, 'C', 'A', '', 20), 20, 'no sign: the limit goes on');
+  assert.ok(network.seconds(read.network, 'C', 'A', '', 20) > network.seconds(read.network, 'C', 'A'));
+  assert.equal(network.limitAfter(read.network, 'B', 'A', '', 30), 30, 'a way the network does not have keeps the limit');
+  assert.equal(network.seconds(read.network, 'B', 'A', '', 30), null);
+});
+
+test('a network with no train that moves takes the ticks of its legs as they are', () => {
+  for (const train of [undefined, { topSpeed: 0, turnSpeed: 14, acceleration: 3, throttle: 1 }, { ...TRAIN, throttle: 2 }]) {
+    const read = signed(train);
+    assert.deepEqual(read.problems, []);
+    assert.equal(read.network.train, null);
+    assert.equal(network.seconds(read.network, 'B', 'C', '', 20), 65);
+  }
+});
+
+test('a leg with curves or signs that are not as the mod writes them is not read', () => {
+  const read = legs => network.read(JSON.stringify({ format: 'createrealtimeschedule.network', version: 2, stations: ['A', 'B'], legs })).problems;
+  const curves = '.curves: must be an array of [start, end], each a number and the end not before the start';
+  const signs = '.signs: must be an array of objects with a number at and either a kmh of 1 or more or release: true';
+  assert.deepEqual(read([{ from: 'A', to: 'B', distance: 1, curves: [[2, 1]] }, { from: 'A', to: 'B', distance: 1, curves: [1, 2] }]),
+    ['legs[0]' + curves, 'legs[1]' + curves]);
+  assert.deepEqual(read([{ from: 'A', to: 'B', distance: 1, signs: [{ at: 1, kmh: 0 }] }, { from: 'A', to: 'B', distance: 1, signs: [{ at: 1 }] },
+    { from: 'A', to: 'B', distance: 1, signs: [{ at: 1, kmh: 40, release: true }] }, { from: 'A', to: 'B', distance: 1, signs: {} }]),
+    [0, 1, 2, 3].map(i => 'legs[' + i + ']' + signs));
+  assert.deepEqual(read([{ from: 'A', to: 'B', distance: 1, curves: [], signs: [{ at: -2, kmh: 5 }, { at: 3, release: true }] }]), []);
+});
