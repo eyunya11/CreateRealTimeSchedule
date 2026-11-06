@@ -59,6 +59,16 @@ public final class CreateReach implements Reach {
     }
 
     @Override
+    public OptionalLong ticks(String from, String to, String tag, OptionalInt limitAtStart) {
+        return times.ticks(from, to, tag, limitAtStart);
+    }
+
+    @Override
+    public OptionalInt limitAtEnd(String from, String to, String tag, OptionalInt limitAtStart) {
+        return times.limitAtEnd(from, to, tag, limitAtStart);
+    }
+
+    @Override
     public int platforms(String station, String tag) {
         if (train.graph == null)
             return 0;

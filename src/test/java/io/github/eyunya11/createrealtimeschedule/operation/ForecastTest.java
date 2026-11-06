@@ -4,6 +4,7 @@ import static io.github.eyunya11.createrealtimeschedule.operation.OperationTimet
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.List;
+import java.util.OptionalInt;
 import java.util.OptionalLong;
 import java.util.Set;
 
@@ -58,6 +59,57 @@ class ForecastTest {
             new Call("B", t("08:13"), Stop.NONE, "1", ""));
         assertEquals(600 * SECOND, Forecast.runTicks(calls, 0, byTag));
         assertEquals(500 * SECOND, Forecast.runTicks(List.of(new Call("A", Stop.NONE, t("08:00"), "", "1"), calls.get(1)), 0, byTag));
+    }
+
+    /**
+     * A 40 km/h sign before B, and none after it: from B on, train 1 is still under it. Train 2 leaves C
+     * as a train of its own, which is taken to start under no limit.
+     */
+    private static final RunTimes SIGNED = new RunTimes() {
+        @Override
+        public OptionalLong ticks(String from, String to, String tag) {
+            return ticks(from, to, tag, OptionalInt.empty());
+        }
+
+        @Override
+        public OptionalLong ticks(String from, String to, String tag, OptionalInt limitAtStart) {
+            long seconds = switch (from) {
+                case "A" -> 100;
+                case "B" -> limitAtStart.isPresent() ? 300 : 200;
+                default -> limitAtStart.isPresent() ? 500 : 400;
+            };
+            return OptionalLong.of(seconds * SECOND);
+        }
+
+        @Override
+        public OptionalInt limitAtEnd(String from, String to, String tag, OptionalInt limitAtStart) {
+            return from.equals("A") ? OptionalInt.of(40) : limitAtStart;
+        }
+    };
+
+    private static final List<Call> SIGNED_CALLS = List.of(new Call("A", Stop.NONE, t("08:00"), "", "1"),
+        new Call("B", t("08:05"), t("08:06"), "1", "1"), new Call("C", t("08:15"), t("08:20"), "1", "2"),
+        new Call("D", t("08:30"), Stop.NONE, "2", ""));
+
+    @Test
+    void aSetStaysUnderTheLimitOfASignItPassedBeforeAStop() {
+        assertEquals(OptionalInt.empty(), Forecast.limitAt(SIGNED_CALLS, 0, SIGNED));
+        assertEquals(OptionalInt.of(40), Forecast.limitAt(SIGNED_CALLS, 1, SIGNED));
+        assertEquals(300 * SECOND, Forecast.runTicks(SIGNED_CALLS, 1, SIGNED));
+        // Leaving B ten minutes late, at C at 08:21 (not 08:19:20 as under no limit), and 20 seconds there.
+        assertEquals(at("08:21:20"), Forecast.leaves(SIGNED_CALLS, DAY, 1, at("08:16"), 2, SIGNED, MINIMUM));
+    }
+
+    @Test
+    void eachTrainOfADutyStartsUnderNoLimit() {
+        assertEquals(OptionalInt.empty(), Forecast.limitAt(SIGNED_CALLS, 2, SIGNED));
+        assertEquals(400 * SECOND, Forecast.runTicks(SIGNED_CALLS, 2, SIGNED));
+    }
+
+    @Test
+    void runningTimesThatKnowOfNoSignsCarryNoLimit() {
+        assertEquals(OptionalInt.empty(), Forecast.limitAt(CALLS, 2, TRACK));
+        assertEquals(720 * SECOND, Forecast.runTicks(CALLS, 2, TRACK));
     }
 
     @Test

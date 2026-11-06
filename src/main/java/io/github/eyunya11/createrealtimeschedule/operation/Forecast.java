@@ -1,6 +1,7 @@
 package io.github.eyunya11.createrealtimeschedule.operation;
 
 import java.util.List;
+import java.util.OptionalInt;
 import java.util.OptionalLong;
 
 import io.github.eyunya11.createrealtimeschedule.clock.RealClock;
@@ -41,10 +42,27 @@ public final class Forecast {
     public static long runTicks(List<Call> calls, int from, RunTimes times) {
         Call leaving = calls.get(from);
         Call coming = calls.get(from + 1);
-        OptionalLong track = times.ticks(leaving.station(), coming.station(), leaving.tag());
+        OptionalLong track = times.ticks(leaving.station(), coming.station(), leaving.tag(), limitAt(calls, from, times));
         if (track.isPresent())
             return track.getAsLong();
         return plannedRunTicks(calls, from);
+    }
+
+    /**
+     * The limit of a speed-limit sign of Create Train Next the set is under as it leaves call
+     * {@code call}, in km/h (empty for none). A limit lasts until the train passes the next sign, stops
+     * and all, so it is carried from call to call; each train of the duty is taken to start under none,
+     * since where trains turn back the signs are put up facing both ways.
+     */
+    static OptionalInt limitAt(List<Call> calls, int call, RunTimes times) {
+        String train = calls.get(call).leavingTrain();
+        int first = call;
+        while (first > 0 && calls.get(first - 1).leavingTrain().equals(train))
+            first--;
+        OptionalInt limit = OptionalInt.empty();
+        for (int way = first; way < call; way++)
+            limit = times.limitAtEnd(calls.get(way).station(), calls.get(way + 1).station(), calls.get(way).tag(), limit);
+        return limit;
     }
 
     /** The ticks the timetable gives a set from call {@code from} to the next. */
