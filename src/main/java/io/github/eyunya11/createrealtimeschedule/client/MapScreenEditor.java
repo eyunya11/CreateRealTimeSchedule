@@ -19,6 +19,7 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.Checkbox;
 import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
@@ -40,6 +41,8 @@ public class MapScreenEditor extends Screen {
     /** Where the left column starts, and the kinds to show under it. */
     private static final int TOP = 40;
     private static final int LAYERS_TOP = TOP + 106;
+    /** The colour of a value in a box the server would not take. */
+    private static final int WRONG = 0xFF5555;
 
     private final MapScreenBlockEntity entity;
     private final List<MapScreenOpenPayload.Line> lines;
@@ -51,6 +54,7 @@ public class MapScreenEditor extends Screen {
     private EditBox z;
     private EditBox scale;
     private Button fit;
+    private Button done;
     private final Map<String, Checkbox> lineBoxes = new LinkedHashMap<>();
     private final Map<String, Checkbox> layerBoxes = new LinkedHashMap<>();
     /** The track tags listed, "no tag" first, by their names; those that do not fit keep what they had. */
@@ -143,8 +147,29 @@ public class MapScreenEditor extends Screen {
             y += ROW;
         }
 
-        addRenderableWidget(Button.builder(CommonComponents.GUI_DONE, button -> done()).bounds(width / 2 - 104, height - 30, 100, 20).build());
+        done = addRenderableWidget(Button.builder(CommonComponents.GUI_DONE, button -> done()).bounds(width / 2 - 104, height - 30, 100, 20).build());
         addRenderableWidget(Button.builder(CommonComponents.GUI_CANCEL, button -> onClose()).bounds(width / 2 + 4, height - 30, 100, 20).build());
+        // As each is typed or filled in, so that Done is never left to be pressed on a middle out of the world.
+        x.setResponder(text -> checkCentre());
+        z.setResponder(text -> checkCentre());
+        checkCentre();
+    }
+
+    /**
+     * Marks a middle out of the world in red, and holds Done back with a tooltip saying why, until it is
+     * put right: the server would not take it, and nothing would seem to happen.
+     */
+    private void checkCentre() {
+        boolean xIn = ScreenSettings.isTypedCentre(x.getValue(), settings.centreX());
+        boolean zIn = ScreenSettings.isTypedCentre(z.getValue(), settings.centreZ());
+        x.setTextColor(xIn ? EditBox.DEFAULT_TEXT_COLOR : WRONG);
+        z.setTextColor(zIn ? EditBox.DEFAULT_TEXT_COLOR : WRONG);
+        done.active = xIn && zIn;
+        if (done.active && done.getTooltip() != null)
+            done.setTooltip(null);
+        else if (!done.active && done.getTooltip() == null)
+            done.setTooltip(Tooltip.create(Component.translatableWithFallback(KEY + "centre_out",
+                "The middle's X and Z must be from %1$s to %2$s", show(-ScreenSettings.MAX_CENTRE), show(ScreenSettings.MAX_CENTRE))));
     }
 
     private EditBox number(int left, int top, String value, String name) {
@@ -163,12 +188,7 @@ public class MapScreenEditor extends Screen {
     }
 
     private static double read(EditBox box, double fallback) {
-        try {
-            double value = Double.parseDouble(box.getValue());
-            return Double.isFinite(value) ? value : fallback;
-        } catch (NumberFormatException e) {
-            return fallback;
-        }
+        return ScreenSettings.typed(box.getValue(), fallback);
     }
 
     /**

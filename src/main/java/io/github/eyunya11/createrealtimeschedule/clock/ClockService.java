@@ -2,6 +2,7 @@ package io.github.eyunya11.createrealtimeschedule.clock;
 
 import java.time.Clock;
 import java.time.LocalTime;
+import java.util.function.LongBinaryOperator;
 
 import io.github.eyunya11.createrealtimeschedule.ModSettings;
 import io.github.eyunya11.createrealtimeschedule.network.ClockSyncPayload;
@@ -44,21 +45,27 @@ public final class ClockService {
 
     /** Moves the clock to the given time of day on the day it is on, and tells every client. */
     public static void setTimeOfDay(MinecraftServer server, long timeOfDayTicks) {
+        move(server, (gameTime, current) -> RealClock.offsetToSetTimeOfDay(gameTime, current, timeOfDayTicks));
+    }
+
+    /** Moves the clock to the offset {@code offset} gives for the game time and the clock value now, and tells every client. */
+    private static void move(MinecraftServer server, LongBinaryOperator offset) {
         long gameTime = server.overworld().getGameTime();
         RealClockData data = data(server);
-        long current = RealClock.clockTicks(gameTime, data.offset());
-        data.setOffset(RealClock.offsetToSetTimeOfDay(gameTime, current, timeOfDayTicks));
+        data.setOffset(offset.applyAsLong(gameTime, RealClock.clockTicks(gameTime, data.offset())));
         broadcast(server);
     }
 
     /**
-     * Sets the clock to the time of day the given wall clock reads, in its own time zone.
+     * Sets the clock to the time of day the given wall clock reads, in its own time zone: the nearest
+     * such time, so that a clock that fell behind while the server was stopped over midnight goes on
+     * into the next day ({@link RealClock#offsetToNearestTimeOfDay}).
      *
      * @return the time of day the clock was set to, in ticks
      */
     public static long alignToWallClock(MinecraftServer server, Clock wallClock) {
         long timeOfDay = RealClock.timeOfDay(LocalTime.now(wallClock));
-        setTimeOfDay(server, timeOfDay);
+        move(server, (gameTime, current) -> RealClock.offsetToNearestTimeOfDay(gameTime, current, timeOfDay));
         return timeOfDay;
     }
 

@@ -134,6 +134,21 @@ public class ClockTests {
     }
 
     @GameTest(template = EMPTY)
+    public static void alignGoesOnOverMidnightToTheNearestTime(GameTestHelper helper) {
+        MinecraftServer server = helper.getLevel().getServer();
+        Saved saved = Saved.of(server);
+        // A server stopped at 23:00 and started again at 01:00: the clock goes two hours on, not twenty-two back.
+        ClockService.setTimeOfDay(server, RealClock.ticksOf(23, 0, 0));
+        long before = ClockService.now(server);
+        ClockService.alignToWallClock(server, Clock.fixed(Instant.parse("2026-10-17T01:00:00Z"), ZoneOffset.UTC));
+        long now = ClockService.now(server);
+        saved.restore(server);
+        helper.assertValueEqual(RealClock.day(before) + 1, RealClock.day(now), "day after align");
+        helper.assertValueEqual(RealClock.ticksOf(1, 0, 0), RealClock.timeOfDay(now), "time of day after align");
+        helper.succeed();
+    }
+
+    @GameTest(template = EMPTY)
     public static void aNewClockStartsAtTheConfiguredTime(GameTestHelper helper) {
         MinecraftServer server = helper.getLevel().getServer();
         RealClockData fresh = new RealClockData();

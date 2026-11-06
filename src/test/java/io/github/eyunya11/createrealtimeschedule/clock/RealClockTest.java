@@ -123,6 +123,29 @@ class RealClockTest {
     }
 
     @Test
+    void aligningGoesToTheNearestTimeOverMidnight() {
+        long gameTime = 5_000_000L;
+        long late = 10L * RealClock.TICKS_PER_DAY + RealClock.ticksOf(23, 0, 0);
+        long after = RealClock.clockTicks(gameTime, RealClock.offsetToNearestTimeOfDay(gameTime, late, RealClock.ticksOf(1, 0, 0)));
+        assertEquals(11L * RealClock.TICKS_PER_DAY + RealClock.ticksOf(1, 0, 0), after, "two hours on, into the next day");
+
+        long early = 10L * RealClock.TICKS_PER_DAY + RealClock.ticksOf(0, 30, 0);
+        after = RealClock.clockTicks(gameTime, RealClock.offsetToNearestTimeOfDay(gameTime, early, RealClock.ticksOf(23, 30, 0)));
+        assertEquals(9L * RealClock.TICKS_PER_DAY + RealClock.ticksOf(23, 30, 0), after, "an hour back, into the day before");
+    }
+
+    @Test
+    void aligningOnTheSameDayMovesAsSettingDoes() {
+        long gameTime = 5_000_000L;
+        long now = 3L * RealClock.TICKS_PER_DAY + RealClock.ticksOf(9, 0, 0);
+        long after = RealClock.clockTicks(gameTime, RealClock.offsetToNearestTimeOfDay(gameTime, now, RealClock.ticksOf(7, 0, 0)));
+        assertEquals(3L * RealClock.TICKS_PER_DAY + RealClock.ticksOf(7, 0, 0), after);
+        // Twelve hours either way is the same distance: it goes forwards.
+        after = RealClock.clockTicks(gameTime, RealClock.offsetToNearestTimeOfDay(gameTime, now, RealClock.ticksOf(21, 0, 0)));
+        assertEquals(3L * RealClock.TICKS_PER_DAY + RealClock.ticksOf(21, 0, 0), after);
+    }
+
+    @Test
     void skyIsWhereTheClockSaysItIs() {
         // Vanilla day time 0 is sunrise, 6,000 noon, 12,000 sunset and 18,000 midnight.
         assertEquals(18_000L, RealClock.skyDayTime(RealClock.ticksOf(0, 0, 0)));
