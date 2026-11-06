@@ -212,10 +212,6 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
             this(number, line, type, stops, false);
         }
 
-        /**
-         * The type the train has at stop {@code k}, standing there and on its way from there to the next:
-         * that of the last stop up to {@code k} that changes it, or else the train's own.
-         */
         /** Whether the timetable says how long the train is. */
         public boolean hasLength() {
             return length != Stop.NONE;
@@ -226,6 +222,10 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
             return hasLength() ? length : otherwise;
         }
 
+        /**
+         * The type the train has at stop {@code k}, standing there and on its way from there to the next:
+         * that of the last stop up to {@code k} that changes it, or else the train's own.
+         */
         public String typeAt(int k) {
             for (int s = Math.min(k, stops.size() - 1); s >= 0; s--)
                 if (stops.get(s).changesType())
