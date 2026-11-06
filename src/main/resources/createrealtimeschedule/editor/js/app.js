@@ -395,7 +395,7 @@
     // Not what the mod refuses a timetable for, but a train that cannot keep its times on this track,
     // or run at all on the track tag it is held to, and what is wrong with the track's tags.
     const network = state.network;
-    const fast = network === null ? [] : rt.edit.tooFast(state.timetable, track());
+    const fast = network === null ? [] : rt.edit.tooFast(state.timetable, runningTimes());
     const track = network === null ? null
       : { platforms: station => rt.network.platforms(network, station), way: (platform, station, tag) => rt.network.way(network, platform, station, tag) };
     const noWays = track === null ? [] : rt.edit.noWay(state.timetable, track);
@@ -489,7 +489,7 @@
    * (edit.trackOf): a train still under the limit of a sign it passed before is slower until it
    * passes the next. Null without a network.
    */
-  function track() {
+  function runningTimes() {
     return state.network === null ? null : {
       seconds: (from, to, tag, limit) => rt.network.seconds(state.network, from, to, tag || '', limit),
       limitAfter: (from, to, tag, limit) => rt.network.limitAfter(state.network, from, to, tag || '', limit),
@@ -757,7 +757,7 @@
     // and both for a stop with one time.
     const ways = dragging.part === 'arrive' ? [k - 1] : dragging.part === 'stretch' || dragging.part === 'run' ? [k] : [k - 1, k];
     const guides = [];
-    const way = rt.edit.forTrain(track(), train);
+    const way = rt.edit.forTrain(runningTimes(), train);
     for (const i of ways) {
       const from = train.stops[i];
       const to = train.stops[i + 1];
@@ -815,7 +815,7 @@
    * speed-limit sign it passed since its first stop; null where the track does not say.
    */
   function drawnRunning(station) {
-    const way = rt.edit.forTrain(track(), {});
+    const way = rt.edit.forTrain(runningTimes(), {});
     const stops = drawing.stops.concat([{ station }]);
     return way === null ? null : way(stops, stops.length - 2);
   }
@@ -935,7 +935,7 @@
         dragging.px = event.clientX - box.left;
         dragging.py = event.clientY - box.top;
         const raw = (event.clientX - dragging.x0) / view.width * view.span;
-        const moved = rt.edit.drag(dragging.base, dragging.number, dragging.index, dragging.part, raw, track(), stepOf(event.shiftKey));
+        const moved = rt.edit.drag(dragging.base, dragging.number, dragging.index, dragging.part, raw, runningTimes(), stepOf(event.shiftKey));
         if (moved.delta !== dragging.delta) {
           dragging.delta = moved.delta;
           shown = moved.delta === 0 ? null : moved.timetable;
@@ -1556,7 +1556,7 @@
       const dwell = stop.depart - stop.arrive;
       const input = secondsInput(dwell, '', Number.MAX_SAFE_INTEGER, t('badDwell'),
         seconds => (seconds === NONE ? render()
-          : changeStop(rt.edit.setDwell(state.timetable, number, i, seconds, track()), number, i, 'depart', stop.arrive + seconds)));
+          : changeStop(rt.edit.setDwell(state.timetable, number, i, seconds, runningTimes()), number, i, 'depart', stop.arrive + seconds)));
       if (minimum !== NONE && dwell < minimum) {
         input.classList.add('warn');
         input.title = t('dwellShorter', minimum);
@@ -1682,9 +1682,9 @@
       return [h('tr', null,
         h('td', null, select),
         h('td', null, timeInput(stop.arrive, i === 0 && stop.arrive === rt.edit.NONE,
-          seconds => changeStop(rt.edit.setStopTime(state.timetable, number, i, 'arrive', seconds, track()), number, i, 'arrive', seconds))),
+          seconds => changeStop(rt.edit.setStopTime(state.timetable, number, i, 'arrive', seconds, runningTimes()), number, i, 'arrive', seconds))),
         h('td', null, timeInput(stop.depart, i === last && stop.depart === rt.edit.NONE,
-          seconds => changeStop(rt.edit.setStopTime(state.timetable, number, i, 'depart', seconds, track()), number, i, 'depart', seconds))),
+          seconds => changeStop(rt.edit.setStopTime(state.timetable, number, i, 'depart', seconds, runningTimes()), number, i, 'depart', seconds))),
         h('td', null, h('button', {
           type: 'button', title: t('removeStop'), disabled: train.stops.length <= 2,
           onclick: () => change(rt.edit.removeStop(state.timetable, number, i)),
