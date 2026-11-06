@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 import io.github.eyunya11.createrealtimeschedule.map.MapProjection;
 import io.github.eyunya11.createrealtimeschedule.map.ScreenLayout.Place;
@@ -43,6 +44,8 @@ public class MapScreenEditor extends Screen {
     private static final int LAYERS_TOP = TOP + 106;
     /** The colour of a value in a box the server would not take. */
     private static final int WRONG = 0xFF5555;
+    /** The noughts at the end of a number written to two places, with its point if nothing is left after it. */
+    private static final Pattern NOUGHTS_AT_END = Pattern.compile("\\.?0+$");
 
     private final MapScreenBlockEntity entity;
     private final List<MapScreenOpenPayload.Line> lines;
@@ -183,7 +186,7 @@ public class MapScreenEditor extends Screen {
     static String show(double value) {
         if (value == Math.rint(value))
             return Long.toString((long) value);
-        String shown = String.format(Locale.ROOT, "%.2f", value).replaceAll("\\.?0+$", "");
+        String shown = NOUGHTS_AT_END.matcher(String.format(Locale.ROOT, "%.2f", value)).replaceAll("");
         return shown.equals("-0") ? "0" : shown;
     }
 

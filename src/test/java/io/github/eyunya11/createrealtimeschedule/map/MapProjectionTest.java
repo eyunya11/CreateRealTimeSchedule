@@ -105,7 +105,6 @@ class MapProjectionTest {
     @Test
     void threeNotchesOfTheWheelZoomAQuarterAsOnTheDiagram() {
         assertEquals(1.25, Math.pow(MapProjection.WHEEL, 3), 1e-12);
-        assertEquals(io.github.eyunya11.createrealtimeschedule.diagram.DiagramView.WHEEL, MapProjection.WHEEL);
     }
 
     @Test

@@ -7,6 +7,8 @@ import java.util.Set;
 
 import org.jetbrains.annotations.Nullable;
 
+import io.github.eyunya11.createrealtimeschedule.diagram.DiagramView;
+
 /**
  * What part of the world a map screen shows: a screen of {@code width} by {@code height} blocks, whose
  * middle is the world's ({@code centreX}, {@code centreZ}), where a block of the screen shows
@@ -28,9 +30,10 @@ public record MapProjection(double centreX, double centreZ, double scale, int wi
 
     /**
      * How much a notch of the wheel zooms a screen's map where it is not kept to {@link #STEPS}: three
-     * notches as much as one did at first (a quarter), as on the diagram and the editor's map.
+     * notches as much as one did at first (a quarter): the diagram's, so that the two zoom alike, as the
+     * editor's map does.
      */
-    public static final double WHEEL = Math.cbrt(1.25);
+    public static final double WHEEL = DiagramView.WHEEL;
 
     private static List<Double> steps() {
         List<Double> steps = new ArrayList<>(List.of(MIN_SCALE, 0.5, 0.75));
