@@ -1,6 +1,7 @@
 package io.github.eyunya11.createrealtimeschedule.map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
@@ -33,6 +34,22 @@ class AreaPickTest {
         assertEquals(12, pick.shown().scale());
         pick.wheel(-1, 0, 0, true);
         assertEquals(12 * MapProjection.WHEEL, pick.shown().scale(), 1e-9);
+    }
+
+    @Test
+    void theMiddleStaysWhereTheServerTakesIt() {
+        AreaPick pick = new AreaPick(new MapProjection(ScreenSettings.MAX_CENTRE - 10, 0, 4096, 3, 2));
+        pick.press();
+        pick.drag(100, -10000, false);
+        assertEquals(ScreenSettings.MAX_CENTRE, pick.shown().centreX());
+        assertEquals(-ScreenSettings.MAX_CENTRE, pick.shown().centreZ());
+        pick.drag(-0.001, 0, true);
+        assertEquals(ScreenSettings.MAX_CENTRE - 4.096, pick.shown().centreX(), 1e-6, "dragged back, it moves at once");
+        // Zoomed out about a place left of the middle, the middle would go east past the edge.
+        AreaPick edge = new AreaPick(new MapProjection(ScreenSettings.MAX_CENTRE - 1, 0, 16, 3, 2));
+        edge.wheel(-1, -1, 0, true);
+        assertEquals(ScreenSettings.MAX_CENTRE, edge.shown().centreX());
+        assertTrue(edge.shown().scale() > 16);
     }
 
     @Test

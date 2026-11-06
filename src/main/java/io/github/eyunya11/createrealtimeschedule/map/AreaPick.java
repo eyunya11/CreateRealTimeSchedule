@@ -4,7 +4,8 @@ package io.github.eyunya11.createrealtimeschedule.map;
  * The part of the world a map screen is to show, as it is picked on a map: dragged, its middle snapped
  * to whole blocks, and zoomed with the wheel about a place on it, its scale snapped to
  * {@link MapProjection#STEPS}, a step for every {@link WheelSteps#NOTCHES} notches; or, held fine (with
- * Shift), neither snapped, the wheel zooming {@link MapProjection#WHEEL} a notch.
+ * Shift), neither snapped, the wheel zooming {@link MapProjection#WHEEL} a notch. Its middle is kept
+ * to what the server takes ({@link ScreenSettings#MAX_CENTRE}), so that it is not dragged off the world.
  */
 public final class AreaPick {
 
@@ -33,7 +34,7 @@ public final class AreaPick {
 
     /** The screen moved {@code right} and {@code down} of its blocks by a drag: its middle on whole blocks, unless {@code fine}. */
     public void drag(double right, double down, boolean fine) {
-        dragged = dragged.moved(right, down);
+        dragged = within(dragged.moved(right, down));
         shown = fine ? dragged : dragged.rounded();
     }
 
@@ -45,7 +46,7 @@ public final class AreaPick {
      */
     public void wheel(double notches, double right, double down, boolean fine) {
         if (fine) {
-            shown = shown.zoomed(Math.pow(MapProjection.WHEEL, -notches), right, down);
+            shown = within(shown.zoomed(Math.pow(MapProjection.WHEEL, -notches), right, down));
             wheel = new WheelSteps();
         } else {
             int steps = wheel.turn(notches);
@@ -54,8 +55,16 @@ public final class AreaPick {
             double scale = shown.scale();
             for (int step = 0; step < Math.abs(steps); step++)
                 scale = MapProjection.nextStep(scale, steps < 0);
-            shown = shown.zoomedTo(scale, right, down).rounded();
+            shown = within(shown.zoomedTo(scale, right, down).rounded());
         }
         dragged = shown;
+    }
+
+    /** {@code projection} with its middle kept to what the server takes. */
+    private static MapProjection within(MapProjection projection) {
+        double most = ScreenSettings.MAX_CENTRE;
+        double x = Math.max(-most, Math.min(most, projection.centreX()));
+        double z = Math.max(-most, Math.min(most, projection.centreZ()));
+        return new MapProjection(x, z, projection.scale(), projection.width(), projection.height());
     }
 }
