@@ -29,18 +29,11 @@ import java.util.OptionalInt;
  * 300 blocks ({@code SpeedSignRunTests}, which run only with a jar of Create Train Next at hand).
  *
  * <p>Signals, other trains and a train that waits for chunks are not in it; they are the reasons a
- * real trip is longer than this.
+ * real trip is longer than this. The control law itself is {@link Drive}'s, which a simulation of the
+ * trains of a timetable also runs, a tick at a time and with the signals.
  */
 public final class TravelTime {
 
-    /** Create aims this much past the stop so that the train's travelling point crosses it. */
-    private static final double OVERSHOOT = 0.25;
-    /** Within this many blocks of the stop, Create limits the speed in proportion to what is left. */
-    private static final double APPROACH_BLOCKS = 10;
-    /** The step below which Create considers the train to have arrived, in blocks. */
-    private static final double ARRIVAL_SNAP = 1.0 / 32;
-    /** Create's {@code Mth.equal}. */
-    private static final double SPEED_EPSILON = 1.0e-5;
     /** A route that takes longer than a day of game time is taken to be one the train never finishes. */
     private static final int GIVE_UP_TICKS = 20 * 60 * 60 * 24;
 
@@ -51,15 +44,6 @@ public final class TravelTime {
      * this: the lowest, {@link SpeedSign#MIN_KMH} km/h, is 0.28 blocks per second.
      */
     public static final double MIN_CAP = 0.05;
-
-    /** Create Train Next takes a block a second to be 3.6 km/h, so a block a tick is 72 km/h. */
-    private static final double KMH_PER_BLOCK_PER_TICK = 3.6 * 20;
-    /** The share of the train's braking that Create Train Next counts on to be down to a limit in time. */
-    private static final double SIGN_BRAKING_SHARE = 0.8;
-    /** How far past its braking distance Create Train Next looks for signs, in blocks. */
-    private static final double SIGN_REACH_MARGIN = 30;
-    /** How far before a sign Create Train Next has the train down to its limit, in blocks. */
-    private static final double SIGN_ARRIVE_EARLY = 1;
 
     private TravelTime() {}
 
@@ -99,69 +83,10 @@ public final class TravelTime {
         if (distance == 0)
             return OptionalInt.of(0);
 
-        double topPerTick = spec.topSpeed() / 20;
-        double acceleration = spec.acceleration() / 400;
-        SignLimits limits = new SignLimits(signs, topPerTick, acceleration);
-
-        double position = 0;
-        double speed = 0;
-        for (int ticks = 1; ticks <= GIVE_UP_TICKS; ticks++) {
-            double remaining = distance + OVERSHOOT - position;
-            double brakingDistance = speed * speed / (2 * acceleration);
-
-            // Close enough to step onto the stop.
-            if (remaining - Math.abs(speed) < ARRIVAL_SNAP)
+        Drive drive = new Drive(spec, throttle, zones, signs);
+        for (int ticks = 1; ticks <= GIVE_UP_TICKS; ticks++)
+            if (drive.step(distance, Drive.SignalsAhead.NONE) == Drive.Step.REACHED)
                 return OptionalInt.of(ticks);
-
-            // What Train.maxSpeed answers: the top speed, held by Create Train Next's signs.
-            double top = limits.cap(topPerTick, position, speed);
-
-            // The last ten blocks: no faster than the share of the top speed that is left to go.
-            if (remaining < APPROACH_BLOCKS) {
-                double maxApproachSpeed = top * (remaining / APPROACH_BLOCKS);
-                if (speed > maxApproachSpeed) {
-                    speed += (maxApproachSpeed - Math.abs(speed)) * 0.5;
-                    // Create stops the train at the stop's marker, in the tick whose move reaches it.
-                    if (position + speed >= distance)
-                        return OptionalInt.of(ticks);
-                    position += speed;
-                    limits.pass(position);
-                    continue;
-                }
-            }
-
-            double cruise = top * throttle;
-            double target = remaining > brakingDistance ? cruise : 0;
-
-            // A cap under the head holds the speed to it; one ahead starts the braking early enough
-            // to be down to it on arrival.
-            double inside = Double.POSITIVE_INFINITY;
-            for (SpeedZone zone : zones) {
-                double cap = Math.min(zone.cap() / 20, cruise);
-                if (zone.contains(position))
-                    inside = Math.min(inside, cap);
-                double ahead = zone.start() - position;
-                if (ahead > 0 && cap < speed) {
-                    double slowingDistance = (speed * speed - cap * cap) / (2 * acceleration);
-                    if (ahead <= slowingDistance)
-                        target = Math.min(target, cap);
-                }
-            }
-            target = Math.min(target, inside);
-
-            if (Math.abs(target - speed) >= SPEED_EPSILON) {
-                if (speed < target)
-                    speed = Math.min(speed + acceleration, target);
-                else
-                    speed = Math.max(speed - acceleration, target);
-            }
-            // The train is stopped at the marker the moment a move reaches it: it aims a quarter of a
-            // block past, and arrives, still moving slowly, when it gets there.
-            if (position + speed >= distance)
-                return OptionalInt.of(ticks);
-            position += speed;
-            limits.pass(position);
-        }
         return OptionalInt.empty();
     }
 
@@ -198,62 +123,6 @@ public final class TravelTime {
     }
 
     private static double ticksAt(OptionalInt limit, double blocks) {
-        return limit.isPresent() ? blocks / (limit.getAsInt() / KMH_PER_BLOCK_PER_TICK) : 0;
-    }
-
-    /**
-     * The limits of Create Train Next's signs as the trip goes on, kept as its {@code TrainSpeedLimits}
-     * keeps them for a train: the limit of the last sign the front passed, and the signs still ahead.
-     * Speeds are in blocks a tick.
-     */
-    private static final class SignLimits {
-        private final List<SpeedSign> signs;
-        private final double braking;
-        private final double reach;
-        /** The first sign the front has not passed yet. */
-        private int next;
-        /** The limit of the last sign passed, or infinity for none. */
-        private double limit;
-
-        SignLimits(SpeedSigns signs, double topPerTick, double acceleration) {
-            this.signs = signs.signs();
-            this.braking = SIGN_BRAKING_SHARE * acceleration;
-            this.reach = topPerTick * topPerTick / (2 * braking) + SIGN_REACH_MARGIN;
-            this.limit = signs.limitAtStart().isPresent() ? signs.limitAtStart().getAsInt() / KMH_PER_BLOCK_PER_TICK
-                : Double.POSITIVE_INFINITY;
-            pass(0);
-        }
-
-        /**
-         * {@code TrainSpeedLimits.cap}: the top speed held to the limit the train is under and, while it
-         * moves, to the fastest it may go to slow down to each limit ahead by a block before its sign.
-         */
-        double cap(double topPerTick, double position, double speed) {
-            double capped = Math.min(topPerTick, limit);
-            if (speed == 0)
-                return capped;
-            for (int i = next; i < signs.size(); i++) {
-                SpeedSign sign = signs.get(i);
-                double ahead = sign.position() - position;
-                if (ahead > reach)
-                    break;
-                // A release sign lifts the limit: there is nothing to slow down for.
-                if (sign.release())
-                    continue;
-                double kmh = sign.kmh() / KMH_PER_BLOCK_PER_TICK;
-                double room = Math.max(0, ahead - SIGN_ARRIVE_EARLY);
-                capped = Math.min(capped, Math.sqrt(kmh * kmh + 2 * braking * room));
-            }
-            return capped;
-        }
-
-        /** The front has moved to {@code position}: the signs it passed on the way set the limit, the last one last. */
-        void pass(double position) {
-            while (next < signs.size() && signs.get(next).position() <= position) {
-                SpeedSign sign = signs.get(next++);
-                if (sign.position() > 0)
-                    limit = sign.release() ? Double.POSITIVE_INFINITY : sign.kmh() / KMH_PER_BLOCK_PER_TICK;
-            }
-        }
+        return limit.isPresent() ? blocks / (limit.getAsInt() / Drive.KMH_PER_BLOCK_PER_TICK) : 0;
     }
 }
