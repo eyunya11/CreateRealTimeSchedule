@@ -67,10 +67,10 @@ test('in a network of before the tags, every tag is as none, and each station is
 
 test('something that is not a network of this mod, or a newer one, is not read', () => {
   assert.equal(network.read('{"format": "createrealtimeschedule.timetable", "version": 2}').network, null);
-  const newer = network.read('{"format": "createrealtimeschedule.network", "version": 5}');
+  const newer = network.read('{"format": "createrealtimeschedule.network", "version": 6}');
   assert.equal(newer.network, null);
   assert.deepEqual(newer.problems,
-    ['version: is 5, but this editor reads networks up to version 4; the editor needs updating to read this one']);
+    ['version: is 6, but this editor reads networks up to version 5; the editor needs updating to read this one']);
   const bad = network.read(JSON.stringify({ format: 'createrealtimeschedule.network', version: 1, stations: ['A'], legs: [{ from: 'A' }] }));
   assert.equal(bad.network, null);
   assert.deepEqual(bad.problems, ['legs[0]: from and to must be strings', 'legs[0].distance: must be a number, 0 or more']);
@@ -139,4 +139,47 @@ test('a leg with curves or signs that are not as the mod writes them is not read
     { from: 'A', to: 'B', distance: 1, signs: [{ at: 1, kmh: 40, release: true }] }, { from: 'A', to: 'B', distance: 1, signs: {} }]),
     [0, 1, 2, 3].map(i => 'legs[' + i + ']' + signs));
   assert.deepEqual(read([{ from: 'A', to: 'B', distance: 1, curves: [], signs: [{ at: -2, kmh: 5 }, { at: 3, release: true }] }]), []);
+});
+
+const SIGNALS = fs.readFileSync(path.join(RESOURCES, 'railway', 'example-signals.json'), 'utf8');
+
+test('the signal blocks of a network of version 5 are read', () => {
+  const result = network.read(SIGNALS);
+  assert.deepEqual(result.problems, []);
+  const blocks = result.network.blocks;
+  assert.equal(blocks.count, 3);
+  assert.deepEqual(blocks.crossings, []);
+  assert.deepEqual(blocks.signals, [{ block: 1, next: [1], lights: [5], cross: false }, { block: 2, next: [], lights: [], cross: true }]);
+  assert.deepEqual(blocks.speeds, { restricted: 25, approach: 45, reduced: 75, sixProceed: 130 });
+  const alphaGamma = network.leg(result.network, 'Alpha', 'Gamma');
+  assert.equal(alphaGamma.block, 0);
+  assert.deepEqual(alphaGamma.signals, [{ at: 15, signal: 0 }, { at: 50, signal: 1 }]);
+  assert.equal(result.network.map, null, 'version 5 may come without the map');
+});
+
+test('a network of before version 5 has no blocks, and legs with none', () => {
+  const read = network.read(EXAMPLE).network;
+  assert.equal(read.blocks, null);
+  assert.equal(network.leg(read, 'Alpha', 'Beta').block, -1);
+  assert.deepEqual(network.leg(read, 'Alpha', 'Beta').signals, []);
+});
+
+test('signal blocks that are not as the mod writes them are not read', () => {
+  const root = JSON.parse(SIGNALS);
+  const read = changed => network.read(JSON.stringify(Object.assign({}, root, changed))).problems;
+  assert.deepEqual(read({ blocks: -1 }), ['blocks: must be a whole number, 0 or more']);
+  assert.deepEqual(read({ crossings: [[0, 3]] }), ['crossings: must be an array of [block, block], each a number of one of the blocks']);
+  assert.deepEqual(read({ signals: [{ block: 3 }] }), ['signals[0]: must be an object with the block it leads into, a number of one of the blocks']);
+  assert.deepEqual(read({ signals: [{ block: 0, next: [2], lights: [7], cross: 1 }] }), [
+    'signals[0].next: must be an array of the numbers of signals',
+    'signals[0].lights: must be an array of the numbers of aspects, 2 to 6',
+    'signals[0].cross: must be true or false']);
+  assert.deepEqual(read({ lightSpeeds: { restricted: 25 } }),
+    ['lightSpeeds: must have restricted, approach, reduced and sixProceed, each a whole number of km/h, 1 or more']);
+  const legs = root.legs.slice(0, 1).map(leg => Object.assign({}, leg, { block: 3, signals: [{ at: 1, signal: 2 }] }));
+  assert.deepEqual(read({ legs }), ['legs[0].block: must be the number of one of the blocks',
+    'legs[0].signals: must be an array of objects with a number at and the number of one of the signals']);
+  const noSpeeds = Object.assign({}, root);
+  delete noSpeeds.lightSpeeds;
+  assert.equal(network.read(JSON.stringify(noSpeeds)).network.blocks.speeds, null, 'no Create Train Next, no speeds');
 });

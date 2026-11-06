@@ -12,6 +12,13 @@
  * Version 4 adds the map of the track (TrackMapJson in the mod), with the tracks each leg runs along,
  * and has all that version 3 has; a network of before has no map (map null).
  *
+ * Version 5 adds the signal blocks (SignalBlocks in the mod), for a network with signals: how many
+ * blocks there are, the pairs of blocks whose tracks cross, each signal side with the block it leads
+ * into, the signals that end that block, its light signals and whether it is a cross signal, the speeds
+ * of Create Train Next's light signals, and for each leg the block it starts in and the signals it
+ * passes. It has all that version 3 has, and the map if it has one (map null if not). A network of
+ * before has no blocks (blocks null, and legs with block -1 and no signals).
+ *
  * The ticks of a leg are for a train that leaves under no speed limit. A train still under the limit
  * of a sign it passed before takes longer until it passes the next sign; that is worked out here from
  * the leg's curves and signs and the network's train (travel.js), as the mod works it out.
@@ -29,9 +36,9 @@
 
   /**
    * The newest version of the JSON the editor reads. Version 2 added the signs of a leg, version 3 the
-   * track tags, and version 4 the map.
+   * track tags, version 4 the map, and version 5 the signal blocks.
    */
-  const VERSION = 4;
+  const VERSION = 5;
 
   /** The colours a lamp of a signal may have, as the map writes them. */
   const LAMPS = ['R', 'Y', 'G'];
@@ -51,6 +58,63 @@
   function isSign(value) {
     return isObject(value) && Number.isFinite(value.at)
       && (value.release === true ? value.kmh === undefined : Number.isInteger(value.kmh) && value.kmh >= 1);
+  }
+
+  /** Whether value is a whole number from 0 to below count. */
+  function isBelow(value, count) {
+    return Number.isInteger(value) && value >= 0 && value < count;
+  }
+
+  /**
+   * The signal blocks of a network of version 5, or null after saying in problems what is wrong with
+   * them: {count, crossings, signals, speeds}, a signal {block, next, lights, cross}, the speeds
+   * {restricted, approach, reduced, sixProceed} in km/h or null where Create Train Next is not there.
+   */
+  function readBlocks(root, problems) {
+    const before = problems.length;
+    const count = root.blocks;
+    if (!Number.isInteger(count) || count < 0) {
+      problems.push('blocks: must be a whole number, 0 or more');
+      return null;
+    }
+    if (!Array.isArray(root.crossings) || !root.crossings.every(pair => Array.isArray(pair) && pair.length === 2
+        && pair.every(block => isBelow(block, count))))
+      problems.push('crossings: must be an array of [block, block], each a number of one of the blocks');
+    const signals = [];
+    if (!Array.isArray(root.signals))
+      problems.push('signals: must be an array');
+    const signalCount = Array.isArray(root.signals) ? root.signals.length : 0;
+    (Array.isArray(root.signals) ? root.signals : []).forEach((signal, i) => {
+      const at = 'signals[' + i + ']';
+      if (!isObject(signal) || !isBelow(signal.block, count)) {
+        problems.push(at + ': must be an object with the block it leads into, a number of one of the blocks');
+        return;
+      }
+      if (signal.next !== undefined && !(Array.isArray(signal.next) && signal.next.every(next => isBelow(next, signalCount))))
+        problems.push(at + '.next: must be an array of the numbers of signals');
+      if (signal.lights !== undefined && !(Array.isArray(signal.lights)
+          && signal.lights.every(aspects => Number.isInteger(aspects) && aspects >= 2 && aspects <= 6)))
+        problems.push(at + '.lights: must be an array of the numbers of aspects, 2 to 6');
+      if (signal.cross !== undefined && typeof signal.cross !== 'boolean')
+        problems.push(at + '.cross: must be true or false');
+      signals.push({
+        block: signal.block,
+        next: Array.isArray(signal.next) ? signal.next.slice() : [],
+        lights: Array.isArray(signal.lights) ? signal.lights.slice() : [],
+        cross: signal.cross === true,
+      });
+    });
+    let speeds = null;
+    if (root.lightSpeeds !== undefined) {
+      const kmh = ['restricted', 'approach', 'reduced', 'sixProceed'];
+      if (!isObject(root.lightSpeeds) || !kmh.every(key => Number.isInteger(root.lightSpeeds[key]) && root.lightSpeeds[key] >= 1))
+        problems.push('lightSpeeds: must have restricted, approach, reduced and sixProceed, each a whole number of km/h, 1 or more');
+      else
+        speeds = Object.fromEntries(kmh.map(key => [key, root.lightSpeeds[key]]));
+    }
+    if (problems.length > before)
+      return null;
+    return { count, crossings: root.crossings.map(pair => pair.slice()), signals, speeds };
   }
 
   /**
@@ -219,7 +283,11 @@
       };
 
     const problems = [];
-    const map = root.version >= 4 ? readMap(root.map, problems) : null;
+    // From version 5 on, a network may be written without its map, as one too large for the clipboard is.
+    const map = root.version >= 4 && !(root.version >= 5 && root.map === undefined) ? readMap(root.map, problems) : null;
+    const blocks = root.version >= 5 ? readBlocks(root, problems) : null;
+    const blockCount = blocks === null ? Infinity : blocks.count;
+    const signalCount = blocks === null ? Infinity : blocks.signals.length;
     // A map that could not be read has said so; the legs are not held to it as well.
     const trackCount = map === null ? Infinity : map.tracks.length;
     if (!isStrings(root.stations))
@@ -253,10 +321,18 @@
       const signsRead = leg.signs === undefined || (Array.isArray(leg.signs) && leg.signs.every(isSign));
       if (!signsRead)
         problems.push(at + '.signs: must be an array of objects with a number at and either a kmh of 1 or more or release: true');
+      if (leg.block !== undefined && !isBelow(leg.block, blockCount))
+        problems.push(at + '.block: must be the number of one of the blocks');
+      const signalsRead = leg.signals === undefined || (Array.isArray(leg.signals) && leg.signals.every(signal => isObject(signal)
+        && Number.isFinite(signal.at) && isBelow(signal.signal, signalCount)));
+      if (!signalsRead)
+        problems.push(at + '.signals: must be an array of objects with a number at and the number of one of the signals');
       const made = {
         from: leg.from,
         to: leg.to,
         distance: leg.distance,
+        block: Number.isInteger(leg.block) ? leg.block : -1,
+        signals: signalsRead && leg.signals !== undefined ? leg.signals.map(signal => ({ at: signal.at, signal: signal.signal })) : [],
         via: leg.via === undefined ? [] : leg.via,
         ticks: leg.ticks === undefined ? null : leg.ticks,
         curves: curvesRead && leg.curves !== undefined ? leg.curves.map(curve => [curve[0], curve[1]]) : [],
@@ -280,7 +356,7 @@
             to[each.to] = stations.indexOf(each.to);
         return { from, to };
       });
-      return { network: { stations, legs, tagged: false, tags: [], tagColours: {}, tagProblems: [], platforms: stations.map(station => ({ station })), ways, map, train },
+      return { network: { stations, legs, tagged: false, tags: [], tagColours: {}, tagProblems: [], platforms: stations.map(station => ({ station })), ways, map, train, blocks },
         problems: [] };
     }
 
@@ -317,7 +393,7 @@
       network: {
         stations, legs, tagged: true, tags: root.tags.slice(), tagColours: Object.assign({}, root.tagColours),
         tagProblems: root.tagProblems.map(problem => Object.assign({}, problem)),
-        platforms: root.platforms.map(platform => ({ station: platform.station })), ways, map, train,
+        platforms: root.platforms.map(platform => ({ station: platform.station })), ways, map, train, blocks,
       },
       problems: [],
     };
