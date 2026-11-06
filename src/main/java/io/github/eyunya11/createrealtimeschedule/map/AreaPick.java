@@ -27,9 +27,31 @@ public final class AreaPick {
         return shown;
     }
 
-    /** A drag begins, from where the screen is shown. */
+    /**
+     * How many of the window's pixels a block of a screen {@code width} by {@code height} blocks takes on
+     * the map, as many as fit the screen in {@code areaWidth} by {@code areaHeight} but no more: the screen
+     * then takes a whole number of pixels each way, so that the frame drawn round it, on whole pixels, is
+     * where what is drawn in it ends. A whole number of {@code 1 / gcd(width, height)} pixels does that,
+     * so a square screen fills its room to the pixel.
+     */
+    public static double block(int areaWidth, int areaHeight, int width, int height) {
+        int common = gcd(width, height);
+        double fit = Math.min(areaWidth / (double) width, areaHeight / (double) height);
+        long parts = Math.max(1, (long) Math.floor(fit * common + 1e-9));
+        return parts / (double) common;
+    }
+
+    private static int gcd(int a, int b) {
+        return b == 0 ? Math.max(1, a) : gcd(b, a % b);
+    }
+
+    /**
+     * A drag begins, from where the screen is shown; the wheel counts its notches afresh, so that what
+     * was turned short of a step before does not step the scale at the first notch after.
+     */
     public void press() {
         dragged = shown;
+        wheel = new WheelSteps();
     }
 
     /** The screen moved {@code right} and {@code down} of its blocks by a drag: its middle on whole blocks, unless {@code fine}. */

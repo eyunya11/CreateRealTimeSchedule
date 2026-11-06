@@ -53,6 +53,40 @@ class AreaPickTest {
     }
 
     @Test
+    void aBlockTakesAsManyPixelsAsFitWithTheScreenOnWholePixels() {
+        // Two by three in 395 by 160: 53 1/3 pixels would fit, which would put the frame's edge on no pixel.
+        assertEquals(53, AreaPick.block(395, 160, 2, 3));
+        // Ten by one: 39.5 would fit by the width.
+        assertEquals(39, AreaPick.block(395, 160, 10, 1));
+        // Six by four have two in common, so halves of a pixel do: 37.5 fits by the height, the screen 225 by 150.
+        assertEquals(37.5, AreaPick.block(395, 150, 6, 4));
+        assertEquals(160, AreaPick.block(395, 160, 32, 32) * 32, 1e-9, "a square screen fills its room to the pixel");
+        int[][] sizes = {{1, 1}, {2, 3}, {3, 2}, {6, 4}, {7, 5}, {12, 9}, {32, 7}, {64, 64}, {5, 32}};
+        for (int[] size : sizes)
+            for (int areaWidth = 50; areaWidth < 900; areaWidth += 37)
+                for (int areaHeight = 40; areaHeight < 500; areaHeight += 29) {
+                    double block = AreaPick.block(areaWidth, areaHeight, size[0], size[1]);
+                    String at = size[0] + "x" + size[1] + " in " + areaWidth + "x" + areaHeight;
+                    assertEquals(Math.rint(block * size[0]), block * size[0], 1e-6, at);
+                    assertEquals(Math.rint(block * size[1]), block * size[1], 1e-6, at);
+                    assertTrue(block * size[0] <= areaWidth + 1e-6 && block * size[1] <= areaHeight + 1e-6, at);
+                }
+    }
+
+    @Test
+    void aDragStartsTheWheelsCountAgain() {
+        AreaPick pick = pick();
+        pick.wheel(1, 0, 0, false);
+        pick.wheel(1, 0, 0, false);
+        pick.press();
+        pick.drag(1, 0, false);
+        pick.wheel(1, 0, 0, false);
+        assertEquals(16, pick.shown().scale(), "the two notches before the drag are not counted after it");
+        pick.wheel(2, 0, 0, false);
+        assertEquals(12, pick.shown().scale());
+    }
+
+    @Test
     void aDragGoesOnFromWhatTheWheelZoomedToInIt() {
         AreaPick pick = pick();
         pick.press();
