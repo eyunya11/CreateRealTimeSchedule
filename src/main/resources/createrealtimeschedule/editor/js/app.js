@@ -27,7 +27,7 @@
     selection: null,
     // Times dragged or drawn land on the step, or on the fine step while Shift is held.
     settings: {
-      language: i18n.guess(navigator.language), dwell: 20, snap: 15, fineSnap: 5,
+      language: i18n.guess(navigator.language), dwell: 20, snap: 15, fineSnap: 5, length: 40,
       // The diagram or the map, the lines whose track the map shows (none for all), what it shows on it,
       // and the track tags turned off ('' for no tag).
       view: 'diagram', mapLines: [], mapLayers: {}, mapTagsOff: [],
@@ -1669,6 +1669,17 @@
       type: 'checkbox', checked: train.keep === true,
       onchange: event => change(rt.edit.setTrain(state.timetable, number, { keep: event.target.checked })),
     }))));
+    panel.append(field(t('trainLength'), h('input', {
+      type: 'number', min: '1', max: String(rt.problems.MAX_LENGTH), step: '1',
+      value: rt.problems.hasLength(train) ? String(train.length) : '', placeholder: String(state.settings.length),
+      title: t('trainLengthHelp', state.settings.length),
+      onchange: event => {
+        // Left empty, the train takes the length of the settings; a length out of range is for the problems to say.
+        const text = event.target.value.trim();
+        const value = Math.round(Number(text));
+        change(rt.edit.setTrain(state.timetable, number, { length: text === '' || !Number.isFinite(value) ? rt.edit.NONE : value }));
+      },
+    })));
     panel.append(error);
 
     const line = state.timetable.lines.find(each => each.id === train.line);
@@ -1816,6 +1827,16 @@
       },
     })));
     panel.append(h('p', { class: 'note' }, t('dwellHelp')));
+    panel.append(field(t('defaultLength'), h('input', {
+      type: 'number', min: '1', max: String(rt.problems.MAX_LENGTH), step: '1', value: String(state.settings.length),
+      onchange: event => {
+        const value = Math.round(Number(event.target.value));
+        state.settings.length = Number.isFinite(value) ? Math.max(1, Math.min(rt.problems.MAX_LENGTH, value)) : 40;
+        saveSoon();
+        render();
+      },
+    })));
+    panel.append(h('p', { class: 'note' }, t('defaultLengthHelp')));
     panel.append(field(t('snap'), h('select', {
       onchange: event => {
         state.settings.snap = Number(event.target.value);
