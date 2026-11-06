@@ -104,6 +104,16 @@ public final class RealClock {
     }
 
     /**
+     * The offset that moves the clock to the nearest {@code targetTimeOfDay}, on the day it is on or
+     * the one before or after: never more than twelve hours either way, and halfway, forwards. A clock
+     * that has fallen behind over midnight goes on into the next day, rather than back to the start of
+     * the day it is on: at 23:00, 01:00 is two hours on, not twenty-two back.
+     */
+    public static long offsetToNearestTimeOfDay(long gameTime, long currentClockTicks, long targetTimeOfDay) {
+        return offsetFor(gameTime, nearestSlot(currentClockTicks, targetTimeOfDay, TICKS_PER_DAY));
+    }
+
+    /**
      * The vanilla day time that puts the sky where the clock says it is: 12:00 is noon (6,000),
      * 00:00 is midnight (18,000), and the day count carries over so the moon changes phase once a
      * real day.

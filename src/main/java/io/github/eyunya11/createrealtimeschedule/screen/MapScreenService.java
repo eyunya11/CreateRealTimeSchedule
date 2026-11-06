@@ -99,8 +99,8 @@ public final class MapScreenService {
         if (!level.isLoaded(pos) || player.distanceToSqr(Vec3.atCenterOf(pos)) > REACH * REACH || !mayChange(player, pos)
             || !(level.getBlockEntity(pos) instanceof MapScreenBlockEntity))
             return;
-        if (!Double.isFinite(edit.centreX()) || !Double.isFinite(edit.centreZ()) || Math.abs(edit.centreX()) > 3e7
-            || Math.abs(edit.centreZ()) > 3e7)
+        // The settings screen does not send a middle out of the world; one that comes is from some other client.
+        if (!ScreenSettings.isCentre(edit.centreX()) || !ScreenSettings.isCentre(edit.centreZ()))
             return;
         Set<String> hidden = new HashSet<>(edit.hidden());
         hidden.retainAll(ScreenSettings.SCREEN_LAYERS);
