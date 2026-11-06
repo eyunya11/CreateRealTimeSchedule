@@ -91,6 +91,19 @@ class TrafficTest {
     }
 
     /** The six-aspect signal's 進行 holds a train to 130 km/h, which a powered train is faster than. */
+    /** A train that stays where it ends holds the signals before it as one standing does; one taken off there, none. */
+    @Test
+    void aTrainThatStaysWhereItEndsHoldsItsBlock() {
+        RailNetwork network = TestLines.line(5, SignalBlocks.LightSpeeds.DEFAULT, 10, 580, 630, 650);
+        for (boolean stays : new boolean[] {true, false}) {
+            Run ahead = new Run("ahead", SPEC, 1, List.of(first(leg(network, "C", "D"), 0)), stays);
+            Run behind = run("behind", SPEC, first(leg(network, "A", "B"), 200));
+            Trip trip = Traffic.run(network.blocks(), List.of(ahead, behind)).trips().get(1).getFirst();
+            assertEquals(stays ? ticks(SPEC, 570, SpeedSign.limit(290, 75), SpeedSign.limit(390, 45), SpeedSign.limit(490, 25)) : trip.free(),
+                trip.ticks(), stays ? "it stays" : "it is taken off");
+        }
+    }
+
     @Test
     void theProceedOfASixAspectSignalHoldsATrainTo130() {
         TrainSpec powered = TrainSpec.POWERED;
@@ -246,7 +259,12 @@ class TrafficTest {
         return new RailNetwork(List.of(east, west), stations, List.of(), List.of(), blocks);
     }
 
-    /** Two trains for the single track at once: the first takes the block, and the other waits for it to be out of it. */
+    /**
+     * Two trains for the single track at once: one goes through, and the other stops at the signal into
+     * it until the first is out of it. Which one is Create's to say: the first to reserve the block makes
+     * the other wait, and a train that waits is taken first the next tick, so it reserves the block
+     * itself if the other is not in it yet. Here the one sent second is through first.
+     */
     @Test
     void trainsMeetingOnSingleTrackTakeTurns() {
         RailNetwork network = singleStretch(10, 90);
@@ -254,11 +272,62 @@ class TrafficTest {
             List.of(run("east", SPEC, first(leg(network, "E0", "E1"), 0)), run("west", SPEC, first(leg(network, "W0", "W1"), 0))));
         Trip east = result.trips().get(0).getFirst();
         Trip west = result.trips().get(1).getFirst();
-        assertEquals(east.free(), east.ticks());
-        assertEquals(List.of(), east.waits());
-        assertEquals(1, west.waits().size(), west.waits().toString());
-        assertEquals(2, west.waits().getFirst().signal());
-        assertTrue(west.ticks() > west.free() + west.waits().getFirst().ticks());
+        assertEquals(List.of(), west.waits());
+        assertEquals(1, east.waits().size(), east.waits().toString());
+        assertEquals(0, east.waits().getFirst().signal(), "the signal into the single track");
+        assertTrue(east.arrived() > west.arrived());
+        assertTrue(east.ticks() > east.free() + east.waits().getFirst().ticks());
+    }
+
+    /**
+     * Two tracks: the first 300 blocks long, with signal 0 at 100 into block 1 and signal 1 at 200 into
+     * block 2, and stations A at 10 and B at 190; the second 100 blocks long, apart from it, with signal 2
+     * at 20 into block 3, and stations C at 30, D at 50 and E at 90. Block 1 leads on to signals 1 and 2,
+     * as a block with a junction in it does. The signals are five-aspect light signals.
+     */
+    private static RailNetwork twoTracks(List<List<Integer>> crossings) {
+        Edge first = new Edge(300, false, List.of(), List.of(), List.of(), -1,
+            List.of(new Point(100, Point.Kind.SIGNAL, 0), new Point(200, Point.Kind.SIGNAL, 1)), -1, -1);
+        Edge second = new Edge(100, false, List.of(), List.of(), List.of(), -1, List.of(new Point(20, Point.Kind.SIGNAL, 2)), -1, -1);
+        SignalBlocks blocks = new SignalBlocks(
+            List.of(List.of(new SignalBlocks.Change(0, 0), new SignalBlocks.Change(100, 1), new SignalBlocks.Change(200, 2)),
+                List.of(new SignalBlocks.Change(0, 4), new SignalBlocks.Change(20, 3))),
+            List.of(new SignalBlocks.Signal(1, List.of(1, 2), List.of(5), false), new SignalBlocks.Signal(2, List.of(), List.of(5), false),
+                new SignalBlocks.Signal(3, List.of(), List.of(5), false)),
+            5, crossings, SignalBlocks.LightSpeeds.DEFAULT);
+        return new RailNetwork(List.of(first, second), List.of(new Station("A", 0, 10), new Station("B", 0, 190),
+            new Station("C", 1, 30), new Station("D", 1, 50), new Station("E", 1, 90)), List.of(), List.of(), blocks);
+    }
+
+    /**
+     * Where the block after a signal branches, the aspect is counted along the branch with the fewest
+     * blocks clear: a train standing past one branch holds the signal before the junction at 警戒, though
+     * the way on along the other is clear.
+     */
+    @Test
+    void theAspectIsCountedAlongTheBranchWithTheFewestBlocksClear() {
+        RailNetwork network = twoTracks(List.of());
+        Run behind = run("behind", SPEC, first(leg(network, "A", "B"), 200));
+        Trip trip = Traffic.run(network.blocks(), List.of(standing(network, "C", "D", "E"), behind)).trips().get(1).getFirst();
+        assertEquals(ticks(SPEC, 180, SpeedSign.limit(90, 25)), trip.ticks());
+    }
+
+    /** A train in a block whose track crosses another takes that one up too: a train for it stops at its signal. */
+    @Test
+    void aTrainInABlockTakesUpTheBlocksThatCrossIt() {
+        for (boolean crossing : new boolean[] {true, false}) {
+            RailNetwork network = twoTracks(crossing ? List.of(List.of(1, 3)) : List.of());
+            Run behind = run("behind", SPEC, first(leg(network, "A", "B"), 200));
+            Traffic.Result result = Traffic.run(network.blocks(), List.of(standing(network, "C", "D", "E"), behind));
+            Trip trip = result.trips().get(1).getFirst();
+            if (!crossing) {
+                assertEquals(List.of(), trip.waits());
+                continue;
+            }
+            assertEquals(1, trip.waits().size(), trip.waits().toString());
+            assertEquals(0, trip.waits().getFirst().signal());
+            assertEquals(result.trips().get(0).get(1).arrived() + 1, trip.waits().getFirst().from() + trip.waits().getFirst().ticks());
+        }
     }
 
     /** Each standing in the block the other needs: neither gets anywhere, and it says so. */

@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.OptionalInt;
 import java.util.Set;
@@ -42,8 +43,12 @@ import io.github.eyunya11.createrealtimeschedule.travel.TrainSpec;
  * <p>A train that falls ten minutes behind ({@link #TOO_LATE_TICKS}) is taken off the line, and the leg
  * it was on is one it never arrives at the end of.
  *
- * <p>The trains are taken in the order given each tick, as Create takes its own in an order of its
- * own: where two trains reach for the same block in one tick, the first gets it.
+ * <p>The trains are taken in the order Create takes its own in: first those waiting for a signal, the
+ * one that has waited longest first, and then those on the move, in the order they came onto the line
+ * or stopped waiting; a train goes from one to the other at the end of a tick. Where two trains reach
+ * for the same block in one tick, the first gets it, so that a train held up for a block gets it the
+ * next tick, and two trains after the same block can hold each other up in turn. Trains that come onto
+ * the line in the same tick are taken in the order given.
  *
  * <p>Each train is measured by its front, at the stop marker of each station, as {@link Leg} has it. The
  * part of its body behind the start of a leg is taken to lie on the leg before, as it does where the
@@ -74,14 +79,22 @@ public final class Traffic {
 
     /**
      * A train's day: it appears at the start of its first leg when it is to leave there, runs its legs one
-     * after another, and is taken off the line where the last ends.
+     * after another, and then stands where the last ends, or is taken off the line there.
      *
      * @param name     what to call it, for a reader
      * @param spec     how fast it goes
      * @param throttle the share of the top speed it is allowed
      * @param stints   its legs, in order, each from where the one before ends
+     * @param stays    whether it stands where its last leg ends for the rest of the day, taking up its
+     *                 blocks, as a set in its depot does; or is taken off the line there
      */
-    public record Run(String name, TrainSpec spec, double throttle, List<Stint> stints) {
+    public record Run(String name, TrainSpec spec, double throttle, List<Stint> stints, boolean stays) {
+
+        /** A train taken off the line where its last leg ends. */
+        public Run(String name, TrainSpec spec, double throttle, List<Stint> stints) {
+            this(name, spec, throttle, stints, false);
+        }
+
         public Run {
             stints = List.copyOf(stints);
             if (!(throttle > 0) || throttle > 1)
@@ -165,7 +178,7 @@ public final class Traffic {
         }
     }
 
-    /** Runs the trains of {@code runs}, in that order each tick, on the signal blocks of their network. */
+    /** Runs the trains of {@code runs} on the signal blocks of their network; those that come onto the line together, in that order. */
     public static Result run(SignalBlocks blocks, List<Run> runs) {
         return new Traffic(blocks, runs).simulate();
     }
@@ -178,8 +191,12 @@ public final class Traffic {
     /** The trains not on the line yet, by when they appear. */
     private final List<Train> coming;
     private int nextToCome;
-    /** The trains on the line, in the order given. */
-    private final List<Train> present = new ArrayList<>();
+    /** The trains on the line that wait for a signal, the one that has waited longest first: Create's {@code waitingTrains}. */
+    private final List<Train> waiting = new ArrayList<>();
+    /** The trains on the line that do not, in the order they came on or stopped waiting: Create's {@code movingTrains}. */
+    private final List<Train> moving = new ArrayList<>();
+    /** The trains that have run their legs and stand where they ended. */
+    private final List<Train> parked = new ArrayList<>();
     /** For each block, the trains in it this tick, as Create's {@code SignalEdgeGroup.trains}. */
     private final List<List<Train>> in = new ArrayList<>();
     /** For each block, the signal side that reserved it this tick, or -1. */
@@ -196,7 +213,7 @@ public final class Traffic {
         for (int b = 0; b < blocks.count(); b++)
             in.add(new ArrayList<>());
         for (Run run : runs)
-            trains.add(new Train(run, trains.size()));
+            trains.add(new Train(run));
         coming = trains.stream().sorted(Comparator.comparingLong(Train::appears)).toList();
     }
 
@@ -226,14 +243,14 @@ public final class Traffic {
         now = coming.getFirst().appears();
         long giveUp = trains.stream().flatMap(train -> train.run.stints().stream()).mapToLong(Stint::departs).max().orElseThrow()
             + GIVE_UP_TICKS;
-        while (now <= giveUp && (nextToCome < coming.size() || !present.isEmpty())) {
+        while (now <= giveUp && (nextToCome < coming.size() || !waiting.isEmpty() || !moving.isEmpty())) {
             if (tick()) {
                 now++;
                 continue;
             }
             // Nothing moved: nothing will until a train is due to leave or to appear.
             long next = nextToCome < coming.size() ? coming.get(nextToCome).appears() : Long.MAX_VALUE;
-            for (Train train : present)
+            for (Train train : onTheLine())
                 if (train.drive == null)
                     next = Math.min(next, train.leaves + 1);
             if (next == Long.MAX_VALUE || next <= now)
@@ -255,7 +272,6 @@ public final class Traffic {
         if (nextToCome < coming.size() && coming.get(nextToCome).appears() <= now) {
             while (nextToCome < coming.size() && coming.get(nextToCome).appears() <= now)
                 coming.get(nextToCome++).appear();
-            present.sort(Comparator.comparingInt(train -> train.order));
             changed = true;
         }
 
@@ -266,14 +282,19 @@ public final class Traffic {
             reserved[block] = -1;
         }
         touched.clear();
-        for (Train train : present) {
+        List<Train> onTheLine = onTheLine();
+        for (Train train : parked)
+            for (int block : train.body())
+                enter(block, train);
+        for (Train train : onTheLine) {
             for (int block : train.body())
                 enter(block, train);
             for (int block : train.chain)
                 enter(block, train);
         }
 
-        for (Train train : present) {
+        for (Train train : onTheLine) {
+            int waitedFor = train.waitingFor;
             if (train.drive == null) {
                 if (now <= train.leaves)
                     continue;
@@ -291,11 +312,37 @@ public final class Traffic {
                 changed = true;
                 continue;
             }
-            changed |= control(train);
+            changed |= control(train) || train.waitingFor != waitedFor;
         }
-        if (changed)
-            present.removeIf(train -> train.done);
+
+        // GlobalRailwayManager.tickTrains: trains that stopped waiting go to the end of the moving ones,
+        // and those that started to the end of the waiting ones.
+        for (Iterator<Train> each = waiting.iterator(); each.hasNext(); ) {
+            Train train = each.next();
+            if (train.done) {
+                each.remove();
+            } else if (train.waitingFor == -1) {
+                moving.add(train);
+                each.remove();
+            }
+        }
+        for (Iterator<Train> each = moving.iterator(); each.hasNext(); ) {
+            Train train = each.next();
+            if (train.done) {
+                each.remove();
+            } else if (train.waitingFor != -1) {
+                waiting.add(train);
+                each.remove();
+            }
+        }
         return changed;
+    }
+
+    private List<Train> onTheLine() {
+        List<Train> all = new ArrayList<>(waiting.size() + moving.size());
+        all.addAll(waiting);
+        all.addAll(moving);
+        return all;
     }
 
     private void enter(int block, Train train) {
@@ -562,8 +609,6 @@ public final class Traffic {
     /** A train of the timetable, as it goes. */
     private final class Train {
         final Run run;
-        /** Its place in the order the trains are taken in. */
-        final int order;
         final List<Trip> trips = new ArrayList<>();
         /** The leg it is on, or stands at the start of; the number of legs once it is done. */
         int stint;
@@ -619,9 +664,8 @@ public final class Traffic {
             }
         };
 
-        Train(Run run, int order) {
+        Train(Run run) {
             this.run = run;
-            this.order = order;
             this.leg = run.stints().getFirst().leg();
             this.length = run.stints().getFirst().length();
         }
@@ -631,7 +675,7 @@ public final class Traffic {
         }
 
         void appear() {
-            present.add(this);
+            moving.add(this);
             leaves = run.stints().getFirst().departs();
             atStation = true;
         }
@@ -672,6 +716,8 @@ public final class Traffic {
             stint++;
             if (stint == run.stints().size()) {
                 done = true;
+                if (run.stays())
+                    parked.add(this);
                 return;
             }
             Stint next = run.stints().get(stint);

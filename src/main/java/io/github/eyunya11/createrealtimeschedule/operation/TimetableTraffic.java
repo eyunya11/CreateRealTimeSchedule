@@ -26,9 +26,10 @@ import io.github.eyunya11.createrealtimeschedule.travel.TrainSpec;
  * has them. It has no Minecraft types in it so that it can be tested without a game.
  *
  * <p>Each duty is one set, which runs its trains one after another ({@link DutyPlan#calls}); a train
- * in no duty is a set of its own. A set appears at its first station when it is to leave there, leaves
- * each station at the timetable's time, or after its minimum stop if it comes in late, and is taken
- * off the line where its last train ends. It runs at full throttle. Each train starts under no limit
+ * in no duty is a set of its own. A set appears at its first station when it is to leave there, and
+ * leaves each station at the timetable's time, or after its minimum stop if it comes in late. The set
+ * of a duty stands in its depot once it is back, for the rest of the day; that of a train in no duty,
+ * which the timetable says nothing more of, is taken off the line where the train ends. It runs at full throttle. Each train starts under no limit
  * of a sign or a signal, and carries them from stop to stop. A set whose way from one station to the
  * next is not on the track runs no further.
  */
@@ -59,6 +60,7 @@ public final class TimetableTraffic {
         List<List<Key>> keys = new ArrayList<>();
         Set<String> inDuties = new HashSet<>();
         List<Duty> sets = new ArrayList<>();
+        Set<Duty> duties = new HashSet<>(timetable.duties());
         for (Duty duty : timetable.duties()) {
             inDuties.addAll(duty.trains());
             sets.add(duty);
@@ -91,7 +93,7 @@ public final class TimetableTraffic {
             }
             if (stints.isEmpty())
                 continue;
-            runs.add(new Run(set.id(), spec, 1, stints));
+            runs.add(new Run(set.id(), spec, 1, stints, duties.contains(set) && stints.size() == calls.size() - 1));
             keys.add(legKeys);
         }
         Traffic.Result result = Traffic.run(blocks, runs);
