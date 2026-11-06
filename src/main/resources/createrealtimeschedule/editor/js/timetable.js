@@ -27,11 +27,12 @@
    * stops' minimum stops, version 4 the trains that are never cancelled to get a late set back on time
    * (keep), version 5 the trains a stop waits for (waits), version 6 the types' colours (types) and
    * the stops that change a train's type, version 7 the track tags trains run on (tag), and version 8
-   * the tracks a map shows and hides for a line (mapAdd, mapRemove) and hides for all (mapHidden); a
-   * timetable is written in the oldest version that holds it (version()), so that a mod that reads
-   * only version 2 still takes one that has none of them.
+   * the tracks a map shows and hides for a line (mapAdd, mapRemove) and hides for all (mapHidden), and
+   * version 9 the length of a train in blocks (length), which the running times take into account for
+   * the signals; a timetable is written in the oldest version that holds it (version()), so that a mod
+   * that reads only version 2 still takes one that has none of them.
    */
-  const VERSION = 8;
+  const VERSION = 9;
 
   /**
    * The colours of the types of train, in the order they are offered: TypeColours.TEMPLATE of the mod.
@@ -135,6 +136,25 @@
       if (value < 0)
         this.problems.add(this.at(key), 'must be 0 to ' + max + ' seconds');
       return Math.max(value, NONE);
+    }
+
+    /**
+     * A whole number of blocks, or NONE if it is not there. One out of range is for problems.js; one
+     * below 0 is refused here, as it could read as none.
+     */
+    blocks(key) {
+      const value = this.get(key);
+      if (value === null)
+        return NONE;
+      if (typeof value !== 'number' || !Number.isInteger(value) || Math.abs(value) > 999999999) {
+        this.problems.add(this.at(key), 'must be a whole number of blocks');
+        return NONE;
+      }
+      if (value < 0) {
+        this.problems.add(this.at(key), check.LENGTH_RANGE);
+        return NONE;
+      }
+      return value;
     }
 
     /** The elements of an array of objects; none if the array is not there. */
@@ -296,6 +316,7 @@
     const deadhead = f.bool('deadhead', false);
     const keep = f.bool('keep', false);
     const tag = orEmpty(f.string('tag', false));
+    const length = f.blocks('length');
     const stops = f.objects('stops', true).map(readStop);
     f.finish();
     const train = { number, line, type, stops, deadhead };
@@ -303,6 +324,8 @@
       train.keep = true;
     if (tag !== '')
       train.tag = tag;
+    if (length !== NONE)
+      train.length = length;
     return train;
   }
 
@@ -435,12 +458,14 @@
   }
 
   /**
-   * The oldest version of the JSON that holds the timetable: 8 if it adds a track to a map, takes one
-   * away or hides one, else 7 if a train or a stop has a track tag, else 6 if it gives a type a colour
+   * The oldest version of the JSON that holds the timetable: 9 if a train says how long it is, else 8 if
+   * it adds a track to a map, takes one away or hides one, else 7 if a train or a stop has a track tag, else 6 if it gives a type a colour
    * or a stop changes a train's type, else 5 if a stop waits for a train, else 4 if it has a train
    * that is never cancelled, else 3 if it has anything version 3 added, else 2.
    */
   function version(timetable) {
+    if (timetable.trains.some(check.hasLength))
+      return 9;
     if (mapHidden(timetable).length > 0 || timetable.lines.some(line => mapAdd(line).length > 0 || mapRemove(line).length > 0))
       return 8;
     if (timetable.trains.some(train => hasTag(train) || train.stops.some(hasTag)))
@@ -457,7 +482,8 @@
 
   /**
    * The timetable as JSON, laid out as the mod lays it out, in the oldest version that holds it:
-   * members with their default value (loop, deadhead and keep false, type and tag empty, a time or a minimum
+   * members with their default value (loop, deadhead and keep false, type and tag empty, a length a train
+   * does not have, a time or a minimum
    * stop a stop does not have, no stations with times of their own, no types with colours) are left out.
    */
   function write(timetable) {
@@ -489,6 +515,8 @@
         entries.push(['deadhead', out.raw('true')]);
       if (train.keep === true)
         entries.push(['keep', out.raw('true')]);
+      if (check.hasLength(train))
+        entries.push(['length', out.raw(String(train.length))]);
       const stops = train.stops.map(stop => {
         const stopEntries = [['station', out.text(stop.station)]];
         if (stop.arrive !== NONE)

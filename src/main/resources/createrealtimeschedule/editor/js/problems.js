@@ -6,7 +6,7 @@
  * A timetable here is plain data, as timetable.js reads it: {name, lines, stations, types, trains,
  * duties, mapHidden?}, a line {id, name, stations, loop, mapAdd?, mapRemove?}, a station {name, dwell, minimumStop} with seconds or
  * NONE, a type {name, color}, a train {number, line, type, stops, deadhead} with keep true if it is
- * never cancelled and a tag if it runs on a track tag, a stop {station, arrive, depart, type?, tag?,
+ * never cancelled, a tag if it runs on a track tag and a length in blocks if it says how long it is, a stop {station, arrive, depart, type?, tag?,
  * waits?} with the times in seconds or NONE and a minimumStop if it has one of its own, and a duty
  * {id, depot, trains}. A timetable without
  * stations (one made before version 3) has none with times of their own, and one without types (one
@@ -28,6 +28,12 @@
 
   /** The longest dwell or minimum stop, in seconds: the longest minimum stop the server's config takes. */
   const MAX_STOP_SECONDS = 600;
+
+  /** The longest a train can be said to be, in blocks. */
+  const MAX_LENGTH = 10000;
+
+  /** The range a length of a train has to be in, as a problem says it. */
+  const LENGTH_RANGE = 'must be 1 to ' + MAX_LENGTH + ' blocks';
 
   /** The longest a train waits for another past its own time, in seconds: the longest the server's config takes. */
   const MAX_WAIT_SECONDS = 3600;
@@ -69,6 +75,16 @@
 
   function isStopSeconds(seconds) {
     return seconds >= 0 && seconds <= MAX_STOP_SECONDS;
+  }
+
+  /** Whether blocks is a length a train can be said to be. */
+  function isLength(blocks) {
+    return Number.isInteger(blocks) && blocks >= 1 && blocks <= MAX_LENGTH;
+  }
+
+  /** Whether the timetable says how long train is. */
+  function hasLength(train) {
+    return train.length !== undefined && train.length !== NONE;
   }
 
   function hasMinimumStop(stop) {
@@ -209,6 +225,8 @@
         problems.push(where + ': the type must not start or end with a space or contain a control character');
       if (hasTag(train) && !isText(train.tag))
         problems.push(where + ': the track tag must not start or end with a space or contain a control character');
+      if (hasLength(train) && !isLength(train.length))
+        problems.push(where + ': the length ' + LENGTH_RANGE);
       const line = lineById.has(train.line) ? lineById.get(train.line) : null;
       if (line === null)
         problems.push(where + ': there is no line "' + train.line + '"');
@@ -468,5 +486,5 @@
     return found;
   }
 
-  return { NONE, MAX_ID_LENGTH, MAX_STOP_SECONDS, MAX_WAIT_SECONDS, problems, isText, isIdentifier, isColour, runsThrough, leavesOrRunsThrough, waitStation };
+  return { NONE, MAX_ID_LENGTH, MAX_STOP_SECONDS, MAX_WAIT_SECONDS, MAX_LENGTH, LENGTH_RANGE, problems, isLength, hasLength, isText, isIdentifier, isColour, runsThrough, leavesOrRunsThrough, waitStation };
 });

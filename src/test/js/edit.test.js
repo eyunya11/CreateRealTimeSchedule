@@ -85,6 +85,16 @@ test('a train is marked never to be cancelled, and keeps the mark through other 
   assert.equal('keep' in unmarked.trains[0], false, 'a train that may be cancelled has no keep');
 });
 
+test('a train is given a length, which goes through other changes and can be taken away', () => {
+  const long = edit.setTrain(timetable(), '1', { length: 60 });
+  assert.equal(long.trains[0].length, 60);
+  assert.equal('length' in long.trains[1], false, 'the other train says no length');
+  assert.equal(edit.copy(long).trains[0].length, 60);
+  assert.equal(edit.setTrain(long, '1', { type: 'rapid' }).trains[0].length, 60);
+  assert.equal(edit.shiftTrain(long, '1', 60).trains[0].length, 60);
+  assert.equal('length' in edit.setTrain(long, '1', { length: NONE }).trains[0], false, 'NONE takes it away');
+});
+
 /** The timetable with train 1 a local that runs on from Y as a rapid, and train 2 a special; only the local has a colour. */
 function typed() {
   const before = edit.setTrain(edit.setTrain(timetable(), '1', { type: 'local' }), '2', { type: 'special' });

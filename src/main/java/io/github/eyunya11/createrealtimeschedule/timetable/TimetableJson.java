@@ -231,11 +231,12 @@ public final class TimetableJson {
         boolean deadhead = f.bool("deadhead", false);
         boolean keep = f.bool("keep", false);
         String tag = orEmpty(f.string("tag", false));
+        int length = f.blocks("length");
         List<Timetable.Stop> stops = new ArrayList<>();
         for (Fields stop : f.objects("stops", true))
             stops.add(readStop(stop));
         f.finish();
-        return new Timetable.Train(number, line, type, stops, deadhead, keep, tag);
+        return new Timetable.Train(number, line, type, stops, deadhead, keep, tag, length);
     }
 
     private static Timetable.Stop readStop(Fields f) {
@@ -355,6 +356,26 @@ public final class TimetableJson {
             return Math.max(seconds, Timetable.Stop.NONE);
         }
 
+        /**
+         * A whole number of blocks, or {@link Timetable.Stop#NONE} if it is not there. One out of range is
+         * for {@link Timetable#problems()}; one below 0 is refused here, as it could read as none.
+         */
+        int blocks(String key) {
+            Object value = get(key);
+            if (value == null)
+                return Timetable.Stop.NONE;
+            if (!(value instanceof NumberText number) || !WHOLE_NUMBER.matcher(number.text()).matches()) {
+                problems.add(at(key), "must be a whole number of blocks");
+                return Timetable.Stop.NONE;
+            }
+            int blocks = Integer.parseInt(number.text());
+            if (blocks < 0) {
+                problems.add(at(key), Timetable.LENGTH_RANGE);
+                return Timetable.Stop.NONE;
+            }
+            return blocks;
+        }
+
         /** The elements of an array of objects; none if the array is not there. */
         List<Fields> objects(String key, boolean required) {
             List<Fields> out = new ArrayList<>();
@@ -445,7 +466,7 @@ public final class TimetableJson {
      * The timetable as JSON, laid out the same way every time: two spaces of indent, the members in a
      * fixed order, and a stop or a list of names on one line, in the oldest version that holds it
      * ({@link Timetable#version()}). Members that have their default value ({@code loop},
-     * {@code deadhead} and {@code keep} false, {@code type} and {@code tag} empty, a time or a minimum stop a stop does not have, no
+     * {@code deadhead} and {@code keep} false, {@code type} and {@code tag} empty, a length a train does not have, a time or a minimum stop a stop does not have, no
      * stations with times of their own, no types with colours) are left out. A timetable that
      * {@link Timetable#problems()} finds fault with is written as it is, and is refused when read back;
      * a time outside the service day is written as {@link ServiceTime#show} has it, which is no time.
@@ -510,6 +531,8 @@ public final class TimetableJson {
                 node.put("deadhead", raw("true"));
             if (train.keep())
                 node.put("keep", raw("true"));
+            if (train.hasLength())
+                node.put("length", raw(Integer.toString(train.length())));
             ListNode stops = new ListNode();
             for (Timetable.Stop stop : train.stops()) {
                 MapNode stopNode = new MapNode();

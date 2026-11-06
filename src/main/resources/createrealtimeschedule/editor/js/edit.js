@@ -29,7 +29,10 @@
     return made;
   }
 
-  /** A train as it is, with a keep mark only if it is never to be cancelled, and a tag only if it has one. */
+  /**
+   * A train as it is, with a keep mark only if it is never to be cancelled, a tag only if it has one,
+   * and a length only if it says how long it is.
+   */
   function copyTrain(train) {
     const made = {
       number: train.number,
@@ -42,6 +45,8 @@
       made.keep = true;
     if (train.tag !== undefined && train.tag !== '')
       made.tag = train.tag;
+    if (check.hasLength(train))
+      made.length = train.length;
     return made;
   }
 
@@ -283,7 +288,10 @@
     return next;
   }
 
-  /** Changes a train's number, type, deadhead mark and keep mark; its duties, and the waits for it, follow a new number. */
+  /**
+   * Changes a train's number, type, deadhead mark, keep mark, track tag and length (NONE for none); its
+   * duties, and the waits for it, follow a new number.
+   */
   function setTrain(timetable, number, fields) {
     const next = copy(timetable);
     const train = trainAt(next, number);
@@ -299,6 +307,10 @@
       train.keep = true;
     else if (fields.keep === false)
       delete train.keep;
+    if (fields.length === NONE)
+      delete train.length;
+    else if (fields.length !== undefined)
+      train.length = fields.length;
     if (fields.number !== undefined && fields.number !== number) {
       train.number = fields.number;
       for (const duty of next.duties)

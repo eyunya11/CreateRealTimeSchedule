@@ -1,0 +1,99 @@
+{
+  "about": "A train's length (version 9) is 1 to 10000 blocks; a train that does not say takes the length of the settings.",
+  "timetable": {
+    "format": "createrealtimeschedule.timetable",
+    "version": 9,
+    "name": "",
+    "lines": [
+      {
+        "id": "l",
+        "name": "L",
+        "stations": [
+          "A",
+          "B"
+        ]
+      }
+    ],
+    "trains": [
+      {
+        "number": "1",
+        "line": "l",
+        "length": 0,
+        "stops": [
+          {
+            "station": "A",
+            "depart": "08:00"
+          },
+          {
+            "station": "B",
+            "arrive": "08:10"
+          }
+        ]
+      },
+      {
+        "number": "2",
+        "line": "l",
+        "length": 10001,
+        "stops": [
+          {
+            "station": "A",
+            "depart": "09:00"
+          },
+          {
+            "station": "B",
+            "arrive": "09:10"
+          }
+        ]
+      },
+      {
+        "number": "3",
+        "line": "l",
+        "length": 1,
+        "stops": [
+          {
+            "station": "A",
+            "depart": "10:00"
+          },
+          {
+            "station": "B",
+            "arrive": "10:10"
+          }
+        ]
+      },
+      {
+        "number": "4",
+        "line": "l",
+        "length": 10000,
+        "stops": [
+          {
+            "station": "A",
+            "depart": "11:00"
+          },
+          {
+            "station": "B",
+            "arrive": "11:10"
+          }
+        ]
+      },
+      {
+        "number": "5",
+        "line": "l",
+        "stops": [
+          {
+            "station": "A",
+            "depart": "12:00"
+          },
+          {
+            "station": "B",
+            "arrive": "12:10"
+          }
+        ]
+      }
+    ],
+    "duties": []
+  },
+  "problems": [
+    "train \"1\": the length must be 1 to 10000 blocks",
+    "train \"2\": the length must be 1 to 10000 blocks"
+  ]
+}

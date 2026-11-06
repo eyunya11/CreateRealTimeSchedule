@@ -1,0 +1,86 @@
+{
+  "about": "A train's length (version 9) has to be a whole number of blocks, and not below 0, which could read as no length.",
+  "timetable": {
+    "format": "createrealtimeschedule.timetable",
+    "version": 9,
+    "name": "",
+    "lines": [
+      {
+        "id": "l",
+        "name": "L",
+        "stations": [
+          "A",
+          "B"
+        ]
+      }
+    ],
+    "trains": [
+      {
+        "number": "1",
+        "line": "l",
+        "length": 2.5,
+        "stops": [
+          {
+            "station": "A",
+            "depart": "08:00"
+          },
+          {
+            "station": "B",
+            "arrive": "08:10"
+          }
+        ]
+      },
+      {
+        "number": "2",
+        "line": "l",
+        "length": "40",
+        "stops": [
+          {
+            "station": "A",
+            "depart": "09:00"
+          },
+          {
+            "station": "B",
+            "arrive": "09:10"
+          }
+        ]
+      },
+      {
+        "number": "3",
+        "line": "l",
+        "length": -3,
+        "stops": [
+          {
+            "station": "A",
+            "depart": "10:00"
+          },
+          {
+            "station": "B",
+            "arrive": "10:10"
+          }
+        ]
+      },
+      {
+        "number": "4",
+        "line": "l",
+        "length": 40,
+        "stops": [
+          {
+            "station": "A",
+            "depart": "11:00"
+          },
+          {
+            "station": "B",
+            "arrive": "11:10"
+          }
+        ]
+      }
+    ],
+    "duties": []
+  },
+  "problems": [
+    "trains[0].length: must be a whole number of blocks",
+    "trains[1].length: must be a whole number of blocks",
+    "trains[2].length: must be 1 to 10000 blocks"
+  ]
+}
