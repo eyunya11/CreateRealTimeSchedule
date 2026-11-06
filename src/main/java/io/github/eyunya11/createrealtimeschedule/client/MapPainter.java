@@ -52,6 +52,8 @@ final class MapPainter {
     private static final int SIGNAL_LAYER = 9;
     private static final int NAME_LAYER = 12;
     private static final int TRAIN_LAYER = 13;
+    /** How many layers there are, from 0: the quads' and the labels' layers are all below this. */
+    static final int LAYERS = TRAIN_LAYER + 1;
 
     static final int BACKGROUND = 0xFF161B22;
     private static final int TRACK = 0xFFC9D1D9;

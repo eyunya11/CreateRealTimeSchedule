@@ -1,6 +1,7 @@
 package io.github.eyunya11.createrealtimeschedule.client;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 
 import org.joml.Matrix4f;
@@ -57,8 +58,6 @@ public class MapAreaScreen extends Screen {
     private static final int GRID = 0x30FFFFFF;
     private static final int VALUE = 0xFFFFFF;
     private static final int NOTE = 0xA0A0A0;
-    /** How many layers {@link MapPainter} paints in: drawn here one after another, each over those before it. */
-    private static final int LAYERS = 14;
 
     private final MapScreenEditor parent;
     /** The lines, the tags and the kinds shown, which this does not change. */
@@ -79,9 +78,19 @@ public class MapAreaScreen extends Screen {
     private int frameHeight;
     private double block;
 
-    /** The track over the whole window, and what it was worked out from. */
+    /**
+     * The track round the window, by its layers, and the tracks shown; what they were worked out from,
+     * and the part of the world the track was worked out for, larger than the window, so that it is
+     * worked out again only when the scale changes or the window goes off it, not at each step of a drag.
+     */
     private Object trackKey;
-    private float[] track = new float[0];
+    private Box trackBox;
+    private float[][] track;
+    private MapPainter.Shown shown;
+    /** The marks of the frame last drawn, and their quads and labels by their layers. */
+    private MapPainter.Marks markedFrom;
+    private float[][] marked;
+    private List<List<MapPainter.Label>> labelled;
 
     MapAreaScreen(MapScreenEditor parent, ScreenSettings settings, Place place, Font font) {
         super(Component.translatableWithFallback(KEY + "area.title", "Where the screen shows"));
@@ -96,9 +105,9 @@ public class MapAreaScreen extends Screen {
     protected void init() {
         int areaWidth = Math.max(1, width - MARGIN * 2);
         int areaHeight = Math.max(1, height - BAR - TOP - 8);
-        block = Math.min(areaWidth / (double) projection().width(), areaHeight / (double) projection().height());
-        frameWidth = (int) (block * projection().width());
-        frameHeight = (int) (block * projection().height());
+        block = AreaPick.block(areaWidth, areaHeight, projection().width(), projection().height());
+        frameWidth = (int) Math.round(block * projection().width());
+        frameHeight = (int) Math.round(block * projection().height());
         frameLeft = (width - frameWidth) / 2;
         frameTop = TOP + (areaHeight - frameHeight) / 2;
         addRenderableWidget(Button.builder(CommonComponents.GUI_DONE, button -> done()).bounds(width / 2 - 104, height - 28, 100, 20).build());
@@ -188,9 +197,7 @@ public class MapAreaScreen extends Screen {
         int dimension = minecraft == null || minecraft.level == null ? -1
             : MapClient.dimension(minecraft.level.dimension().location().toString());
         ScreenSettings settings = settings();
-        MapPainter.Shown shown = null;
         if (dimension >= 0) {
-            shown = MapPainter.Shown.of(settings);
             // The track over the whole window, as the frame's blocks show it.
             double scale = projection().scale();
             double centreU = frameLeft + frameWidth / 2.0;
@@ -198,13 +205,25 @@ public class MapAreaScreen extends Screen {
             Box window = new Box(projection().centreX() - centreU / block * scale, projection().centreZ() - centreV / block * scale,
                 projection().centreX() + (width - centreU) / block * scale, projection().centreZ() + (height - centreV) / block * scale);
             MapViewPayload view = MapClient.view(settings);
-            Object key = List.of(MapClient.version(), view == null ? 0L : view.revision(), settings, width, height, block, dimension,
-                TrackTagClient.names(), TrackTagClient.colours());
+            // The lines and the tags are not in it, as they do not change here.
+            Object key = List.of(MapClient.version(), view == null ? 0L : view.revision(), scale, dimension, TrackTagClient.names(),
+                TrackTagClient.colours());
             if (!key.equals(trackKey)) {
                 trackKey = key;
-                track = MapPainter.track(shown, window, scale, dimension);
+                shown = MapPainter.Shown.of(settings);
+                trackBox = null;
             }
-            quads(graphics, List.of(track), 0, height);
+            if (trackBox == null || !covers(trackBox, window)) {
+                // As far again round the window each way, so that a drag is drawn from it for a while.
+                double wide = window.maxX() - window.minX();
+                double high = window.maxZ() - window.minZ();
+                trackBox = new Box(window.minX() - wide, window.minZ() - high, window.maxX() + wide, window.maxZ() + high);
+                track = layered(List.of(MapPainter.track(shown, trackBox, scale, dimension)));
+            }
+            double left = (trackBox.minX() - window.minX()) / scale * block;
+            double bottom = (trackBox.maxZ() - window.minZ()) / scale * block;
+            for (float[] layer : track)
+                quads(graphics, layer, left, bottom);
             graphics.flush();
         }
 
@@ -217,18 +236,32 @@ public class MapAreaScreen extends Screen {
         graphics.fill(right, frameTop, width, bottom, DARKEN);
         graphics.flush();
 
-        // In the frame, the marks and the trains, as on the screen.
-        if (shown != null) {
+        // In the frame, the marks and the trains, as on the screen: a layer after another, the words of each
+        // with it, so that what is over what is as on the screen's blocks.
+        if (dimension >= 0) {
             graphics.enableScissor(frameLeft, frameTop, right, bottom);
             MapPainter.Marks marks = painter.marks(settings, projection().width(), projection().height(), dimension, shown);
-            List<float[]> quads = new ArrayList<>(marks.quads().values());
-            quads.add(MapPainter.trains(settings, projection().whole(), shown));
-            double frameBottom = frameTop + block * projection().height();
-            quads(graphics, quads, frameLeft, frameBottom);
-            graphics.flush();
-            for (List<MapPainter.Label> labels : marks.labels().values())
-                for (MapPainter.Label label : labels)
-                    label(graphics, label, frameLeft, frameBottom);
+            if (marks != markedFrom) {
+                markedFrom = marks;
+                marked = layered(marks.quads().values());
+                labelled = new ArrayList<>();
+                for (int layer = 0; layer < MapPainter.LAYERS; layer++)
+                    labelled.add(new ArrayList<>());
+                for (List<MapPainter.Label> labels : marks.labels().values())
+                    for (MapPainter.Label label : labels)
+                        labelled.get(layerOf(label.layer())).add(label);
+            }
+            float[][] trains = layered(List.of(MapPainter.trains(settings, projection().whole(), shown)));
+            for (int layer = 0; layer < MapPainter.LAYERS; layer++) {
+                quads(graphics, marked[layer], frameLeft, bottom);
+                quads(graphics, trains[layer], frameLeft, bottom);
+                if (labelled.get(layer).isEmpty())
+                    continue;
+                graphics.flush();
+                for (MapPainter.Label label : labelled.get(layer))
+                    label(graphics, label, frameLeft, bottom);
+                graphics.flush();
+            }
             graphics.flush();
             graphics.disableScissor();
         } else {
@@ -306,25 +339,49 @@ public class MapAreaScreen extends Screen {
         return Component.literal(MapScreenEditor.show(value)).withColor(VALUE);
     }
 
-    /**
-     * Draws quads in a screen's blocks, from the place {@code left}, {@code bottom} in the window, a layer
-     * after another, so that each is over those below it.
-     */
-    private void quads(GuiGraphics graphics, List<float[]> all, double left, double bottom) {
+    /** Whether {@code outer} has all of {@code inner} in it. */
+    private static boolean covers(Box outer, Box inner) {
+        return outer.minX() <= inner.minX() && outer.minZ() <= inner.minZ() && outer.maxX() >= inner.maxX() && outer.maxZ() >= inner.maxZ();
+    }
+
+    /** {@code layer} as one of {@link MapPainter#LAYERS}. */
+    private static int layerOf(float layer) {
+        return Math.max(0, Math.min(MapPainter.LAYERS - 1, (int) layer));
+    }
+
+    /** The quads of {@code all} by their layers, each layer's in the order they come in, so that they can be drawn a layer at a time. */
+    private static float[][] layered(Collection<float[]> all) {
+        int[] sizes = new int[MapPainter.LAYERS];
+        for (float[] q : all)
+            for (int i = 0; i < q.length; i += 10)
+                sizes[layerOf(q[i + 8])] += 10;
+        float[][] layers = new float[MapPainter.LAYERS][];
+        for (int layer = 0; layer < layers.length; layer++)
+            layers[layer] = new float[sizes[layer]];
+        int[] filled = new int[MapPainter.LAYERS];
+        for (float[] q : all)
+            for (int i = 0; i < q.length; i += 10) {
+                int layer = layerOf(q[i + 8]);
+                System.arraycopy(q, i, layers[layer], filled[layer], 10);
+                filled[layer] += 10;
+            }
+        return layers;
+    }
+
+    /** Draws quads in a screen's blocks, from the place {@code left}, {@code bottom} in the window, in the order they come in. */
+    private void quads(GuiGraphics graphics, float[] q, double left, double bottom) {
+        if (q.length == 0)
+            return;
         Matrix4f matrix = graphics.pose().last().pose();
         VertexConsumer out = graphics.bufferSource().getBuffer(RenderType.debugQuads());
-        for (int layer = 0; layer < LAYERS; layer++)
-            for (float[] q : all)
-                for (int i = 0; i < q.length; i += 10) {
-                    if ((int) q[i + 8] != layer)
-                        continue;
-                    int colour = Float.floatToRawIntBits(q[i + 9]);
-                    for (int corner = 0; corner < 4; corner++) {
-                        float x = (float) (left + q[i + corner * 2] * block);
-                        float y = (float) (bottom - q[i + corner * 2 + 1] * block);
-                        out.addVertex(matrix, x, y, 0).setColor(colour);
-                    }
-                }
+        for (int i = 0; i < q.length; i += 10) {
+            int colour = Float.floatToRawIntBits(q[i + 9]);
+            for (int corner = 0; corner < 4; corner++) {
+                float x = (float) (left + q[i + corner * 2] * block);
+                float y = (float) (bottom - q[i + corner * 2 + 1] * block);
+                out.addVertex(matrix, x, y, 0).setColor(colour);
+            }
+        }
     }
 
     private void label(GuiGraphics graphics, MapPainter.Label label, double left, double bottom) {
