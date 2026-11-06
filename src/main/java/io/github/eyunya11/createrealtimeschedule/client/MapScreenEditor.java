@@ -41,8 +41,7 @@ public class MapScreenEditor extends Screen {
     /** Where the left column starts, and the kinds to show under it. */
     private static final int TOP = 40;
     private static final int LAYERS_TOP = TOP + 106;
-    /** The colour of the text in a box, as Minecraft's own, and of a value the server would not take. */
-    private static final int TEXT = 0xE0E0E0;
+    /** The colour of a value in a box the server would not take. */
     private static final int WRONG = 0xFF5555;
 
     private final MapScreenBlockEntity entity;
@@ -148,6 +147,9 @@ public class MapScreenEditor extends Screen {
 
         done = addRenderableWidget(Button.builder(CommonComponents.GUI_DONE, button -> done()).bounds(width / 2 - 104, height - 30, 100, 20).build());
         addRenderableWidget(Button.builder(CommonComponents.GUI_CANCEL, button -> onClose()).bounds(width / 2 + 4, height - 30, 100, 20).build());
+        // As each is typed or filled in, so that Done is never left to be pressed on a middle out of the world.
+        x.setResponder(text -> checkCentre());
+        z.setResponder(text -> checkCentre());
         checkCentre();
     }
 
@@ -156,10 +158,10 @@ public class MapScreenEditor extends Screen {
      * put right: the server would not take it, and nothing would seem to happen.
      */
     private void checkCentre() {
-        boolean xIn = ScreenSettings.isCentre(read(x, settings.centreX()));
-        boolean zIn = ScreenSettings.isCentre(read(z, settings.centreZ()));
-        x.setTextColor(xIn ? TEXT : WRONG);
-        z.setTextColor(zIn ? TEXT : WRONG);
+        boolean xIn = ScreenSettings.isTypedCentre(x.getValue(), settings.centreX());
+        boolean zIn = ScreenSettings.isTypedCentre(z.getValue(), settings.centreZ());
+        x.setTextColor(xIn ? EditBox.DEFAULT_TEXT_COLOR : WRONG);
+        z.setTextColor(zIn ? EditBox.DEFAULT_TEXT_COLOR : WRONG);
         done.active = xIn && zIn;
         if (done.active && done.getTooltip() != null)
             done.setTooltip(null);
@@ -180,12 +182,7 @@ public class MapScreenEditor extends Screen {
     }
 
     private static double read(EditBox box, double fallback) {
-        try {
-            double value = Double.parseDouble(box.getValue());
-            return Double.isFinite(value) ? value : fallback;
-        } catch (NumberFormatException e) {
-            return fallback;
-        }
+        return ScreenSettings.typed(box.getValue(), fallback);
     }
 
     /**
@@ -198,7 +195,6 @@ public class MapScreenEditor extends Screen {
         ScreenSettings chosen = chosen();
         MapClient.drawn(chosen);
         fit.active = MapClient.view(chosen) != null;
-        checkCentre();
     }
 
     /** Fills in the middle and the scale that put on the screen all the track the lines and the tags as ticked now show. */

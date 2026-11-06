@@ -36,6 +36,21 @@ public record ScreenSettings(double centreX, double centreZ, double scale, List<
         return Double.isFinite(value) && Math.abs(value) <= MAX_CENTRE;
     }
 
+    /** The number typed in a box of a screen's settings, or {@code fallback} for text that is none, such as "" or "-". */
+    public static double typed(String text, double fallback) {
+        try {
+            double value = Double.parseDouble(text);
+            return Double.isFinite(value) ? value : fallback;
+        } catch (NumberFormatException e) {
+            return fallback;
+        }
+    }
+
+    /** Whether the X or the Z typed in a screen's settings, {@code fallback} for text that is no number, may be its middle. */
+    public static boolean isTypedCentre(String text, double fallback) {
+        return isCentre(typed(text, fallback));
+    }
+
     /** What a new screen shows: all the track, everything on it, round the middle of the world. */
     public static final ScreenSettings DEFAULT = new ScreenSettings(0, 0, 16, List.of(), Set.of(), Set.of(), 0);
 

@@ -2,6 +2,7 @@ package io.github.eyunya11.createrealtimeschedule.clock;
 
 import java.time.Clock;
 import java.time.LocalTime;
+import java.util.function.LongBinaryOperator;
 
 import io.github.eyunya11.createrealtimeschedule.ModSettings;
 import io.github.eyunya11.createrealtimeschedule.network.ClockSyncPayload;
@@ -44,10 +45,14 @@ public final class ClockService {
 
     /** Moves the clock to the given time of day on the day it is on, and tells every client. */
     public static void setTimeOfDay(MinecraftServer server, long timeOfDayTicks) {
+        move(server, (gameTime, current) -> RealClock.offsetToSetTimeOfDay(gameTime, current, timeOfDayTicks));
+    }
+
+    /** Moves the clock to the offset {@code offset} gives for the game time and the clock value now, and tells every client. */
+    private static void move(MinecraftServer server, LongBinaryOperator offset) {
         long gameTime = server.overworld().getGameTime();
         RealClockData data = data(server);
-        long current = RealClock.clockTicks(gameTime, data.offset());
-        data.setOffset(RealClock.offsetToSetTimeOfDay(gameTime, current, timeOfDayTicks));
+        data.setOffset(offset.applyAsLong(gameTime, RealClock.clockTicks(gameTime, data.offset())));
         broadcast(server);
     }
 
@@ -60,11 +65,7 @@ public final class ClockService {
      */
     public static long alignToWallClock(MinecraftServer server, Clock wallClock) {
         long timeOfDay = RealClock.timeOfDay(LocalTime.now(wallClock));
-        long gameTime = server.overworld().getGameTime();
-        RealClockData data = data(server);
-        long current = RealClock.clockTicks(gameTime, data.offset());
-        data.setOffset(RealClock.offsetToNearestTimeOfDay(gameTime, current, timeOfDay));
-        broadcast(server);
+        move(server, (gameTime, current) -> RealClock.offsetToNearestTimeOfDay(gameTime, current, timeOfDay));
         return timeOfDay;
     }
 
