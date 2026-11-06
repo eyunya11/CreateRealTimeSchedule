@@ -7,11 +7,11 @@ import org.joml.Matrix4f;
 
 import com.mojang.blaze3d.vertex.VertexConsumer;
 
+import io.github.eyunya11.createrealtimeschedule.map.AreaPick;
 import io.github.eyunya11.createrealtimeschedule.map.MapProjection;
 import io.github.eyunya11.createrealtimeschedule.map.MapProjection.Box;
 import io.github.eyunya11.createrealtimeschedule.map.ScreenLayout.Place;
 import io.github.eyunya11.createrealtimeschedule.map.ScreenSettings;
-import io.github.eyunya11.createrealtimeschedule.map.WheelSteps;
 import io.github.eyunya11.createrealtimeschedule.network.MapViewPayload;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -30,10 +30,9 @@ import net.minecraft.network.chat.MutableComponent;
  * the marks and the trains only in it, as on the screen. Where the screen showed when this was opened
  * is outlined in dashes, until the frame is back on it.
  *
- * <p>As the map is dragged and zoomed, the middle snaps to whole blocks and the scale to round steps
- * ({@link MapProjection#STEPS}), a step for every three notches of the wheel ({@link WheelSteps}), so
- * that the settings read well; with Shift held neither does, and the wheel zooms a little each notch
- * ({@link MapProjection#WHEEL}), for a place in between.
+ * <p>As the map is dragged and zoomed, the middle snaps to whole blocks and the scale to round steps,
+ * a step for every three notches of the wheel ({@link AreaPick}), so that the settings read well; with
+ * Shift held neither does, and the wheel zooms a little each notch, for a place in between.
  *
  * <p>Nothing here is coloured but the map: the frames are white, a solid line for now and dashes for
  * before, and the words white for the values and grey for the rest, so that every colour on the map
@@ -65,14 +64,8 @@ public class MapAreaScreen extends Screen {
     /** The lines, the tags and the kinds shown, which this does not change. */
     private final ScreenSettings base;
     private final MapProjection before;
-    private MapProjection projection;
-    /**
-     * Where the drag has taken the screen, its middle not snapped: the screen is this snapped, so that a
-     * drag of less than a block at a time still moves it.
-     */
-    private MapProjection free;
-    /** The wheel's notches towards the next step of the scale. */
-    private WheelSteps wheel = new WheelSteps();
+    /** What the screen is to show, as it is dragged and zoomed. */
+    private final AreaPick pick;
     private final MapPainter painter;
 
     /** Whether the map has been dragged or zoomed yet: the hint is shown until it has. */
@@ -95,7 +88,7 @@ public class MapAreaScreen extends Screen {
         this.parent = parent;
         this.base = settings;
         this.before = settings.projection(place.width(), place.height());
-        this.projection = before;
+        this.pick = new AreaPick(before);
         this.painter = new MapPainter(font);
     }
 
@@ -103,17 +96,23 @@ public class MapAreaScreen extends Screen {
     protected void init() {
         int areaWidth = Math.max(1, width - MARGIN * 2);
         int areaHeight = Math.max(1, height - BAR - TOP - 8);
-        block = Math.min(areaWidth / (double) projection.width(), areaHeight / (double) projection.height());
-        frameWidth = (int) (block * projection.width());
-        frameHeight = (int) (block * projection.height());
+        block = Math.min(areaWidth / (double) projection().width(), areaHeight / (double) projection().height());
+        frameWidth = (int) (block * projection().width());
+        frameHeight = (int) (block * projection().height());
         frameLeft = (width - frameWidth) / 2;
         frameTop = TOP + (areaHeight - frameHeight) / 2;
         addRenderableWidget(Button.builder(CommonComponents.GUI_DONE, button -> done()).bounds(width / 2 - 104, height - 28, 100, 20).build());
         addRenderableWidget(Button.builder(CommonComponents.GUI_CANCEL, button -> onClose()).bounds(width / 2 + 4, height - 28, 100, 20).build());
     }
 
+    /** What the screen would show now. */
+    private MapProjection projection() {
+        return pick.shown();
+    }
+
     /** The settings as they are now. */
     private ScreenSettings settings() {
+        MapProjection projection = projection();
         return new ScreenSettings(projection.centreX(), projection.centreZ(), projection.scale(), base.lines(), base.hidden(), base.tagsOff(),
             base.stamp());
     }
@@ -125,7 +124,7 @@ public class MapAreaScreen extends Screen {
     }
 
     private void done() {
-        parent.placed(projection.centreX(), projection.centreZ(), projection.scale());
+        parent.placed(projection().centreX(), projection().centreZ(), projection().scale());
         onClose();
     }
 
@@ -145,7 +144,7 @@ public class MapAreaScreen extends Screen {
             return true;
         dragging = button == 0 && onMap(mouseY);
         if (dragging)
-            free = projection;
+            pick.press();
         return dragging;
     }
 
@@ -153,8 +152,7 @@ public class MapAreaScreen extends Screen {
     public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
         if (!dragging)
             return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
-        free = free.moved(-dragX / block, -dragY / block);
-        projection = hasShiftDown() ? free : free.rounded();
+        pick.drag(-dragX / block, -dragY / block, hasShiftDown());
         touched = true;
         return true;
     }
@@ -176,18 +174,8 @@ public class MapAreaScreen extends Screen {
             return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
         double right = (mouseX - (frameLeft + frameWidth / 2.0)) / block;
         double down = (mouseY - (frameTop + frameHeight / 2.0)) / block;
+        pick.wheel(scrollY, right, down, hasShiftDown());
         touched = true;
-        if (hasShiftDown()) {
-            projection = projection.zoomed(Math.pow(MapProjection.WHEEL, -scrollY), right, down);
-            wheel = new WheelSteps();
-            return true;
-        }
-        int steps = wheel.turn(scrollY);
-        double scale = projection.scale();
-        for (int step = 0; step < Math.abs(steps); step++)
-            scale = MapProjection.nextStep(scale, steps < 0);
-        if (steps != 0)
-            projection = projection.zoomedTo(scale, right, down).rounded();
         return true;
     }
 
@@ -204,11 +192,11 @@ public class MapAreaScreen extends Screen {
         if (dimension >= 0) {
             shown = MapPainter.Shown.of(settings);
             // The track over the whole window, as the frame's blocks show it.
-            double scale = projection.scale();
+            double scale = projection().scale();
             double centreU = frameLeft + frameWidth / 2.0;
             double centreV = frameTop + frameHeight / 2.0;
-            Box window = new Box(projection.centreX() - centreU / block * scale, projection.centreZ() - centreV / block * scale,
-                projection.centreX() + (width - centreU) / block * scale, projection.centreZ() + (height - centreV) / block * scale);
+            Box window = new Box(projection().centreX() - centreU / block * scale, projection().centreZ() - centreV / block * scale,
+                projection().centreX() + (width - centreU) / block * scale, projection().centreZ() + (height - centreV) / block * scale);
             MapViewPayload view = MapClient.view(settings);
             Object key = List.of(MapClient.version(), view == null ? 0L : view.revision(), settings, width, height, block, dimension,
                 TrackTagClient.names(), TrackTagClient.colours());
@@ -232,10 +220,10 @@ public class MapAreaScreen extends Screen {
         // In the frame, the marks and the trains, as on the screen.
         if (shown != null) {
             graphics.enableScissor(frameLeft, frameTop, right, bottom);
-            MapPainter.Marks marks = painter.marks(settings, projection.width(), projection.height(), dimension, shown);
+            MapPainter.Marks marks = painter.marks(settings, projection().width(), projection().height(), dimension, shown);
             List<float[]> quads = new ArrayList<>(marks.quads().values());
-            quads.add(MapPainter.trains(settings, projection.whole(), shown));
-            double frameBottom = frameTop + block * projection.height();
+            quads.add(MapPainter.trains(settings, projection().whole(), shown));
+            double frameBottom = frameTop + block * projection().height();
             quads(graphics, quads, frameLeft, frameBottom);
             graphics.flush();
             for (List<MapPainter.Label> labels : marks.labels().values())
@@ -251,11 +239,11 @@ public class MapAreaScreen extends Screen {
         // Where the screen showed before, and the frame with the lines between its blocks.
         frameBefore(graphics);
         if (block >= GRID_FROM) {
-            for (int column = 1; column < projection.width(); column++) {
+            for (int column = 1; column < projection().width(); column++) {
                 int x = frameLeft + (int) Math.round(column * block);
                 graphics.fill(x, frameTop, x + 1, bottom, GRID);
             }
-            for (int row = 1; row < projection.height(); row++) {
+            for (int row = 1; row < projection().height(); row++) {
                 int y = frameTop + (int) Math.round(row * block);
                 graphics.fill(frameLeft, y, right, y + 1, GRID);
             }
@@ -272,8 +260,8 @@ public class MapAreaScreen extends Screen {
     /** The outline of where the screen showed when this was opened, in dashes, unless the frame is on it. */
     private void frameBefore(GuiGraphics graphics) {
         Box was = before.whole();
-        Box now = projection.whole();
-        double per = block / projection.scale();
+        Box now = projection().whole();
+        double per = block / projection().scale();
         long left = Math.round(frameLeft + (was.minX() - now.minX()) * per) - 1;
         long top = Math.round(frameTop + (was.minZ() - now.minZ()) * per) - 1;
         long right = Math.round(frameLeft + (was.maxX() - now.minX()) * per);
@@ -304,6 +292,7 @@ public class MapAreaScreen extends Screen {
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         super.render(graphics, mouseX, mouseY, partialTick);
+        MapProjection projection = projection();
         MutableComponent scale = value(projection.scale());
         if (projection.scale() >= MapProjection.MAX_SCALE)
             scale.append(Component.literal(" ").append(Component.translatableWithFallback(KEY + "area.most", "(most)").withColor(NOTE)));
