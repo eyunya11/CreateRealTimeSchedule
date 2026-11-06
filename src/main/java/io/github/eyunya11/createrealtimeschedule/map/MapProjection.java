@@ -7,6 +7,8 @@ import java.util.Set;
 
 import org.jetbrains.annotations.Nullable;
 
+import io.github.eyunya11.createrealtimeschedule.diagram.DiagramView;
+
 /**
  * What part of the world a map screen shows: a screen of {@code width} by {@code height} blocks, whose
  * middle is the world's ({@code centreX}, {@code centreZ}), where a block of the screen shows
@@ -18,6 +20,30 @@ public record MapProjection(double centreX, double centreZ, double scale, int wi
     /** The least and the most blocks of the world a block of a screen may show. */
     public static final double MIN_SCALE = 0.25;
     public static final double MAX_SCALE = 4096;
+
+    /**
+     * The scales a screen snaps to as it is zoomed, from the least to the most: the powers of two from one
+     * block up and one and a half of each (1, 1.5, 2, 3, 4, 6, 8, 12 and so on), and the quarters below
+     * one, as the settings write a number to two places.
+     */
+    public static final List<Double> STEPS = steps();
+
+    /**
+     * How much a notch of the wheel zooms a screen's map where it is not kept to {@link #STEPS}: three
+     * notches as much as one did at first (a quarter): the diagram's, so that the two zoom alike, as the
+     * editor's map does.
+     */
+    public static final double WHEEL = DiagramView.WHEEL;
+
+    private static List<Double> steps() {
+        List<Double> steps = new ArrayList<>(List.of(MIN_SCALE, 0.5, 0.75));
+        for (double power = 1; power <= MAX_SCALE; power *= 2) {
+            steps.add(power);
+            if (power * 1.5 < MAX_SCALE)
+                steps.add(power * 1.5);
+        }
+        return List.copyOf(steps);
+    }
 
     /** A part of the world, from above: west to east, and north to south. */
     public record Box(double minX, double minZ, double maxX, double maxZ) {
@@ -36,6 +62,48 @@ public record MapProjection(double centreX, double centreZ, double scale, int wi
     /** The whole of what the screen shows. */
     public Box whole() {
         return new Box(centreX - width * scale / 2, centreZ - height * scale / 2, centreX + width * scale / 2, centreZ + height * scale / 2);
+    }
+
+    /** The screen moved {@code right} and {@code down} (south) of its blocks over the world. */
+    public MapProjection moved(double right, double down) {
+        return new MapProjection(centreX + right * scale, centreZ + down * scale, scale, width, height);
+    }
+
+    /**
+     * The screen showing {@code factor} times as many blocks of the world each way, kept to what a screen
+     * may show, with the place {@code right} and {@code down} of its blocks from its middle showing the
+     * same part of the world as before.
+     */
+    public MapProjection zoomed(double factor, double right, double down) {
+        return zoomedTo(scale * factor, right, down);
+    }
+
+    /** The screen at {@code to} blocks of the world to a block of it, kept to what a screen may show, about a place as {@link #zoomed}. */
+    public MapProjection zoomedTo(double to, double right, double down) {
+        double zoomed = clampScale(to);
+        return new MapProjection(centreX + right * (scale - zoomed), centreZ + down * (scale - zoomed), zoomed, width, height);
+    }
+
+    /** The screen with its middle on the nearest whole blocks. */
+    public MapProjection rounded() {
+        return new MapProjection(Math.round(centreX), Math.round(centreZ), scale, width, height);
+    }
+
+    /**
+     * The next of {@link #STEPS} past {@code scale}: the next more blocks of the world to a block of the
+     * screen if {@code out}, the next fewer if not; the most or the least if there is none past it.
+     */
+    public static double nextStep(double scale, boolean out) {
+        if (out) {
+            for (double step : STEPS)
+                if (step > scale * (1 + 1e-9))
+                    return step;
+            return MAX_SCALE;
+        }
+        for (int i = STEPS.size() - 1; i >= 0; i--)
+            if (STEPS.get(i) < scale * (1 - 1e-9))
+                return STEPS.get(i);
+        return MIN_SCALE;
     }
 
     /** {@code scale} kept to what a screen may show. */

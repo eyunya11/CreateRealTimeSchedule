@@ -221,6 +221,29 @@ test('zooming keeps the time under the pointer where it is, within the narrowest
   assert.equal(v.span, layout.MAX_SPAN);
 });
 
+test('three notches of the wheel zoom a quarter, and a part of a notch a part as much', () => {
+  const v = view();
+  const under = v.second(100);
+  for (let notch = 0; notch < 3; notch++)
+    v.wheel(-1, 100);
+  assert.ok(Math.abs(v.span - 3600 * 1.25) < 1e-6, 'turned towards the one turning it, it zooms out');
+  assert.ok(Math.abs(v.second(100) - under) < 1e-6);
+  v.wheel(3, 100);
+  assert.ok(Math.abs(v.span - 3600) < 1e-6, 'turned away, back in');
+  v.wheel(0.5, 100);
+  assert.ok(Math.abs(v.span - 3600 / Math.pow(1.25, 0.5 / 3)) < 1e-6, 'half a notch, as a touchpad turns it, zooms half as much');
+});
+
+test('a wheel event is counted in notches however the browser counts it, and no more than three', () => {
+  assert.equal(layout.wheelNotches(100, 0), -1, 'a notch towards the one turning it, in pixels');
+  assert.equal(layout.wheelNotches(-100, 0), 1, 'away');
+  assert.equal(layout.wheelNotches(3, 1), -1, 'in lines');
+  assert.equal(layout.wheelNotches(-1, 2), 1, 'in pages');
+  assert.equal(layout.wheelNotches(12.5, 0), -0.125, 'a touchpad\'s small move');
+  assert.equal(layout.wheelNotches(1000, 0), -3);
+  assert.equal(layout.wheelNotches(-30, 1), 3);
+});
+
 test('panning right brings earlier times in, and the scale is marked in the finest step that leaves room', () => {
   const v = view();
   v.pan(36);

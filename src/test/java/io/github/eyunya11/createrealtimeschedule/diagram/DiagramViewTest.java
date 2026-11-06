@@ -42,6 +42,20 @@ class DiagramViewTest {
     }
 
     @Test
+    void threeNotchesOfTheWheelZoomAQuarterAndAPartOfANotchAPartAsMuch() {
+        DiagramView view = view();
+        double under = view.second(100);
+        for (int notch = 0; notch < 3; notch++)
+            view.wheel(-1, 100);
+        assertEquals(3600 * 1.25, view.span(), 1e-6, "turned towards the one turning it, it zooms out");
+        assertEquals(under, view.second(100), 1e-6);
+        view.wheel(3, 100);
+        assertEquals(3600, view.span(), 1e-6, "turned away, back in");
+        view.wheel(0.5, 100);
+        assertEquals(3600 / Math.pow(1.25, 0.5 / 3), view.span(), 1e-6, "half a notch, as a touchpad turns it, zooms half as much");
+    }
+
+    @Test
     void panningRightBringsEarlierTimesIn() {
         DiagramView view = view();
         view.pan(36);

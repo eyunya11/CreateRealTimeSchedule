@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 import io.github.eyunya11.createrealtimeschedule.map.MapProjection;
 import io.github.eyunya11.createrealtimeschedule.map.ScreenLayout.Place;
@@ -28,7 +29,7 @@ import net.neoforged.neoforge.network.PacketDistributor;
 /**
  * The settings of a map screen: the world's X and Z in the middle of it, how many blocks of the world
  * a block of it shows, the lines whose track it shows (none for all), and what it shows on the track.
- * "Fit all" puts on it all the track of the dimension the lines and the tags as ticked show (all of it
+ * The middle and the scale may be picked on a map ({@link MapAreaScreen}). "Fit all" puts on it all the track of the dimension the lines and the tags as ticked show (all of it
  * if they show none). Done sends them to the server, which gives them to every block of the screen.
  */
 public class MapScreenEditor extends Screen {
@@ -43,6 +44,8 @@ public class MapScreenEditor extends Screen {
     private static final int LAYERS_TOP = TOP + 106;
     /** The colour of a value in a box the server would not take. */
     private static final int WRONG = 0xFF5555;
+    /** The noughts at the end of a number written to two places, with its point if nothing is left after it. */
+    private static final Pattern NOUGHTS_AT_END = Pattern.compile("\\.?0+$");
 
     private final MapScreenBlockEntity entity;
     private final List<MapScreenOpenPayload.Line> lines;
@@ -92,8 +95,10 @@ public class MapScreenEditor extends Screen {
         x = number(left + 90, TOP, typed != null ? typed[0] : show(settings.centreX()), "x");
         z = number(left + 90, TOP + 22, typed != null ? typed[1] : show(settings.centreZ()), "z");
         scale = number(left + 90, TOP + 44, typed != null ? typed[2] : show(settings.scale()), "scale");
+        addRenderableWidget(Button.builder(Component.translatableWithFallback(KEY + "pick", "Pick on map"), button -> pick())
+            .bounds(left, TOP + 68, 80, 20).build());
         fit = addRenderableWidget(Button.builder(Component.translatableWithFallback(KEY + "fit", "Fit all track"), button -> fit())
-            .bounds(left, TOP + 68, 150, 20).build());
+            .bounds(left + 84, TOP + 68, 80, 20).build());
         fit.active = MapClient.view(chosen()) != null;
 
         // The kinds to show, in two columns if one does not fit above the buttons.
@@ -177,8 +182,12 @@ public class MapScreenEditor extends Screen {
         return addRenderableWidget(box);
     }
 
-    private static String show(double value) {
-        return value == Math.rint(value) ? Long.toString((long) value) : String.format(Locale.ROOT, "%.2f", value);
+    /** A number as it is written in the boxes: to two places at most, with no noughts at the end (1.5, not 1.50). */
+    static String show(double value) {
+        if (value == Math.rint(value))
+            return Long.toString((long) value);
+        String shown = NOUGHTS_AT_END.matcher(String.format(Locale.ROOT, "%.2f", value)).replaceAll("");
+        return shown.equals("-0") ? "0" : shown;
     }
 
     private static double read(EditBox box, double fallback) {
@@ -208,6 +217,22 @@ public class MapScreenEditor extends Screen {
         x.setValue(show(Math.round(fit[0])));
         z.setValue(show(Math.round(fit[1])));
         scale.setValue(show(fit[2]));
+    }
+
+    /** Opens the map to pick the middle and the scale on, from those typed and with the lines, the tags and the kinds as ticked. */
+    private void pick() {
+        if (minecraft == null)
+            return;
+        ScreenSettings chosen = chosen();
+        minecraft.setScreen(new MapAreaScreen(this, new ScreenSettings(read(x, settings.centreX()), read(z, settings.centreZ()),
+            read(scale, settings.scale()), chosen.lines(), chosen.hidden(), chosen.tagsOff(), chosen.stamp()), place, font));
+    }
+
+    /** The middle and the scale picked on the map, written in the boxes. */
+    void placed(double centreX, double centreZ, double scale) {
+        x.setValue(show(centreX));
+        z.setValue(show(centreZ));
+        this.scale.setValue(show(scale));
     }
 
     /** The settings as they are now, but for the middle and the scale. */
