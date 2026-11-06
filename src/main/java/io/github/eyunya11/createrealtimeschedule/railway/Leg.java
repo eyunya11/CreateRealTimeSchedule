@@ -23,18 +23,32 @@ import io.github.eyunya11.createrealtimeschedule.travel.TravelTime;
  *                 the start; those past {@code distance} are beyond the stop, where the track goes
  *                 on without a choice of way, and the train brakes for them on the way in
  * @param edges    the indexes of the network's edges the route runs along, in order; empty if not known
+ * @param signals  the signals the train passes on the way, in order, by their numbers in the network's
+ *                 {@link SignalBlocks}, as distances from the start; one at the end marker is passed, one at
+ *                 the start marker is not
+ * @param block    the signal block the train is in at the start ({@link SignalBlocks}); -1 if not known
  */
 public record Leg(String from, String to, double distance, List<Curve> curves, List<String> via, List<SpeedSign> signs,
-                  List<Integer> edges) {
+                  List<Integer> edges, List<PassedSignal> signals, int block) {
 
     /** A curve from {@code start} to {@code end}, in blocks from the start of the route. */
     public record Curve(double start, double end) {}
+
+    /** A signal the train passes {@code at} blocks from the start: side {@code signal} of the network's {@link SignalBlocks}. */
+    public record PassedSignal(double at, int signal) {}
 
     public Leg {
         curves = List.copyOf(curves);
         via = List.copyOf(via);
         signs = List.copyOf(signs);
         edges = List.copyOf(edges);
+        signals = List.copyOf(signals);
+    }
+
+    /** A leg whose signals and blocks are not known. */
+    public Leg(String from, String to, double distance, List<Curve> curves, List<String> via, List<SpeedSign> signs,
+               List<Integer> edges) {
+        this(from, to, distance, curves, via, signs, edges, List.of(), -1);
     }
 
     /** A leg whose edges are not known. */

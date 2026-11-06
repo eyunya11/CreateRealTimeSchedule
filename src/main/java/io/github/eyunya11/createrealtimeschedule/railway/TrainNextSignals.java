@@ -49,7 +49,43 @@ public final class TrainNextSignals {
 
     private static boolean failed;
 
+    /** Create Train Next's config, whose {@code SERVER} has the speeds of its light signals. */
+    private static final String CONFIG = "com.eyunya.createtrainnext.CTNConfig";
+
+    private static boolean speedsFailed;
+
     private TrainNextSignals() {}
+
+    /**
+     * The speeds Create Train Next's light signals hold a train to, as its server config has them; null
+     * where it is not there, and its defaults where they cannot be read. They are read by reflection,
+     * as the heads are: {@code CTNConfig.SERVER.restrictedSpeed} and the others, each a config value
+     * with {@code get()}.
+     */
+    public static SignalBlocks.@Nullable LightSpeeds speeds() {
+        Class<?> config;
+        try {
+            config = Class.forName(CONFIG);
+        } catch (ClassNotFoundException | LinkageError e) {
+            return null;
+        }
+        try {
+            Object server = config.getField("SERVER").get(null);
+            return new SignalBlocks.LightSpeeds(speed(server, "restrictedSpeed"), speed(server, "approachSpeed"),
+                speed(server, "reducedSpeed"), speed(server, "sixAspectProceedSpeed"));
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            if (!speedsFailed) {
+                speedsFailed = true;
+                LOGGER.warn("Could not read the speeds of Create Train Next's light signals; its defaults are taken", e);
+            }
+            return SignalBlocks.LightSpeeds.DEFAULT;
+        }
+    }
+
+    private static int speed(Object server, String name) throws ReflectiveOperationException {
+        Object value = server.getClass().getField(name).get(server);
+        return ((Number) value.getClass().getMethod("get").invoke(value)).intValue();
+    }
 
     /**
      * What the head at {@code pos} shows, if it is a colour light signal of Create Train Next that can
