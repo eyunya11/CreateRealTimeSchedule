@@ -26,24 +26,24 @@ import io.github.eyunya11.createrealtimeschedule.travel.TravelTime;
 
 class TrafficTest {
 
-    private static final TrainSpec SPEC = TrainSpec.STANDARD;
-    private static final double LENGTH = 10;
+    static final TrainSpec SPEC = TrainSpec.STANDARD;
+    static final double LENGTH = 10;
     /** Five minutes: long enough for every train to have arrived where it stops first. */
-    private static final long LATER = 20 * 60 * 5;
+    static final long LATER = 20 * 60 * 5;
 
-    private static Leg leg(RailNetwork network, String from, String to) {
+    static Leg leg(RailNetwork network, String from, String to) {
         return network.legs().stream().filter(l -> l.from().equals(from) && l.to().equals(to)).findFirst().orElseThrow();
     }
 
-    private static Run run(String name, TrainSpec spec, Stint... stints) {
+    static Run run(String name, TrainSpec spec, Stint... stints) {
         return new Run(name, spec, 1, List.of(stints));
     }
 
-    private static Stint first(Leg leg, long departs) {
+    static Stint first(Leg leg, long departs) {
         return new Stint(leg, departs, 0, true, LENGTH);
     }
 
-    private static Stint then(Leg leg, long departs) {
+    static Stint then(Leg leg, long departs) {
         return new Stint(leg, departs, 0, false, LENGTH);
     }
 
@@ -51,11 +51,11 @@ class TrafficTest {
      * A train that comes in from a little way back and stands at the station named {@code at} until
      * {@link #LATER}, then runs on to {@code to}, where it is taken off.
      */
-    private static Run standing(RailNetwork network, String from, String at, String to) {
+    static Run standing(RailNetwork network, String from, String at, String to) {
         return standing(network, from, at, to, LATER);
     }
 
-    private static Run standing(RailNetwork network, String from, String at, String to, long until) {
+    static Run standing(RailNetwork network, String from, String at, String to, long until) {
         return run("standing", SPEC, first(leg(network, from, at), 0), then(leg(network, at, to), until));
     }
 
@@ -169,6 +169,16 @@ class TrafficTest {
         assertEquals(trip.free(), trip.ticks());
     }
 
+    /** A simulation that would take too long gives up, and says so. */
+    @Test
+    void aSimulationThatWouldTakeTooLongGivesUp() {
+        RailNetwork network = TestLines.line(5, SignalBlocks.LightSpeeds.DEFAULT, 10, 900);
+        Leg way = leg(network, "A", "B");
+        List<Run> runs = List.of(run("first", SPEC, first(way, 0)), run("second", SPEC, first(way, 200)));
+        assertFalse(Traffic.run(network.blocks(), runs, 100).finished());
+        assertTrue(Traffic.run(network.blocks(), runs).finished());
+    }
+
     @Test
     void aTrainBehindAMovingOneIsSlowedByIt() {
         RailNetwork network = TestLines.line(5, SignalBlocks.LightSpeeds.DEFAULT, 10, 900);
@@ -216,7 +226,7 @@ class TrafficTest {
      * either way go through. Signal 0 at 40 east leads into it and 1 at 60 out of it; signals 2 and 3 do
      * the same for trains running west.
      */
-    private static RailNetwork singleTrack(double... eastStations) {
+    static RailNetwork singleTrack(double... eastStations) {
         Edge east = new Edge(100, false, List.of(), List.of(), List.of(), -1,
             List.of(new Point(40, Point.Kind.SIGNAL, 0), new Point(60, Point.Kind.SIGNAL, 1)), -1, -1);
         Edge west = new Edge(100, false, List.of(), List.of(), List.of(), -1,
@@ -240,7 +250,7 @@ class TrafficTest {
      * of it for trains running east, 2 into it and 3 out of it for trains running west. Blocks 0 and 2 are
      * the east track's, 3 and 4 the west track's, and 1 is the single track.
      */
-    private static RailNetwork singleStretch(double... eastStations) {
+    static RailNetwork singleStretch(double... eastStations) {
         Edge east = new Edge(100, false, List.of(), List.of(), List.of(), -1,
             List.of(new Point(40, Point.Kind.SIGNAL, 0), new Point(60, Point.Kind.SIGNAL, 1)), -1, -1);
         Edge west = new Edge(100, false, List.of(), List.of(), List.of(), -1,
@@ -285,7 +295,7 @@ class TrafficTest {
      * at 20 into block 3, and stations C at 30, D at 50 and E at 90. Block 1 leads on to signals 1 and 2,
      * as a block with a junction in it does. The signals are five-aspect light signals.
      */
-    private static RailNetwork twoTracks(List<List<Integer>> crossings) {
+    static RailNetwork twoTracks(List<List<Integer>> crossings) {
         Edge first = new Edge(300, false, List.of(), List.of(), List.of(), -1,
             List.of(new Point(100, Point.Kind.SIGNAL, 0), new Point(200, Point.Kind.SIGNAL, 1)), -1, -1);
         Edge second = new Edge(100, false, List.of(), List.of(), List.of(), -1, List.of(new Point(20, Point.Kind.SIGNAL, 2)), -1, -1);

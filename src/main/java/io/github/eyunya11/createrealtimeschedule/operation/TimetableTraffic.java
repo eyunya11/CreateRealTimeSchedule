@@ -39,9 +39,19 @@ public final class TimetableTraffic {
     public record Key(String train, int stop) {}
 
     private final Map<Key, Trip> trips;
+    private final boolean finished;
 
-    private TimetableTraffic(Map<Key, Trip> trips) {
+    private TimetableTraffic(Map<Key, Trip> trips, boolean finished) {
         this.trips = trips;
+        this.finished = finished;
+    }
+
+    /**
+     * Whether the simulation ran to the end ({@link Traffic.Result#finished}); if not, it says nothing of
+     * any train.
+     */
+    public boolean finished() {
+        return finished;
     }
 
     /**
@@ -103,7 +113,7 @@ public final class TimetableTraffic {
             for (int i = 0; i < ran.size(); i++)
                 trips.put(keys.get(run).get(i), ran.get(i));
         }
-        return new TimetableTraffic(trips);
+        return new TimetableTraffic(result.finished() ? trips : Map.of(), result.finished());
     }
 
     /** How the leg from stop {@code stop} of {@code train} to the next went, if the train set out on it. */
