@@ -1773,7 +1773,9 @@
     const last = train.stops.length - 1;
     const rows = train.stops.map((stop, i) => {
       const choices = stations.includes(stop.station) ? stations : [stop.station].concat(stations);
+      // The column is narrow, and cuts a long name short: the whole of it is in the title.
       const select = h('select', {
+        title: stop.station,
         onchange: event => change(rt.edit.setStopStation(state.timetable, number, i, event.target.value)),
       }, choices.map(station => h('option', { value: station, selected: station === stop.station }, station)));
       return [h('tr', null,
@@ -1787,7 +1789,7 @@
           onclick: () => change(rt.edit.removeStop(state.timetable, number, i)),
         }, '×'))), stopTimesRow(train, i)];
     });
-    panel.append(h('table', null,
+    panel.append(h('table', { class: 'stops' },
       h('thead', null, h('tr', null, h('th', null, t('station')), h('th', null, t('arrive')), h('th', null, t('depart')), h('th'))),
       h('tbody', null, rows.flat())));
     if (trainNote !== '')

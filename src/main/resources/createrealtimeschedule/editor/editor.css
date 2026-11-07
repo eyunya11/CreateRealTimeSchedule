@@ -656,6 +656,31 @@ footer h2 {
   width: 80px;
 }
 
+/*
+ * A train's stops keep to the panel's width: the times and the button have the width they need,
+ * and the station takes what is left, a long name cut short.
+ */
+#inspector table.stops {
+  table-layout: fixed;
+}
+
+#inspector table.stops th:nth-child(2),
+#inspector table.stops th:nth-child(3) {
+  width: 72px;
+}
+
+#inspector table.stops th:nth-child(4) {
+  width: 34px;
+}
+
+#inspector table.stops td > select {
+  width: 100%;
+}
+
+#inspector table.stops td > input {
+  width: 66px;
+}
+
 /* The row under a stop's times, with how long the train stands there. */
 #inspector tr.stop-times td {
   padding-top: 0;
@@ -684,8 +709,9 @@ footer h2 {
   margin-top: 4px;
 }
 
+/* A wait's words wrap, so as not to make the panel wider; its longest wait keeps together, as each label does. */
 #inspector tr.stop-times .wait {
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 #inspector tr.stop-times .wait-add select {
