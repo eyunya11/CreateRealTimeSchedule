@@ -3,6 +3,7 @@ package io.github.eyunya11.createrealtimeschedule.operation;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.OptionalInt;
@@ -11,6 +12,10 @@ import java.util.OptionalLong;
 import org.junit.jupiter.api.Test;
 
 import io.github.eyunya11.createrealtimeschedule.railway.Leg;
+import io.github.eyunya11.createrealtimeschedule.railway.RailNetwork;
+import io.github.eyunya11.createrealtimeschedule.railway.SignalBlocks;
+import io.github.eyunya11.createrealtimeschedule.timetable.Timetable;
+import io.github.eyunya11.createrealtimeschedule.traffic.TestLines;
 import io.github.eyunya11.createrealtimeschedule.travel.SpeedSign;
 import io.github.eyunya11.createrealtimeschedule.travel.TrainSpec;
 
@@ -86,6 +91,33 @@ class RunTimesTest {
         assertEquals(SIGNED.get(List.of("B", "C", "")).ticks(TrainSpec.STANDARD, 1, OptionalInt.of(40)).orElseThrow(), limited);
         // 1000 blocks at 40 km/h (11.1 blocks a second) is 90 seconds; at the top speed of 28 a second, about 36.
         assertTrue(limited > free + 50 * 20, free + " and " + limited);
+    }
+
+    /** Running times with the signals say what the trains of the timetable are held up by, and pass the rest on. */
+    @Test
+    void timesWithTheSignalsSayWhatTheTrafficSays() {
+        RunTimes track = RunTimes.ofLegs(SIGNED, TrainSpec.STANDARD, 1);
+        TimetableTraffic traffic = TimetableTraffic.of(new Timetable("t", List.of(),
+                List.of(new Timetable.Train("1", "L", "", List.of(Timetable.Stop.leaving("A", 0), Timetable.Stop.arriving("B", 60))),
+                    new Timetable.Train("2", "L", "", List.of(Timetable.Stop.leaving("A", 10), Timetable.Stop.arriving("B", 70)))),
+                List.of()),
+            legsOf(TestLines.line(5, SignalBlocks.LightSpeeds.DEFAULT, 10, 900)), TestLines.line(5, SignalBlocks.LightSpeeds.DEFAULT, 10, 900).blocks(),
+            TrainSpec.STANDARD, 0, 10);
+        RunTimes times = RunTimes.withSignals(track, traffic);
+        assertEquals(traffic.signalTicks("2", 0), times.signalTicks("2", 0));
+        assertTrue(times.signalTicks("2", 0) > 0);
+        assertEquals(track.ticks("A", "B", "", OptionalInt.empty()), times.ticks("A", "B", "", OptionalInt.empty()));
+        assertEquals(track.limitAtEnd("A", "B", "", OptionalInt.empty()), times.limitAtEnd("A", "B", "", OptionalInt.empty()));
+        assertEquals(times.signalTicks("2", 0), RunTimes.remembered(times).signalTicks("2", 0));
+        assertEquals(times.signalTicks("2", 0), RunTimes.fastest(List.of(times, track)).signalTicks("2", 0));
+        assertEquals(0, track.signalTicks("2", 0), "running times that know nothing of the signals");
+    }
+
+    private static Map<List<String>, Leg> legsOf(RailNetwork network) {
+        Map<List<String>, Leg> legs = new HashMap<>();
+        for (Leg leg : network.legs())
+            legs.put(List.of(leg.from(), leg.to(), ""), leg);
+        return legs;
     }
 
     @Test

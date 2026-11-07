@@ -26,6 +26,7 @@ import io.github.eyunya11.createrealtimeschedule.clock.RealClock;
 import io.github.eyunya11.createrealtimeschedule.diagram.DutyTimes;
 import io.github.eyunya11.createrealtimeschedule.diagram.LineAxis;
 import io.github.eyunya11.createrealtimeschedule.railway.Leg;
+import io.github.eyunya11.createrealtimeschedule.railway.SignalBlocks;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Duty;
 import io.github.eyunya11.createrealtimeschedule.timetable.TimetableJson;
@@ -130,6 +131,10 @@ public final class OperationData extends SavedData {
     private @Nullable Map<String, LineAxis> axes;
     /** Not saved: the ways between the timetable's stations by their ends and tag, worked out with the axes ({@link TrackFacts}). */
     private @Nullable Map<List<String>, Leg> legs;
+    /** The signal blocks of the network the legs are of, as worked out with them. */
+    private SignalBlocks blocks = SignalBlocks.NONE;
+    /** The trains of the timetable run with the signals, once worked out for the legs; null until then. */
+    private @Nullable TimetableTraffic traffic;
     /** Not saved: the ways between stops the trains cannot run on their track tags, worked out with the axes. */
     private List<TagWays.NoWay> noWays = List.of();
     /** Not saved: the track tags the timetable holds trains to that the world has none of, worked out with the axes. */
@@ -420,10 +425,13 @@ public final class OperationData extends SavedData {
      * the track has changed, axes that differ from those kept make a client's copy old, and the waits
      * are worked out again with them. What is wrong with the track tags is logged when it changes.
      */
-    public void track(Map<String, LineAxis> axes, Map<List<String>, Leg> legs, List<TagWays.NoWay> noWays, List<String> unknownTags) {
+    public void track(Map<String, LineAxis> axes, Map<List<String>, Leg> legs, SignalBlocks blocks, List<TagWays.NoWay> noWays,
+                      List<String> unknownTags) {
         Map<String, LineAxis> before = this.axes;
         this.axes = Map.copyOf(axes);
         this.legs = Map.copyOf(legs);
+        this.blocks = blocks;
+        this.traffic = null;
         this.noWays = List.copyOf(noWays);
         this.unknownTags = List.copyOf(unknownTags);
         List<Object> tags = List.of(this.noWays, this.unknownTags);
@@ -439,6 +447,21 @@ public final class OperationData extends SavedData {
             waits = null;
             revision++;
         }
+    }
+
+    /** The signal blocks of the network the ways between stations are of, as last worked out with them. */
+    public SignalBlocks blocks() {
+        return blocks;
+    }
+
+    /** The trains of the timetable run with the signals on the ways between stations; null if not worked out since they were. */
+    public @Nullable TimetableTraffic traffic() {
+        return traffic;
+    }
+
+    /** Keeps the trains of the timetable run with the signals, until the ways between stations or the timetable change. */
+    public void traffic(TimetableTraffic traffic) {
+        this.traffic = traffic;
     }
 
     /**
@@ -473,6 +496,7 @@ public final class OperationData extends SavedData {
     public void forgetAxes() {
         axes = null;
         legs = null;
+        traffic = null;
         waits = null;
         revision++;
     }

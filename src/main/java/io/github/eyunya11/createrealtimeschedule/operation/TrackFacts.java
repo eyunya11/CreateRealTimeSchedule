@@ -16,6 +16,11 @@ import com.simibubi.create.content.trains.graph.EdgePointType;
 import com.simibubi.create.content.trains.graph.TrackGraph;
 import com.simibubi.create.content.trains.station.GlobalStation;
 
+import org.slf4j.Logger;
+
+import com.mojang.logging.LogUtils;
+
+import io.github.eyunya11.createrealtimeschedule.ModSettings;
 import io.github.eyunya11.createrealtimeschedule.clock.RealClock;
 import io.github.eyunya11.createrealtimeschedule.diagram.LineAxis;
 import io.github.eyunya11.createrealtimeschedule.railway.CreateNetwork;
@@ -25,6 +30,7 @@ import io.github.eyunya11.createrealtimeschedule.tag.TrackTagData;
 import io.github.eyunya11.createrealtimeschedule.tag.TrackTags;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Line;
+import io.github.eyunya11.createrealtimeschedule.traffic.Traffic;
 import io.github.eyunya11.createrealtimeschedule.travel.TrainSpec;
 import io.github.eyunya11.createrealtimeschedule.travel.TrainSpecs;
 
@@ -36,6 +42,8 @@ import io.github.eyunya11.createrealtimeschedule.travel.TrainSpecs;
  * ({@link OperationData#forgetAxes}), or the track does ({@link #watch}).
  */
 public final class TrackFacts {
+
+    private static final Logger LOGGER = LogUtils.getLogger();
 
     /** How long the track has to stay as it is after it has changed before the facts are worked out again, in ticks. */
     public static final int SETTLE_TICKS = 5 * RealClock.TICKS_PER_SECOND;
@@ -116,7 +124,7 @@ public final class TrackFacts {
         for (Map.Entry<String, RailNetwork.Routes> tag : routes.entrySet())
             for (Leg leg : tag.getValue().legs())
                 byEnds.putIfAbsent(List.of(leg.from(), leg.to(), tag.getKey()), leg);
-        data.track(axes, byEnds, TagWays.of(timetable, track(network, routes)), TagWays.unknown(timetable, tags.names().values()));
+        data.track(axes, byEnds, network.blocks(), TagWays.of(timetable, track(network, routes)), TagWays.unknown(timetable, tags.names().values()));
         data.trackWatch().workedOut(print);
         // The end of a train copied on an edge that is gone is not run on from; it is taken again from where the train is.
         data.tails().entrySet().removeIf(entry -> {
@@ -148,6 +156,50 @@ public final class TrackFacts {
                 return byTag.getOrDefault(tag, Map.of()).getOrDefault(platform, Map.of()).getOrDefault(station, -1);
             }
         };
+    }
+
+    /**
+     * The trains of the timetable run on time together with the signals on the ways between its
+     * stations ({@link TimetableTraffic}), for a train without fuel at full throttle, as long as the
+     * server's config makes one, and of the length the config gives where the timetable gives none.
+     * Worked out the first time it is needed after the ways are, and kept with them: for a day of a
+     * train a minute, it takes about a second. A timetable that holds too many trains up for too long to
+     * be worked out ({@link Traffic#MAX_STEPS}) is taken to have the signals hold no train up, and the log
+     * says so.
+     */
+    public static TimetableTraffic traffic(OperationData data, Timetable timetable) {
+        workOut(data, timetable);
+        TimetableTraffic known = data.traffic();
+        if (known != null)
+            return known;
+        TrainSpec spec = null;
+        for (Supplier<TrainSpec> each : List.<Supplier<TrainSpec>>of(TrainSpecs::unpowered, TrainSpecs::powered)) {
+            try {
+                spec = each.get();
+                break;
+            } catch (IllegalArgumentException e) {
+                // no train of that kind moves
+            }
+        }
+        TimetableTraffic traffic = TimetableTraffic.NONE;
+        if (spec != null && data.blocks().count() > 0) {
+            long started = System.nanoTime();
+            traffic = TimetableTraffic.of(timetable, data.legs(), data.blocks(), spec,
+                ModSettings.defaultMinimumStopSeconds() * (long) RealClock.TICKS_PER_SECOND, ModSettings.trainLengthBlocks());
+            long ms = (System.nanoTime() - started) / 1_000_000;
+            if (traffic.finished())
+                LOGGER.info("Ran the trains of the timetable with the signals in {} ms", ms);
+            else
+                LOGGER.warn("The trains of the timetable hold one another up at the signals too much to work out in time ({} ms); "
+                    + "the forecasts leave the signals out", ms);
+        }
+        data.traffic(traffic);
+        return traffic;
+    }
+
+    /** {@code times}, with what the signals add to the ways of the trains of the timetable, running on time ({@link #traffic}). */
+    public static RunTimes withSignals(OperationData data, Timetable timetable, RunTimes times) {
+        return RunTimes.withSignals(times, traffic(data, timetable));
     }
 
     /**

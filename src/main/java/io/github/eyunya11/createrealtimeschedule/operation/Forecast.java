@@ -10,8 +10,9 @@ import io.github.eyunya11.createrealtimeschedule.clock.RealClock;
  * When a set is to leave the calls ahead of it if nothing holds it up: it runs from each call to the
  * next in the least time the track takes, or in the timetable's time where that is not known, and
  * stands at each for its minimum stop at least, and until the timetable's time. That is how much of
- * its delay a late set makes up on the way. Signals and other trains are not in it, so it hopes for
- * the best; the operation works it out again each time a set arrives.
+ * its delay a late set makes up on the way. The signals are in it as they hold the trains up running
+ * on time ({@link RunTimes#signalTicks}), not as they hold up a set that is late, so it hopes for the
+ * best; the operation works it out again each time a set arrives.
  *
  * <p>It has no Minecraft types in it so that it can be tested without a game.
  */
@@ -37,15 +38,25 @@ public final class Forecast {
 
     /**
      * The ticks a set takes from call {@code from} to the next, on the track tag it leaves on: the
-     * track's least, or else the timetable's.
+     * track's least, with what the signals add to that way of the train it leaves as, or else the
+     * timetable's.
      */
     public static long runTicks(List<Call> calls, int from, RunTimes times) {
         Call leaving = calls.get(from);
         Call coming = calls.get(from + 1);
         OptionalLong track = times.ticks(leaving.station(), coming.station(), leaving.tag(), limitAt(calls, from, times));
         if (track.isPresent())
-            return track.getAsLong();
+            return track.getAsLong() + times.signalTicks(leaving.leavingTrain(), from - firstOfTrain(calls, from));
         return plannedRunTicks(calls, from);
+    }
+
+    /** The call at which the train the set leaves call {@code call} as starts: the first it leaves as that train. */
+    static int firstOfTrain(List<Call> calls, int call) {
+        String train = calls.get(call).leavingTrain();
+        int first = call;
+        while (first > 0 && calls.get(first - 1).leavingTrain().equals(train))
+            first--;
+        return first;
     }
 
     /**
@@ -55,10 +66,7 @@ public final class Forecast {
      * since where trains turn back the signs are put up facing both ways.
      */
     static OptionalInt limitAt(List<Call> calls, int call, RunTimes times) {
-        String train = calls.get(call).leavingTrain();
-        int first = call;
-        while (first > 0 && calls.get(first - 1).leavingTrain().equals(train))
-            first--;
+        int first = firstOfTrain(calls, call);
         OptionalInt limit = OptionalInt.empty();
         for (int way = first; way < call; way++)
             limit = times.limitAtEnd(calls.get(way).station(), calls.get(way + 1).station(), calls.get(way).tag(), limit);

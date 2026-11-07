@@ -196,15 +196,17 @@ public final class OperationService {
 
     /**
      * How long the track takes for the train {@code id}, at its own speed and throttle ({@link TrackFacts#timesOf});
-     * the least any train takes if it is gone. Worked out once for the train as it is, and kept while it
-     * has or lacks fuel and runs at the same throttle, as a set may wait for it for many ticks.
+     * the least any train takes if it is gone; and what the signals add for the trains of the timetable
+     * ({@link TrackFacts#withSignals}). Worked out once for the train as it is, and kept while it has or
+     * lacks fuel and runs at the same throttle, as a set may wait for it for many ticks.
      */
     private static RunTimes timesOf(OperationData data, Timetable timetable, UUID id) {
         Map<List<String>, Leg> legs = TrackFacts.legs(data, timetable);
         Train train = Create.RAILWAYS.trains.get(id);
         if (train == null)
-            return TrackFacts.fastestTimes(legs);
-        return data.trainTimes(id, List.of(train.fuelTicks > 0, train.throttle), () -> RunTimes.remembered(TrackFacts.timesOf(train, legs)));
+            return TrackFacts.withSignals(data, timetable, TrackFacts.fastestTimes(legs));
+        return data.trainTimes(id, List.of(train.fuelTicks > 0, train.throttle),
+            () -> TrackFacts.withSignals(data, timetable, RunTimes.remembered(TrackFacts.timesOf(train, legs))));
     }
 
     private static void stepRuns(OperationData data, Timetable timetable, long now, long defaultMinimumStop, long threshold, long lead,
@@ -261,7 +263,7 @@ public final class OperationService {
                                 long threshold, long lead) {
         if (!Recovery.tooLate(run, threshold))
             return; // as most sets are: the track need not be looked at
-        Optional<CreateReach> reach = CreateReach.of(train, TrackFacts.legs(data, timetable));
+        Optional<CreateReach> reach = CreateReach.of(train, TrackFacts.legs(data, timetable), TrackFacts.traffic(data, timetable));
         if (reach.isEmpty())
             return;
         Recovery.Rules rules = new Recovery.Rules(timetable, data.allCalls(), TrackFacts.axes(data, timetable), threshold, defaultMinimumStop,
@@ -327,7 +329,7 @@ public final class OperationService {
             }
             if (late && threshold > 0 && rules == null) {
                 rules = new Recovery.Rules(timetable, data.allCalls(), TrackFacts.axes(data, timetable), threshold, defaultMinimumStop, lead);
-                fastest = TrackFacts.fastestTimes(TrackFacts.legs(data, timetable));
+                fastest = TrackFacts.withSignals(data, timetable, TrackFacts.fastestTimes(TrackFacts.legs(data, timetable)));
             }
             if (late && (rules == null || !DutyCalendar.mayStartLate(start.day(), DutyPlan.firstDeparture(calls), now, lead)
                 || !Recovery.canStartLate(rules, duty.id(), calls, start.day(), now, fastest, null))) {
@@ -352,7 +354,7 @@ public final class OperationService {
             UUID id = chosen.get();
             Train set = Create.RAILWAYS.trains.get(id);
             if (late) {
-                Optional<CreateReach> reach = CreateReach.of(set, TrackFacts.legs(data, timetable));
+                Optional<CreateReach> reach = CreateReach.of(set, TrackFacts.legs(data, timetable), TrackFacts.traffic(data, timetable));
                 if (reach.isEmpty() || !Recovery.canStartLate(rules, duty.id(), calls, start.day(), now, reach.get(), reach.get())) {
                     waiting = true; // where this set would have to be held it would be in the way; perhaps later
                     continue;

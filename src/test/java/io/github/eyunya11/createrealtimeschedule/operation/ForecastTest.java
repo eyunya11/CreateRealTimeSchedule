@@ -106,6 +106,59 @@ class ForecastTest {
         assertEquals(400 * SECOND, Forecast.runTicks(SIGNED_CALLS, 2, SIGNED));
     }
 
+    /**
+     * SIGNED, with the signals adding 7 seconds to train 1's way from B, its stop 1, and 3 seconds to
+     * train 2's from C, its stop 0, running on time with the others.
+     */
+    private static final RunTimes SIGNALLED = new RunTimes() {
+        @Override
+        public OptionalLong ticks(String from, String to, String tag) {
+            return SIGNED.ticks(from, to, tag);
+        }
+
+        @Override
+        public OptionalLong ticks(String from, String to, String tag, OptionalInt limitAtStart) {
+            return SIGNED.ticks(from, to, tag, limitAtStart);
+        }
+
+        @Override
+        public OptionalInt limitAtEnd(String from, String to, String tag, OptionalInt limitAtStart) {
+            return SIGNED.limitAtEnd(from, to, tag, limitAtStart);
+        }
+
+        @Override
+        public long signalTicks(String train, int stop) {
+            return train.equals("1") && stop == 1 ? 7 * SECOND : train.equals("2") && stop == 0 ? 3 * SECOND : 0;
+        }
+    };
+
+    /** What the signals add to a way is that of the train the set leaves as, counted by the train's own stops. */
+    @Test
+    void theSignalsAddToTheWayOfTheTrainASetLeavesAs() {
+        assertEquals(100 * SECOND, Forecast.runTicks(SIGNED_CALLS, 0, SIGNALLED));
+        assertEquals(307 * SECOND, Forecast.runTicks(SIGNED_CALLS, 1, SIGNALLED));
+        assertEquals(403 * SECOND, Forecast.runTicks(SIGNED_CALLS, 2, SIGNALLED), "train 2's first way, though the duty's third");
+        // Leaving B ten minutes late, at C at 08:21:07, and 20 seconds there.
+        assertEquals(at("08:21:27"), Forecast.leaves(SIGNED_CALLS, DAY, 1, at("08:16"), 2, SIGNALLED, MINIMUM));
+    }
+
+    /** Where the track says nothing of a way, the timetable's time is taken, with nothing added. */
+    @Test
+    void theSignalsAddNothingToTheTimetablesTime() {
+        RunTimes unknown = new RunTimes() {
+            @Override
+            public OptionalLong ticks(String from, String to, String tag) {
+                return OptionalLong.empty();
+            }
+
+            @Override
+            public long signalTicks(String train, int stop) {
+                return 60 * SECOND;
+            }
+        };
+        assertEquals(780 * SECOND, Forecast.runTicks(CALLS, 1, unknown));
+    }
+
     @Test
     void runningTimesThatKnowOfNoSignsCarryNoLimit() {
         assertEquals(OptionalInt.empty(), Forecast.limitAt(CALLS, 2, TRACK));

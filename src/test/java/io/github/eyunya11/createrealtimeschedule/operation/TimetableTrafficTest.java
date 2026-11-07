@@ -60,6 +60,22 @@ class TimetableTrafficTest {
         assertEquals(second.ticks(), traffic.ticks("2", 0).getAsLong());
     }
 
+    /** What the signals add to a way is what it took more than on an empty line; nothing for a train held up by none. */
+    @Test
+    void theSignalTicksAreWhatTheSignalsHoldATrainUpBy() {
+        TimetableTraffic traffic = run(line(),
+            List.of(train("1", Stop.leaving("A", 0), Stop.arriving("B", 60)), train("2", Stop.leaving("A", 10), Stop.arriving("B", 70))),
+            List.of());
+        Trip second = traffic.trip("2", 0).orElseThrow();
+        assertEquals(second.ticks() - second.free(), traffic.signalTicks("2", 0));
+        assertTrue(traffic.signalTicks("2", 0) > 0);
+        assertEquals(0, traffic.signalTicks("1", 0));
+        assertEquals(0, traffic.signalTicks("2", 1), "a stop the train has no way from");
+        assertEquals(0, traffic.signalTicks("9", 0), "a train not there");
+        assertEquals(0, TimetableTraffic.NONE.signalTicks("2", 0));
+        assertTrue(TimetableTraffic.NONE.finished());
+    }
+
     @Test
     void aTrainOffTheTrackRunsNowhere() {
         TimetableTraffic traffic = run(line(), List.of(train("1", Stop.leaving("A", 0), Stop.arriving("C", 60))), List.of());

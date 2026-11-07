@@ -38,6 +38,9 @@ public final class TimetableTraffic {
     /** A leg of a train of the timetable: from its stop {@code stop} (0 for the first) to the next. */
     public record Key(String train, int stop) {}
 
+    /** Nothing known of the signals: no train is held up by them. */
+    public static final TimetableTraffic NONE = new TimetableTraffic(Map.of(), true);
+
     private final Map<Key, Trip> trips;
     private final boolean finished;
 
@@ -119,6 +122,16 @@ public final class TimetableTraffic {
     /** How the leg from stop {@code stop} of {@code train} to the next went, if the train set out on it. */
     public Optional<Trip> trip(String train, int stop) {
         return Optional.ofNullable(trips.get(new Key(train, stop)));
+    }
+
+    /**
+     * The ticks the signals added to the leg from stop {@code stop} of {@code train} to the next, waits
+     * at red and all ({@link Trip#signalTicks}); 0 where the train did not set out on it, never got
+     * there, or runs on a way it cannot finish on an empty line.
+     */
+    public long signalTicks(String train, int stop) {
+        Trip trip = trips.get(new Key(train, stop));
+        return trip == null || !trip.hasArrived() || trip.free() < 0 ? 0 : Math.max(0, trip.signalTicks());
     }
 
     /** The ticks the leg from stop {@code stop} of {@code train} to the next took, if it got there. */

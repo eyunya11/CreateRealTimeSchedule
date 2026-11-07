@@ -50,6 +50,42 @@ public interface RunTimes {
     }
 
     /**
+     * The ticks the signals add to the way of train {@code train} of the timetable from its stop
+     * {@code stop} (0 for its first) to the next, running on time with the other trains of the timetable
+     * ({@link TimetableTraffic}): for the light signals of Create Train Next it passes at a lower aspect
+     * behind another, and the signals at red it stops at. 0 where that is not known, as running times
+     * that know nothing of the signals answer.
+     */
+    default long signalTicks(String train, int stop) {
+        return 0;
+    }
+
+    /** {@code times}, with what {@code traffic} says the signals add to the ways of the trains of the timetable. */
+    static RunTimes withSignals(RunTimes times, TimetableTraffic traffic) {
+        return new RunTimes() {
+            @Override
+            public OptionalLong ticks(String from, String to, String tag) {
+                return times.ticks(from, to, tag);
+            }
+
+            @Override
+            public OptionalLong ticks(String from, String to, String tag, OptionalInt limitAtStart) {
+                return times.ticks(from, to, tag, limitAtStart);
+            }
+
+            @Override
+            public OptionalInt limitAtEnd(String from, String to, String tag, OptionalInt limitAtStart) {
+                return times.limitAtEnd(from, to, tag, limitAtStart);
+            }
+
+            @Override
+            public long signalTicks(String train, int stop) {
+                return traffic.signalTicks(train, stop);
+            }
+        };
+    }
+
+    /**
      * How long the track takes between two stations of {@code legs} (by their two ends and the track
      * tag), for a train of {@code spec} at {@code throttle}, with the speed-limit signs on the way.
      */
@@ -95,13 +131,18 @@ public interface RunTimes {
             public OptionalInt limitAtEnd(String from, String to, String tag, OptionalInt limitAtStart) {
                 return times.limitAtEnd(from, to, tag, limitAtStart);
             }
+
+            @Override
+            public long signalTicks(String train, int stop) {
+                return times.signalTicks(train, stop);
+            }
         };
     }
 
     /**
      * The least that any of {@code times} says, between each two stations: the fastest of them; empty
      * where none knows. They are taken to be of the same track, whose signs are the same for every
-     * train, so the limit at the end is the first one's.
+     * train, so the limit at the end is the first one's, as is what the signals add.
      */
     static RunTimes fastest(List<RunTimes> times) {
         List<RunTimes> each = List.copyOf(times);
@@ -120,6 +161,11 @@ public interface RunTimes {
             @Override
             public OptionalInt limitAtEnd(String from, String to, String tag, OptionalInt limitAtStart) {
                 return each.isEmpty() ? limitAtStart : each.getFirst().limitAtEnd(from, to, tag, limitAtStart);
+            }
+
+            @Override
+            public long signalTicks(String train, int stop) {
+                return each.isEmpty() ? 0 : each.getFirst().signalTicks(train, stop);
             }
         };
     }
