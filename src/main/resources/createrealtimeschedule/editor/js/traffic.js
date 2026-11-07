@@ -79,7 +79,8 @@
   /**
    * Runs the trains of runs on blocks (Traffic.run): each {name, spec, throttle, stays, stints: [{leg,
    * departs, minimumStop, newTrain, length}]}, ticks and blocks. {trips, finished}: for each run, a trip
-   * for each leg it set out on, {departed, arrived (-1 if it never did), free (-1 where it cannot get
+   * for each leg it set out on, or was to and was taken off before it did, {departed, arrived (-1 if it
+   * never did), free (-1 where it cannot get
    * there), waits: [{signal, from, ticks}]}; and whether it ran to the end and did not give up after
    * maxSteps (MAX_STEPS if left out) moves of a train, the trips of one that gave up not to be gone by.
    */
@@ -116,6 +117,7 @@
         run: each, trips: [], stint: 0, done: false, leaves: 0, drive: null, leg: each.stints[0].leg,
         length: each.stints[0].length, front: 0, behind: null, signAtStart: null, signalKmh: Infinity, atStation: false,
         waitingFor: -1, waitAt: 0, waitChain: [], chain: new Set(), nextSignal: 0, departed: 0, free: -1, waits: [], waitFrom: -1,
+        parkedBlocks: [],
       };
       train.ahead = {
         count: () => train.leg.signals.length - train.nextSignal,
@@ -131,10 +133,21 @@
       train.atStation = true;
     }
 
+    /** The limit of a sign train leaves the start of stint, its next leg, under: none for a new train of the timetable. */
+    function signAtLeaving(train, stint) {
+      return train.stint === 0 || stint.newTrain ? null : travel.limitAfter(train.leg.signs, train.signAtStart, train.leg.distance);
+    }
+
+    /** The ticks stint takes on an empty line, leaving under sign; -1 where it never gets there. */
+    function freeTicks(train, stint, sign) {
+      const ticks = travel.ticks(train.run.spec, train.run.throttle, stint.leg.distance, stint.leg.curves, stint.leg.signs, sign);
+      return ticks === null ? -1 : ticks;
+    }
+
     function leave(train) {
       const stint = train.run.stints[train.stint];
       if (train.stint > 0) {
-        train.signAtStart = stint.newTrain ? null : travel.limitAfter(train.leg.signs, train.signAtStart, train.leg.distance);
+        train.signAtStart = signAtLeaving(train, stint);
         train.behind = train.leg;
       }
       if (train.stint === 0 || stint.newTrain)
@@ -149,9 +162,15 @@
       train.drive = travel.drive(spec, train.run.throttle, zones, travel.sorted(leg.signs), train.signAtStart);
       train.drive.setSignalLimit(train.signalKmh);
       train.departed = train.leaves;
-      const ticks = travel.ticks(spec, train.run.throttle, leg.distance, leg.curves, leg.signs, train.signAtStart);
-      train.free = ticks === null ? -1 : ticks;
+      train.free = freeTicks(train, stint, train.signAtStart);
       train.waits = [];
+    }
+
+    /** Too late to leave the station it stands at, train is taken off there: the leg it was to set out on is never arrived at. */
+    function dropBeforeLeaving(train) {
+      const stint = train.run.stints[train.stint];
+      train.trips.push({ departed: train.leaves, arrived: -1, free: freeTicks(train, stint, signAtLeaving(train, stint)), waits: [] });
+      train.done = true;
     }
 
     function arrive(train, at) {
@@ -166,8 +185,10 @@
       train.stint++;
       if (train.stint === train.run.stints.length) {
         train.done = true;
-        if (train.run.stays)
+        if (train.run.stays) {
           parked.push(train);
+          train.parkedBlocks = body(train);
+        }
         return;
       }
       const next = train.run.stints[train.stint];
@@ -194,7 +215,8 @@
         taken.push(block);
     }
 
-    function span(leg, from, to, taken) {
+    /** The blocks of leg from from up to to; a signal at to is passed only atTheEnd, for a front at the stop marker. */
+    function span(leg, from, to, atTheEnd, taken) {
       let block = leg.block;
       let i = 0;
       while (i < leg.signals.length && leg.signals[i].at < from)
@@ -202,7 +224,7 @@
       if (i > 0)
         block = blockOf(leg, i - 1);
       add(taken, block);
-      for (; i < leg.signals.length && leg.signals[i].at < to; i++)
+      for (; i < leg.signals.length && (leg.signals[i].at < to || atTheEnd && leg.signals[i].at <= to); i++)
         add(taken, blockOf(leg, i));
     }
 
@@ -211,8 +233,8 @@
       const tail = at - train.length;
       const taken = [];
       if (tail < 0 && train.behind !== null)
-        span(train.behind, Math.max(0, train.behind.distance + tail), train.behind.distance, taken);
-      span(train.leg, Math.max(0, tail), at, taken);
+        span(train.behind, Math.max(0, train.behind.distance + tail), train.behind.distance, true, taken);
+      span(train.leg, Math.max(0, tail), at, train.drive === null && at >= train.leg.distance, taken);
       return taken;
     }
 
@@ -433,6 +455,9 @@
           drive.setSignalLimit(seenFrom(train.waitingFor));
         return changed;
       }
+      // A signal at the stop marker is passed, as the leg has it: the next leg starts past it.
+      while (train.nextSignal < leg.signals.length && leg.signals[train.nextSignal].at <= leg.distance)
+        pass(train, leg.signals[train.nextSignal++].signal);
       arrive(train, now);
       return true;
     }
@@ -451,7 +476,7 @@
       touched = [];
       const onTheLine = waiting.concat(moving);
       for (const train of parked)
-        for (const block of body(train))
+        for (const block of train.parkedBlocks)
           enter(block, train);
       for (const train of onTheLine) {
         for (const block of body(train))
@@ -466,7 +491,7 @@
           if (now <= train.leaves)
             continue;
           if (train.leaves - train.run.stints[train.stint].departs > TOO_LATE_TICKS) {
-            train.done = true;
+            dropBeforeLeaving(train);
             changed = true;
             continue;
           }
@@ -521,9 +546,13 @@
         continue;
       }
       let next = nextToCome < coming.length ? appears(coming[nextToCome]) : Infinity;
-      for (const train of waiting.concat(moving))
+      for (const train of waiting.concat(moving)) {
         if (train.drive === null)
           next = Math.min(next, train.leaves + 1);
+        else
+          // A train held up for good is taken off at its deadline, which may set others free.
+          next = Math.min(next, train.departed + Math.max(train.free, 0) + TOO_LATE_TICKS + 1);
+      }
       if (next === Infinity || next <= now)
         break;
       now = next;
@@ -550,11 +579,11 @@
   }
 
   /** DutyPlan.calls: the calls a set makes running numbers one after another; null if a train is not there. */
-  function calls(timetable, numbers) {
+  function calls(timetable, numbers, byNumber) {
     const made = [];
     let previous = null;
     for (const number of numbers) {
-      const train = timetable.trains.find(each => each.number === number);
+      const train = byNumber.get(number);
       if (train === undefined)
         return null;
       const stops = train.stops;
@@ -592,12 +621,16 @@
    *   timetable gives none
    * @returns {{finished: boolean, trip: function(string, number): ?Object, ticks: function(string, number): ?number}}
    *   whether the simulation ran to the end (if not, it says nothing of any train); how the leg from a
-   *   train's stop (from 0) to the next went, and the ticks it took, null where the train did not set
-   *   out on it or never got there
+   *   train's stop (from 0) to the next went, null where the train was never to set out on it (one taken
+   *   off before it could has a trip that never arrives); and the ticks it took, null where it never got there
    */
   function ofTimetable(timetable, legOf, blocks, spec, defaults) {
     const runs = [];
     const keys = [];
+    const byNumber = new Map();
+    for (const train of timetable.trains)
+      if (!byNumber.has(train.number))
+        byNumber.set(train.number, train);
     const inDuties = new Set();
     const sets = [];
     for (const duty of timetable.duties || []) {
@@ -609,7 +642,7 @@
       if (!inDuties.has(train.number))
         sets.push({ id: train.number, trains: [train.number], duty: false });
     for (const set of sets) {
-      const made = calls(timetable, set.trains);
+      const made = calls(timetable, set.trains, byNumber);
       if (made === null)
         continue;
       const stints = [];
@@ -622,7 +655,7 @@
         const leg = legOf(call.station, made[i + 1].station, call.tag);
         if (leg === null || leg === undefined || call.depart === NONE)
           break;
-        const train = timetable.trains.find(each => each.number === call.leaving);
+        const train = byNumber.get(call.leaving);
         const length = train !== undefined && check.hasLength(train) ? train.length : defaults.length;
         const minimum = i === 0 ? 0
           : (call.minimumStop === NONE ? defaults.minimumStop : call.minimumStop) * TICKS_PER_SECOND;

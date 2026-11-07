@@ -1965,7 +1965,13 @@
             "departed": 1000,
             "arrived": -1,
             "free": 168,
-            "waits": []
+            "waits": [
+              {
+                "signal": 2,
+                "from": 1066,
+                "ticks": 12069
+              }
+            ]
           }
         ]
       ]
@@ -2659,6 +2665,201 @@
             "departed": 0,
             "arrived": 548,
             "free": 482,
+            "waits": []
+          },
+          {
+            "departed": 12549,
+            "arrived": -1,
+            "free": 528,
+            "waits": []
+          }
+        ]
+      ]
+    },
+    {
+      "about": "a signal at the stop marker",
+      "blocks": {
+        "count": 6,
+        "crossings": [],
+        "signals": [
+          {
+            "block": 1,
+            "next": [
+              1
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 2,
+            "next": [
+              2
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 3,
+            "next": [
+              3
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 4,
+            "next": [
+              4
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 5,
+            "next": [],
+            "lights": [
+              5
+            ],
+            "cross": false
+          }
+        ],
+        "lightSpeeds": {
+          "restricted": 25,
+          "approach": 45,
+          "reduced": 75,
+          "sixProceed": 130
+        }
+      },
+      "runs": [
+        {
+          "name": "standing",
+          "spec": {
+            "topSpeed": 28.0,
+            "turnSpeed": 14.0,
+            "acceleration": 3.0
+          },
+          "throttle": 1.0,
+          "stays": false,
+          "stints": [
+            {
+              "leg": {
+                "distance": 30.0,
+                "curves": [],
+                "signs": [],
+                "signals": [],
+                "block": 3
+              },
+              "departs": 0,
+              "minimumStop": 0,
+              "newTrain": true,
+              "length": 10.0
+            },
+            {
+              "leg": {
+                "distance": 450.0,
+                "curves": [],
+                "signs": [],
+                "signals": [
+                  {
+                    "at": 50.0,
+                    "signal": 3
+                  },
+                  {
+                    "at": 150.0,
+                    "signal": 4
+                  }
+                ],
+                "block": 3
+              },
+              "departs": 6000,
+              "minimumStop": 0,
+              "newTrain": false,
+              "length": 10.0
+            }
+          ]
+        },
+        {
+          "name": "behind",
+          "spec": {
+            "topSpeed": 28.0,
+            "turnSpeed": 14.0,
+            "acceleration": 3.0
+          },
+          "throttle": 1.0,
+          "stays": false,
+          "stints": [
+            {
+              "leg": {
+                "distance": 290.0,
+                "curves": [],
+                "signs": [],
+                "signals": [
+                  {
+                    "at": 190.0,
+                    "signal": 0
+                  },
+                  {
+                    "at": 290.0,
+                    "signal": 1
+                  }
+                ],
+                "block": 0
+              },
+              "departs": 200,
+              "minimumStop": 0,
+              "newTrain": true,
+              "length": 10.0
+            },
+            {
+              "leg": {
+                "distance": 40.0,
+                "curves": [],
+                "signs": [],
+                "signals": [],
+                "block": 2
+              },
+              "departs": 2000,
+              "minimumStop": 0,
+              "newTrain": false,
+              "length": 10.0
+            }
+          ]
+        }
+      ],
+      "trips": [
+        [
+          {
+            "departed": 0,
+            "arrived": 116,
+            "free": 116,
+            "waits": []
+          },
+          {
+            "departed": 6000,
+            "arrived": 6496,
+            "free": 496,
+            "waits": []
+          }
+        ],
+        [
+          {
+            "departed": 200,
+            "arrived": 706,
+            "free": 378,
+            "waits": []
+          },
+          {
+            "departed": 2000,
+            "arrived": 2211,
+            "free": 133,
             "waits": []
           }
         ]

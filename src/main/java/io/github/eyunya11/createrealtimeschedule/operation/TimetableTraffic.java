@@ -128,7 +128,7 @@ public final class TimetableTraffic {
         return new TimetableTraffic(result.finished() ? trips : Map.of(), result.finished());
     }
 
-    /** How the leg from stop {@code stop} of {@code train} to the next went, if the train set out on it. */
+    /** How the leg from stop {@code stop} of {@code train} to the next went, if the train set out on it or was taken off before it could. */
     public Optional<Trip> trip(String train, int stop) {
         return Optional.ofNullable(trips.get(new Key(train, stop)));
     }
