@@ -120,6 +120,30 @@ test('a train still under the limit of a sign it passed before is slower until t
   assert.equal(network.seconds(read.network, 'B', 'A', '', 30), null);
 });
 
+test('the ticks under a limit are worked out once for each leg and limit', () => {
+  const travel = script('travel');
+  const ticks = travel.ticks;
+  let runs = 0;
+  travel.ticks = (...args) => {
+    runs++;
+    return ticks(...args);
+  };
+  try {
+    const read = signed(TRAIN);
+    for (let k = 0; k < 3; k++) {
+      assert.equal(network.seconds(read.network, 'B', 'C', '', 20), 117);
+      assert.ok(network.seconds(read.network, 'B', 'C', '', 30) < 117);
+      assert.equal(network.seconds(read.network, 'B', 'C', '', null), 65, 'no limit, no run');
+    }
+    assert.equal(runs, 4, 'with and without the limit, for each of the two limits');
+    // Another network read from the same text has legs of its own.
+    assert.equal(network.seconds(signed(TRAIN).network, 'B', 'C', '', 20), 117);
+    assert.equal(runs, 6);
+  } finally {
+    travel.ticks = ticks;
+  }
+});
+
 test('a network with no train that moves takes the ticks of its legs as they are', () => {
   for (const train of [undefined, { topSpeed: 0, turnSpeed: 14, acceleration: 3, throttle: 1 }, { ...TRAIN, throttle: 2 }]) {
     const read = signed(train);

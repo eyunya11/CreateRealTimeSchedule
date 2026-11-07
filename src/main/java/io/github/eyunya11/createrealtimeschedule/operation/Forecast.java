@@ -28,9 +28,13 @@ public final class Forecast {
      */
     public static long leaves(List<Call> calls, long day, int from, long departure, int to, RunTimes times, long defaultMinimumStop) {
         long leaves = departure;
+        // The limit is carried on from call to call here, not worked out again from the train's first call for each.
+        OptionalInt limit = from < to ? limitAt(calls, from, times) : OptionalInt.empty();
         for (int call = from + 1; call <= to; call++) {
-            long arrives = leaves + runTicks(calls, call - 1, times);
+            long arrives = leaves + runTicks(calls, call - 1, times, limit);
             leaves = Math.max(DutyPlan.at(day, calls.get(call).depart()), arrives + DutyPlan.minimumStop(calls.get(call), defaultMinimumStop));
+            if (call < to)
+                limit = limitAfter(calls, call - 1, limit, times);
         }
         return leaves;
     }
@@ -40,9 +44,14 @@ public final class Forecast {
      * track's least, or else the timetable's.
      */
     public static long runTicks(List<Call> calls, int from, RunTimes times) {
+        return runTicks(calls, from, times, limitAt(calls, from, times));
+    }
+
+    /** {@link #runTicks(List, int, RunTimes)} for a set that leaves call {@code from} under {@code limit} ({@link #limitAt}). */
+    private static long runTicks(List<Call> calls, int from, RunTimes times, OptionalInt limit) {
         Call leaving = calls.get(from);
         Call coming = calls.get(from + 1);
-        OptionalLong track = times.ticks(leaving.station(), coming.station(), leaving.tag(), limitAt(calls, from, times));
+        OptionalLong track = times.ticks(leaving.station(), coming.station(), leaving.tag(), limit);
         if (track.isPresent())
             return track.getAsLong();
         return plannedRunTicks(calls, from);
@@ -63,6 +72,18 @@ public final class Forecast {
         for (int way = first; way < call; way++)
             limit = times.limitAtEnd(calls.get(way).station(), calls.get(way + 1).station(), calls.get(way).tag(), limit);
         return limit;
+    }
+
+    /**
+     * The limit the set is under as it leaves call {@code way + 1}, having left call {@code way} under
+     * {@code limit}: carried on if it goes on as the same train, else none ({@link #limitAt}).
+     */
+    static OptionalInt limitAfter(List<Call> calls, int way, OptionalInt limit, RunTimes times) {
+        Call leaving = calls.get(way);
+        Call coming = calls.get(way + 1);
+        if (!coming.leavingTrain().equals(leaving.leavingTrain()))
+            return OptionalInt.empty();
+        return times.limitAtEnd(leaving.station(), coming.station(), leaving.tag(), limit);
     }
 
     /** The ticks the timetable gives a set from call {@code from} to the next. */

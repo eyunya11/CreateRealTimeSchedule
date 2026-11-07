@@ -107,6 +107,42 @@ class ForecastTest {
     }
 
     @Test
+    void aForecastOverTwoTrainsCarriesTheLimitOnlyWithinEach() {
+        // Train 1 runs A, B, C under the sign from B on; train 2 leaves C under none, on to D and E.
+        List<Call> calls = List.of(new Call("A", Stop.NONE, t("08:00"), "", "1"), new Call("B", t("08:05"), t("08:06"), "1", "1"),
+            new Call("C", t("08:15"), t("08:20"), "1", "2"), new Call("D", t("08:25"), t("08:25"), "2", "2"),
+            new Call("E", t("08:35"), Stop.NONE, "2", ""));
+        // Leaving B at 08:16, at C at 08:21 and off at 08:21:20; 400 seconds to D (500 under the limit), 08:28 and 20 seconds there.
+        assertEquals(at("08:28:20"), Forecast.leaves(calls, DAY, 1, at("08:16"), 3, SIGNED, MINIMUM));
+        assertEquals(OptionalInt.of(40), Forecast.limitAfter(calls, 0, OptionalInt.empty(), SIGNED));
+        assertEquals(OptionalInt.empty(), Forecast.limitAfter(calls, 1, OptionalInt.of(40), SIGNED), "train 2 leaves C under none");
+    }
+
+    @Test
+    void aForecastAsksForTheLimitOnceForEachWay() {
+        List<Call> calls = new java.util.ArrayList<>();
+        for (int i = 0; i < 10; i++)
+            calls.add(new Call("S" + i, i == 0 ? Stop.NONE : t("08:00") + 60 * i - 10, i == 9 ? Stop.NONE : t("08:00") + 60 * i,
+                i == 0 ? "" : "1", i == 9 ? "" : "1"));
+        int[] asked = {0};
+        RunTimes counting = new RunTimes() {
+            @Override
+            public OptionalLong ticks(String from, String to, String tag) {
+                return OptionalLong.of(30 * SECOND);
+            }
+
+            @Override
+            public OptionalInt limitAtEnd(String from, String to, String tag, OptionalInt limitAtStart) {
+                asked[0]++;
+                return OptionalInt.of(40);
+            }
+        };
+        Forecast.leaves(calls, DAY, 0, at("08:00"), 8, counting, MINIMUM);
+        // Each way from S1 to S8 starts under the limit the way before ends under; worked out again from S0 for each, it is 28.
+        assertEquals(7, asked[0]);
+    }
+
+    @Test
     void runningTimesThatKnowOfNoSignsCarryNoLimit() {
         assertEquals(OptionalInt.empty(), Forecast.limitAt(CALLS, 2, TRACK));
         assertEquals(720 * SECOND, Forecast.runTicks(CALLS, 2, TRACK));

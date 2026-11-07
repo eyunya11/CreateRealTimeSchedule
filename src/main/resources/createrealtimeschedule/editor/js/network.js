@@ -448,11 +448,26 @@
   function ticksUnder(network, way, limit) {
     if (limit === null || limit === undefined || network.train === null || network.train === undefined)
       return way.ticks;
-    const train = network.train;
-    const free = travel.ticks(train, train.throttle, way.distance, way.curves, way.signs, null);
-    const limited = travel.ticks(train, train.throttle, way.distance, way.curves, way.signs, limit);
-    return free === null || limited === null ? way.ticks : way.ticks + Math.max(0, limited - free);
+    let known = ticksKnown.get(way);
+    if (known === undefined) {
+      known = new Map();
+      ticksKnown.set(way, known);
+    }
+    if (!known.has(limit)) {
+      const train = network.train;
+      const free = travel.ticks(train, train.throttle, way.distance, way.curves, way.signs, null);
+      const limited = travel.ticks(train, train.throttle, way.distance, way.curves, way.signs, limit);
+      known.set(limit, free === null || limited === null ? way.ticks : way.ticks + Math.max(0, limited - free));
+    }
+    return known.get(limit);
   }
+
+  /**
+   * The ticks under a limit worked out for each leg of a network that has been read, by the limit:
+   * each takes a run tick by tick twice, and the editor asks for the same ones on every change and
+   * every step of a drag. A leg belongs to one network, whose train does not change.
+   */
+  const ticksKnown = new WeakMap();
 
   /**
    * The limit in km/h of a speed-limit sign a train held to tag is under when it stops at to, having

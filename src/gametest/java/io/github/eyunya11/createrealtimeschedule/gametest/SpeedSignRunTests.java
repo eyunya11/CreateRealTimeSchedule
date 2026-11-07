@@ -250,30 +250,38 @@ public class SpeedSignRunTests {
             }
 
             List<Leg> legs = CreateNetwork.read(Create.RAILWAYS.trackNetworks.values()).legs();
+            List<Sign> facing = signs.stream().filter(Sign::eastward).toList();
             if (via) {
+                // The leg to Beta lists the signs past it too, which the train brakes for on the way in.
                 Leg toBeta = legOf(legs, "Alpha", "Beta");
+                assertSigns(toBeta, facing, 0);
                 limitAtStart = toBeta.limitAtEnd(OptionalInt.empty());
                 helper.assertTrue(limitAtStart.isPresent(), "the leg to Beta, with the signs " + toBeta.signs() + ", should end under a limit");
                 leg = legOf(legs, "Beta", "Gamma");
+                assertSigns(leg, facing.stream().filter(sign -> sign.blocksPastAlpha() > DISTANCE / 2).toList(), DISTANCE / 2);
                 train.runtime.setSchedule(ScheduleTests.schedule(ScheduleTests.stop("Beta")), false);
                 enter(Phase.TO_BETA);
                 return;
             }
             leg = legOf(legs, "Alpha", "Beta");
-            List<Sign> facing = signs.stream().filter(Sign::eastward).toList();
-            helper.assertTrue(leg.signs().size() == facing.size(),
-                "the leg from Alpha to Beta lists the signs " + leg.signs() + ", but " + facing + " face its way");
-            for (int i = 0; i < facing.size(); i++) {
-                Sign put = facing.get(i);
-                SpeedSign read = leg.signs().get(i);
-                helper.assertTrue(read.release() == put.release() && read.kmh() == put.kmh()
-                        && Math.abs(read.position() - put.blocksPastAlpha()) <= 1,
-                    "the sign " + put + " was read as " + read);
-            }
+            assertSigns(leg, facing, 0);
 
             train.throttle = throttle;
             train.runtime.setSchedule(ScheduleTests.schedule(ScheduleTests.stop("Beta")), false);
             enter(Phase.RUN);
+        }
+
+        /** That {@code leg}, which starts {@code start} blocks past Alpha, lists {@code put} and nothing else, in order. */
+        private void assertSigns(Leg leg, List<Sign> put, int start) {
+            String way = "the leg from " + leg.from() + " to " + leg.to();
+            helper.assertTrue(leg.signs().size() == put.size(), way + " lists the signs " + leg.signs() + ", but " + put + " face its way");
+            for (int i = 0; i < put.size(); i++) {
+                Sign sign = put.get(i);
+                SpeedSign read = leg.signs().get(i);
+                helper.assertTrue(read.release() == sign.release() && read.kmh() == sign.kmh()
+                        && Math.abs(read.position() - (sign.blocksPastAlpha() - start)) <= 1,
+                    "the sign " + sign + " was read on " + way + " as " + read);
+            }
         }
 
         private static Leg legOf(List<Leg> legs, String from, String to) {
