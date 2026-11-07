@@ -111,6 +111,13 @@ class RunTimesTest {
         assertEquals(times.signalTicks("2", 0), RunTimes.remembered(times).signalTicks("2", 0));
         assertEquals(times.signalTicks("2", 0), RunTimes.fastest(List.of(times, track)).signalTicks("2", 0));
         assertEquals(0, track.signalTicks("2", 0), "running times that know nothing of the signals");
+
+        // A simulation still being worked out is asked for again each time, so that times kept for a train take it once it is done.
+        TimetableTraffic[] now = {TimetableTraffic.NONE};
+        RunTimes later = RunTimes.remembered(RunTimes.withSignals(track, () -> now[0]));
+        assertEquals(0, later.signalTicks("2", 0), "nothing while it is being worked out");
+        now[0] = traffic;
+        assertEquals(traffic.signalTicks("2", 0), later.signalTicks("2", 0), "the run once it is done");
     }
 
     private static Map<List<String>, Leg> legsOf(RailNetwork network) {

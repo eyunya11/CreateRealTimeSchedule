@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
+import java.util.function.Supplier;
 
 import io.github.eyunya11.createrealtimeschedule.railway.Leg;
 import io.github.eyunya11.createrealtimeschedule.travel.TrainSpec;
@@ -62,6 +63,11 @@ public interface RunTimes {
 
     /** {@code times}, with what {@code traffic} says the signals add to the ways of the trains of the timetable. */
     static RunTimes withSignals(RunTimes times, TimetableTraffic traffic) {
+        return withSignals(times, () -> traffic);
+    }
+
+    /** {@code times}, with what the simulation {@code traffic} gives each time it is asked says the signals add. */
+    static RunTimes withSignals(RunTimes times, Supplier<TimetableTraffic> traffic) {
         return new RunTimes() {
             @Override
             public OptionalLong ticks(String from, String to, String tag) {
@@ -80,7 +86,7 @@ public interface RunTimes {
 
             @Override
             public long signalTicks(String train, int stop) {
-                return traffic.signalTicks(train, stop);
+                return traffic.get().signalTicks(train, stop);
             }
         };
     }

@@ -100,7 +100,7 @@ public class SignalTrafficTests {
     }
 
     private enum Phase {
-        SET_UP, WAIT_FOR_LIGHTS, RUN
+        SET_UP, WAIT_FOR_LIGHTS, RUN, FORECAST
     }
 
     /** What is known of a train once it moves: when it started and where its front was then. */
@@ -130,6 +130,9 @@ public class SignalTrafficTests {
         private final List<Started> order = new ArrayList<>();
         /** Whether this is the test of the forecast, which sends no train. */
         private final boolean forecast;
+        /** For the test of the forecast: the timetable, and the operation's data the simulation is run for. */
+        private Timetable timetable;
+        private OperationData data;
 
         Run(GameTestHelper helper, boolean forecast) {
             this.helper = helper;
@@ -155,6 +158,7 @@ public class SignalTrafficTests {
                 }
                 case WAIT_FOR_LIGHTS -> waitForLights();
                 case RUN -> run();
+                case FORECAST -> forecast();
             }
         }
 
@@ -198,7 +202,7 @@ public class SignalTrafficTests {
             }
 
             if (forecast) {
-                forecast();
+                startForecast();
                 return;
             }
             RailNetwork network = CreateNetwork.read(Create.RAILWAYS.trackNetworks.values());
@@ -227,14 +231,28 @@ public class SignalTrafficTests {
          * The operation's own way to the forecast: the track facts of a timetable of the two trains leaving
          * together, the train ahead from Beta for Delta and the one behind from Alpha for Gamma.
          */
-        private void forecast() {
-            Timetable timetable = new Timetable("signals", List.of(new Timetable.Line("L", "L", List.of(NAMES), false)),
+        private void startForecast() {
+            timetable = new Timetable("signals", List.of(new Timetable.Line("L", "L", List.of(NAMES), false)),
                 List.of(new Timetable.Train("1", "L", "", List.of(Timetable.Stop.leaving("Beta", 0), Timetable.Stop.arriving("Delta", 60))),
                     new Timetable.Train("2", "L", "", List.of(Timetable.Stop.leaving("Alpha", 0), Timetable.Stop.arriving("Gamma", 60)))),
                 List.of());
-            OperationData data = new OperationData();
-            TimetableTraffic traffic = TrackFacts.traffic(data, timetable);
+            data = new OperationData();
+            // The simulation runs on a thread of its own: the tick that asks for it does not wait, and has none yet.
+            helper.assertTrue(TrackFacts.traffic(data, timetable) == TimetableTraffic.NONE, "the simulation is run in the tick that asks for it");
+            helper.assertTrue(data.traffic(TrackFacts.trafficKey()) == null, "the simulation is done in the tick that asks for it");
             helper.assertTrue(data.blocks().count() > 0, "the track facts have no signal blocks");
+            enter(Phase.FORECAST);
+        }
+
+        /** Once the simulation is done, the forecast takes it. */
+        private void forecast() {
+            TimetableTraffic traffic = TrackFacts.traffic(data, timetable);
+            if (data.traffic(TrackFacts.trafficKey()) == null) {
+                if (phaseTicks > 200)
+                    helper.fail("the simulation of the timetable is not done after " + phaseTicks + " ticks");
+                return;
+            }
+            LOGGER.info("[{}] the simulation was done {} ticks after it was asked for", helper.testInfo.getTestName(), phaseTicks);
             helper.assertTrue(traffic.finished(), "the simulation of the timetable did not finish");
             long signals = traffic.signalTicks("2", 0);
             LOGGER.info("[{}] the signals hold train 2 up {} ticks, train 1 {}", helper.testInfo.getTestName(), signals, traffic.signalTicks("1", 0));

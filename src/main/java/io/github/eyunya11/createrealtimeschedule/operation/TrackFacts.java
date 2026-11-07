@@ -8,6 +8,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.OptionalInt;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.function.Supplier;
 
 import com.simibubi.create.Create;
@@ -26,6 +29,7 @@ import io.github.eyunya11.createrealtimeschedule.diagram.LineAxis;
 import io.github.eyunya11.createrealtimeschedule.railway.CreateNetwork;
 import io.github.eyunya11.createrealtimeschedule.railway.Leg;
 import io.github.eyunya11.createrealtimeschedule.railway.RailNetwork;
+import io.github.eyunya11.createrealtimeschedule.railway.SignalBlocks;
 import io.github.eyunya11.createrealtimeschedule.tag.TrackTagData;
 import io.github.eyunya11.createrealtimeschedule.tag.TrackTags;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable;
@@ -44,6 +48,16 @@ import io.github.eyunya11.createrealtimeschedule.travel.TrainSpecs;
 public final class TrackFacts {
 
     private static final Logger LOGGER = LogUtils.getLogger();
+
+    /**
+     * The thread the trains of the timetable are run with the signals on, one run at a time, so that the
+     * server's ticks do not wait for it ({@link #traffic}).
+     */
+    private static final ExecutorService TRAFFIC = Executors.newSingleThreadExecutor(task -> {
+        Thread thread = new Thread(task, "CreateRealTimeSchedule traffic");
+        thread.setDaemon(true);
+        return thread;
+    });
 
     /** How long the track has to stay as it is after it has changed before the facts are worked out again, in ticks. */
     public static final int SETTLE_TICKS = 5 * RealClock.TICKS_PER_SECOND;
@@ -162,11 +176,12 @@ public final class TrackFacts {
      * The trains of the timetable run on time together with the signals on the ways between its
      * stations ({@link TimetableTraffic}), for a train without fuel at full throttle, as long as the
      * server's config makes one, and of the length the config gives where the timetable gives none.
-     * Worked out the first time it is needed after the ways are, and kept with them, and while the
-     * config's minimum stop and train length stay as they are: for a day of a train a minute, it takes
-     * about a second. A timetable that holds too many trains up for too long to
-     * be worked out ({@link Traffic#MAX_STEPS}) is taken to have the signals hold no train up, and the log
-     * says so.
+     * Worked out the first time it is needed after the ways are, on a thread of its own, as for a day of
+     * a train a minute it takes about a second: until it is done, the signals hold no train up
+     * ({@link TimetableTraffic#NONE}). Then it is kept with the ways, while the config's minimum stop and
+     * train length stay as they are; a run for ways or a timetable that has changed since it started is
+     * let go. A timetable that holds too many trains up for too long to be worked out
+     * ({@link Traffic#MAX_STEPS}) is taken to have the signals hold no train up, and the log says so.
      */
     public static TimetableTraffic traffic(OperationData data, Timetable timetable) {
         workOut(data, timetable);
@@ -176,6 +191,14 @@ public final class TrackFacts {
         TimetableTraffic known = data.traffic(key);
         if (known != null)
             return known;
+        CompletableFuture<TimetableTraffic> pending = data.pendingTraffic(key);
+        if (pending != null) {
+            if (!pending.isDone())
+                return TimetableTraffic.NONE;
+            TimetableTraffic done = pending.join();
+            data.traffic(done, key);
+            return done;
+        }
         TrainSpec spec = null;
         for (Supplier<TrainSpec> each : List.<Supplier<TrainSpec>>of(TrainSpecs::unpowered, TrainSpecs::powered)) {
             try {
@@ -185,19 +208,35 @@ public final class TrackFacts {
                 // no train of that kind moves
             }
         }
-        TimetableTraffic traffic = TimetableTraffic.NONE;
-        if (spec != null && data.blocks().count() > 0) {
+        if (spec == null || data.blocks().count() == 0) {
+            data.traffic(TimetableTraffic.NONE, key);
+            return TimetableTraffic.NONE;
+        }
+        // All that the run reads is taken here, on the server's thread: the timetable, ways and blocks are not changed after.
+        Map<List<String>, Leg> legs = data.legs();
+        SignalBlocks blocks = data.blocks();
+        TrainSpec runSpec = spec;
+        data.pendingTraffic(CompletableFuture.supplyAsync(() -> run(timetable, legs, blocks, runSpec, minimumStop, length), TRAFFIC), key);
+        return TimetableTraffic.NONE;
+    }
+
+    /** {@link TimetableTraffic#of}, timed for the log; {@link TimetableTraffic#NONE} if it fails. */
+    private static TimetableTraffic run(Timetable timetable, Map<List<String>, Leg> legs, SignalBlocks blocks, TrainSpec spec,
+        long minimumStop, int length) {
+        try {
             long started = System.nanoTime();
-            traffic = TimetableTraffic.of(timetable, data.legs(), data.blocks(), spec, minimumStop, length);
+            TimetableTraffic traffic = TimetableTraffic.of(timetable, legs, blocks, spec, minimumStop, length);
             long ms = (System.nanoTime() - started) / 1_000_000;
             if (traffic.finished())
                 LOGGER.info("Ran the trains of the timetable with the signals in {} ms", ms);
             else
                 LOGGER.warn("The trains of the timetable hold one another up at the signals too much to work out in time ({} ms); "
                     + "the forecasts leave the signals out", ms);
+            return traffic;
+        } catch (RuntimeException e) {
+            LOGGER.error("Could not run the trains of the timetable with the signals; the forecasts leave the signals out", e);
+            return TimetableTraffic.NONE;
         }
-        data.traffic(traffic, key);
-        return traffic;
     }
 
     /**
@@ -208,9 +247,12 @@ public final class TrackFacts {
         return List.of(ModSettings.defaultMinimumStopSeconds() * (long) RealClock.TICKS_PER_SECOND, ModSettings.trainLengthBlocks());
     }
 
-    /** {@code times}, with what the signals add to the ways of the trains of the timetable, running on time ({@link #traffic}). */
+    /**
+     * {@code times}, with what the signals add to the ways of the trains of the timetable, running on time
+     * ({@link #traffic}): looked up each time, so that times kept for a train take the run once it is done.
+     */
     public static RunTimes withSignals(OperationData data, Timetable timetable, RunTimes times) {
-        return RunTimes.withSignals(times, traffic(data, timetable));
+        return RunTimes.withSignals(times, () -> traffic(data, timetable));
     }
 
     /**

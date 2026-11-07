@@ -13,6 +13,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
@@ -137,6 +138,9 @@ public final class OperationData extends SavedData {
     private @Nullable TimetableTraffic traffic;
     /** What the server's config said that {@link #traffic} was worked out with. */
     private @Nullable Object trafficKey;
+    /** The trains of the timetable being run with the signals on another thread, for the config of {@link #pendingKey}; null if none. */
+    private @Nullable CompletableFuture<TimetableTraffic> pendingTraffic;
+    private @Nullable Object pendingKey;
     /** Not saved: the ways between stops the trains cannot run on their track tags, worked out with the axes. */
     private List<TagWays.NoWay> noWays = List.of();
     /** Not saved: the track tags the timetable holds trains to that the world has none of, worked out with the axes. */
@@ -434,6 +438,7 @@ public final class OperationData extends SavedData {
         this.legs = Map.copyOf(legs);
         this.blocks = blocks;
         this.traffic = null;
+        this.pendingTraffic = null;
         this.noWays = List.copyOf(noWays);
         this.unknownTags = List.copyOf(unknownTags);
         List<Object> tags = List.of(this.noWays, this.unknownTags);
@@ -476,6 +481,22 @@ public final class OperationData extends SavedData {
     public void traffic(TimetableTraffic traffic, Object key) {
         this.traffic = traffic;
         this.trafficKey = key;
+        this.pendingTraffic = null;
+    }
+
+    /**
+     * The trains of the timetable being run with the signals on another thread for {@code key} of the
+     * server's config, done or not; null if none is, as after the ways between stations or the timetable
+     * change, when one that was is let go.
+     */
+    public @Nullable CompletableFuture<TimetableTraffic> pendingTraffic(Object key) {
+        return pendingTraffic != null && key.equals(pendingKey) ? pendingTraffic : null;
+    }
+
+    /** Keeps the run of the trains of the timetable with the signals going on another thread, for {@code key} of the server's config. */
+    public void pendingTraffic(CompletableFuture<TimetableTraffic> pending, Object key) {
+        this.pendingTraffic = pending;
+        this.pendingKey = key;
     }
 
     /**
@@ -511,6 +532,7 @@ public final class OperationData extends SavedData {
         axes = null;
         legs = null;
         traffic = null;
+        pendingTraffic = null;
         waits = null;
         revision++;
     }
