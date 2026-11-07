@@ -13,6 +13,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
@@ -26,6 +27,7 @@ import io.github.eyunya11.createrealtimeschedule.clock.RealClock;
 import io.github.eyunya11.createrealtimeschedule.diagram.DutyTimes;
 import io.github.eyunya11.createrealtimeschedule.diagram.LineAxis;
 import io.github.eyunya11.createrealtimeschedule.railway.Leg;
+import io.github.eyunya11.createrealtimeschedule.railway.SignalBlocks;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Duty;
 import io.github.eyunya11.createrealtimeschedule.timetable.TimetableJson;
@@ -130,6 +132,15 @@ public final class OperationData extends SavedData {
     private @Nullable Map<String, LineAxis> axes;
     /** Not saved: the ways between the timetable's stations by their ends and tag, worked out with the axes ({@link TrackFacts}). */
     private @Nullable Map<List<String>, Leg> legs;
+    /** The signal blocks of the network the legs are of, as worked out with them. */
+    private SignalBlocks blocks = SignalBlocks.NONE;
+    /** The trains of the timetable run with the signals, once worked out for the legs; null until then. */
+    private @Nullable TimetableTraffic traffic;
+    /** What the server's config said that {@link #traffic} was worked out with. */
+    private @Nullable Object trafficKey;
+    /** The trains of the timetable being run with the signals on another thread, for the config of {@link #pendingKey}; null if none. */
+    private @Nullable CompletableFuture<TimetableTraffic> pendingTraffic;
+    private @Nullable Object pendingKey;
     /** Not saved: the ways between stops the trains cannot run on their track tags, worked out with the axes. */
     private List<TagWays.NoWay> noWays = List.of();
     /** Not saved: the track tags the timetable holds trains to that the world has none of, worked out with the axes. */
@@ -420,10 +431,14 @@ public final class OperationData extends SavedData {
      * the track has changed, axes that differ from those kept make a client's copy old, and the waits
      * are worked out again with them. What is wrong with the track tags is logged when it changes.
      */
-    public void track(Map<String, LineAxis> axes, Map<List<String>, Leg> legs, List<TagWays.NoWay> noWays, List<String> unknownTags) {
+    public void track(Map<String, LineAxis> axes, Map<List<String>, Leg> legs, SignalBlocks blocks, List<TagWays.NoWay> noWays,
+                      List<String> unknownTags) {
         Map<String, LineAxis> before = this.axes;
         this.axes = Map.copyOf(axes);
         this.legs = Map.copyOf(legs);
+        this.blocks = blocks;
+        this.traffic = null;
+        this.pendingTraffic = null;
         this.noWays = List.copyOf(noWays);
         this.unknownTags = List.copyOf(unknownTags);
         List<Object> tags = List.of(this.noWays, this.unknownTags);
@@ -439,6 +454,49 @@ public final class OperationData extends SavedData {
             waits = null;
             revision++;
         }
+    }
+
+    /** The signal blocks of the network the ways between stations are of, as last worked out with them. */
+    public SignalBlocks blocks() {
+        return blocks;
+    }
+
+    /** The trains of the timetable run with the signals on the ways between stations; null if not worked out since they were. */
+    public @Nullable TimetableTraffic traffic() {
+        return traffic;
+    }
+
+    /**
+     * {@link #traffic()} if it was worked out with what {@code key} says of the server's config, such as
+     * the length of a train; null if not, or not worked out since the ways were.
+     */
+    public @Nullable TimetableTraffic traffic(Object key) {
+        return traffic != null && key.equals(trafficKey) ? traffic : null;
+    }
+
+    /**
+     * Keeps the trains of the timetable run with the signals, worked out with {@code key} of the server's
+     * config, until the ways between stations, the timetable or the config change.
+     */
+    public void traffic(TimetableTraffic traffic, Object key) {
+        this.traffic = traffic;
+        this.trafficKey = key;
+        this.pendingTraffic = null;
+    }
+
+    /**
+     * The trains of the timetable being run with the signals on another thread for {@code key} of the
+     * server's config, done or not; null if none is, as after the ways between stations or the timetable
+     * change, when one that was is let go.
+     */
+    public @Nullable CompletableFuture<TimetableTraffic> pendingTraffic(Object key) {
+        return pendingTraffic != null && key.equals(pendingKey) ? pendingTraffic : null;
+    }
+
+    /** Keeps the run of the trains of the timetable with the signals going on another thread, for {@code key} of the server's config. */
+    public void pendingTraffic(CompletableFuture<TimetableTraffic> pending, Object key) {
+        this.pendingTraffic = pending;
+        this.pendingKey = key;
     }
 
     /**
@@ -473,6 +531,8 @@ public final class OperationData extends SavedData {
     public void forgetAxes() {
         axes = null;
         legs = null;
+        traffic = null;
+        pendingTraffic = null;
         waits = null;
         revision++;
     }

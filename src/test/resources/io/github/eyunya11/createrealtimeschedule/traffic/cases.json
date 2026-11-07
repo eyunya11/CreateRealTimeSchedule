@@ -1,0 +1,3660 @@
+{
+  "about": "Shared cases of the simulation of the trains of a timetable with the signals: TrafficCasesTest (the mod) and src/test/js/traffic.test.js (the editor) hold Traffic, TimetableTraffic and traffic.js to the trips here, and for a timetable to the ticks the signals add to each leg (signalTicks).",
+  "runs": [
+    {
+      "about": "a train alone",
+      "blocks": {
+        "count": 6,
+        "crossings": [],
+        "signals": [
+          {
+            "block": 1,
+            "next": [
+              1
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 2,
+            "next": [
+              2
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 3,
+            "next": [
+              3
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 4,
+            "next": [
+              4
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 5,
+            "next": [],
+            "lights": [
+              5
+            ],
+            "cross": false
+          }
+        ],
+        "lightSpeeds": {
+          "restricted": 25,
+          "approach": 45,
+          "reduced": 75,
+          "sixProceed": 130
+        }
+      },
+      "runs": [
+        {
+          "name": "alone",
+          "spec": {
+            "topSpeed": 28.0,
+            "turnSpeed": 14.0,
+            "acceleration": 3.0
+          },
+          "throttle": 1.0,
+          "stays": false,
+          "stints": [
+            {
+              "leg": {
+                "distance": 890.0,
+                "curves": [],
+                "signs": [],
+                "signals": [
+                  {
+                    "at": 190.0,
+                    "signal": 0
+                  },
+                  {
+                    "at": 290.0,
+                    "signal": 1
+                  },
+                  {
+                    "at": 390.0,
+                    "signal": 2
+                  },
+                  {
+                    "at": 490.0,
+                    "signal": 3
+                  },
+                  {
+                    "at": 590.0,
+                    "signal": 4
+                  }
+                ],
+                "block": 0
+              },
+              "departs": 0,
+              "minimumStop": 0,
+              "newTrain": true,
+              "length": 10.0
+            }
+          ]
+        }
+      ],
+      "trips": [
+        [
+          {
+            "departed": 0,
+            "arrived": 813,
+            "free": 813,
+            "waits": []
+          }
+        ]
+      ]
+    },
+    {
+      "about": "a train behind a standing one, five-aspect",
+      "blocks": {
+        "count": 6,
+        "crossings": [],
+        "signals": [
+          {
+            "block": 1,
+            "next": [
+              1
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 2,
+            "next": [
+              2
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 3,
+            "next": [
+              3
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 4,
+            "next": [
+              4
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 5,
+            "next": [],
+            "lights": [
+              5
+            ],
+            "cross": false
+          }
+        ],
+        "lightSpeeds": {
+          "restricted": 25,
+          "approach": 45,
+          "reduced": 75,
+          "sixProceed": 130
+        }
+      },
+      "runs": [
+        {
+          "name": "standing",
+          "spec": {
+            "topSpeed": 28.0,
+            "turnSpeed": 14.0,
+            "acceleration": 3.0
+          },
+          "throttle": 1.0,
+          "stays": false,
+          "stints": [
+            {
+              "leg": {
+                "distance": 20.0,
+                "curves": [],
+                "signs": [],
+                "signals": [],
+                "block": 5
+              },
+              "departs": 0,
+              "minimumStop": 0,
+              "newTrain": true,
+              "length": 10.0
+            },
+            {
+              "leg": {
+                "distance": 250.0,
+                "curves": [],
+                "signs": [],
+                "signals": [],
+                "block": 5
+              },
+              "departs": 6000,
+              "minimumStop": 0,
+              "newTrain": false,
+              "length": 10.0
+            }
+          ]
+        },
+        {
+          "name": "behind",
+          "spec": {
+            "topSpeed": 28.0,
+            "turnSpeed": 14.0,
+            "acceleration": 3.0
+          },
+          "throttle": 1.0,
+          "stays": false,
+          "stints": [
+            {
+              "leg": {
+                "distance": 570.0,
+                "curves": [],
+                "signs": [],
+                "signals": [
+                  {
+                    "at": 190.0,
+                    "signal": 0
+                  },
+                  {
+                    "at": 290.0,
+                    "signal": 1
+                  },
+                  {
+                    "at": 390.0,
+                    "signal": 2
+                  },
+                  {
+                    "at": 490.0,
+                    "signal": 3
+                  }
+                ],
+                "block": 0
+              },
+              "departs": 200,
+              "minimumStop": 0,
+              "newTrain": true,
+              "length": 10.0
+            }
+          ]
+        }
+      ],
+      "trips": [
+        [
+          {
+            "departed": 0,
+            "arrived": 96,
+            "free": 96,
+            "waits": []
+          },
+          {
+            "departed": 6000,
+            "arrived": 6351,
+            "free": 351,
+            "waits": []
+          }
+        ],
+        [
+          {
+            "departed": 200,
+            "arrived": 1093,
+            "free": 578,
+            "waits": []
+          }
+        ]
+      ]
+    },
+    {
+      "about": "six-aspect, a powered train",
+      "blocks": {
+        "count": 6,
+        "crossings": [],
+        "signals": [
+          {
+            "block": 1,
+            "next": [
+              1
+            ],
+            "lights": [
+              6
+            ],
+            "cross": false
+          },
+          {
+            "block": 2,
+            "next": [
+              2
+            ],
+            "lights": [
+              6
+            ],
+            "cross": false
+          },
+          {
+            "block": 3,
+            "next": [
+              3
+            ],
+            "lights": [
+              6
+            ],
+            "cross": false
+          },
+          {
+            "block": 4,
+            "next": [
+              4
+            ],
+            "lights": [
+              6
+            ],
+            "cross": false
+          },
+          {
+            "block": 5,
+            "next": [],
+            "lights": [
+              6
+            ],
+            "cross": false
+          }
+        ],
+        "lightSpeeds": {
+          "restricted": 25,
+          "approach": 45,
+          "reduced": 75,
+          "sixProceed": 130
+        }
+      },
+      "runs": [
+        {
+          "name": "standing",
+          "spec": {
+            "topSpeed": 28.0,
+            "turnSpeed": 14.0,
+            "acceleration": 3.0
+          },
+          "throttle": 1.0,
+          "stays": false,
+          "stints": [
+            {
+              "leg": {
+                "distance": 20.0,
+                "curves": [],
+                "signs": [],
+                "signals": [],
+                "block": 5
+              },
+              "departs": 0,
+              "minimumStop": 0,
+              "newTrain": true,
+              "length": 10.0
+            },
+            {
+              "leg": {
+                "distance": 250.0,
+                "curves": [],
+                "signs": [],
+                "signals": [],
+                "block": 5
+              },
+              "departs": 6000,
+              "minimumStop": 0,
+              "newTrain": false,
+              "length": 10.0
+            }
+          ]
+        },
+        {
+          "name": "behind",
+          "spec": {
+            "topSpeed": 40.0,
+            "turnSpeed": 20.0,
+            "acceleration": 3.0
+          },
+          "throttle": 1.0,
+          "stays": false,
+          "stints": [
+            {
+              "leg": {
+                "distance": 570.0,
+                "curves": [],
+                "signs": [],
+                "signals": [
+                  {
+                    "at": 190.0,
+                    "signal": 0
+                  },
+                  {
+                    "at": 290.0,
+                    "signal": 1
+                  },
+                  {
+                    "at": 390.0,
+                    "signal": 2
+                  },
+                  {
+                    "at": 490.0,
+                    "signal": 3
+                  }
+                ],
+                "block": 0
+              },
+              "departs": 200,
+              "minimumStop": 0,
+              "newTrain": true,
+              "length": 10.0
+            }
+          ]
+        }
+      ],
+      "trips": [
+        [
+          {
+            "departed": 0,
+            "arrived": 96,
+            "free": 96,
+            "waits": []
+          },
+          {
+            "departed": 6000,
+            "arrived": 6351,
+            "free": 351,
+            "waits": []
+          }
+        ],
+        [
+          {
+            "departed": 200,
+            "arrived": 849,
+            "free": 538,
+            "waits": []
+          }
+        ]
+      ]
+    },
+    {
+      "about": "the speeds of the config",
+      "blocks": {
+        "count": 6,
+        "crossings": [],
+        "signals": [
+          {
+            "block": 1,
+            "next": [
+              1
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 2,
+            "next": [
+              2
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 3,
+            "next": [
+              3
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 4,
+            "next": [
+              4
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 5,
+            "next": [],
+            "lights": [
+              5
+            ],
+            "cross": false
+          }
+        ],
+        "lightSpeeds": {
+          "restricted": 20,
+          "approach": 40,
+          "reduced": 60,
+          "sixProceed": 130
+        }
+      },
+      "runs": [
+        {
+          "name": "standing",
+          "spec": {
+            "topSpeed": 28.0,
+            "turnSpeed": 14.0,
+            "acceleration": 3.0
+          },
+          "throttle": 1.0,
+          "stays": false,
+          "stints": [
+            {
+              "leg": {
+                "distance": 20.0,
+                "curves": [],
+                "signs": [],
+                "signals": [],
+                "block": 5
+              },
+              "departs": 0,
+              "minimumStop": 0,
+              "newTrain": true,
+              "length": 10.0
+            },
+            {
+              "leg": {
+                "distance": 250.0,
+                "curves": [],
+                "signs": [],
+                "signals": [],
+                "block": 5
+              },
+              "departs": 6000,
+              "minimumStop": 0,
+              "newTrain": false,
+              "length": 10.0
+            }
+          ]
+        },
+        {
+          "name": "behind",
+          "spec": {
+            "topSpeed": 28.0,
+            "turnSpeed": 14.0,
+            "acceleration": 3.0
+          },
+          "throttle": 1.0,
+          "stays": false,
+          "stints": [
+            {
+              "leg": {
+                "distance": 570.0,
+                "curves": [],
+                "signs": [],
+                "signals": [
+                  {
+                    "at": 190.0,
+                    "signal": 0
+                  },
+                  {
+                    "at": 290.0,
+                    "signal": 1
+                  },
+                  {
+                    "at": 390.0,
+                    "signal": 2
+                  },
+                  {
+                    "at": 490.0,
+                    "signal": 3
+                  }
+                ],
+                "block": 0
+              },
+              "departs": 200,
+              "minimumStop": 0,
+              "newTrain": true,
+              "length": 10.0
+            }
+          ]
+        }
+      ],
+      "trips": [
+        [
+          {
+            "departed": 0,
+            "arrived": 96,
+            "free": 96,
+            "waits": []
+          },
+          {
+            "departed": 6000,
+            "arrived": 6351,
+            "free": 351,
+            "waits": []
+          }
+        ],
+        [
+          {
+            "departed": 200,
+            "arrived": 1221,
+            "free": 578,
+            "waits": []
+          }
+        ]
+      ]
+    },
+    {
+      "about": "a stop at red",
+      "blocks": {
+        "count": 6,
+        "crossings": [],
+        "signals": [
+          {
+            "block": 1,
+            "next": [
+              1
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 2,
+            "next": [
+              2
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 3,
+            "next": [
+              3
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 4,
+            "next": [
+              4
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 5,
+            "next": [],
+            "lights": [
+              5
+            ],
+            "cross": false
+          }
+        ],
+        "lightSpeeds": {
+          "restricted": 25,
+          "approach": 45,
+          "reduced": 75,
+          "sixProceed": 130
+        }
+      },
+      "runs": [
+        {
+          "name": "standing",
+          "spec": {
+            "topSpeed": 28.0,
+            "turnSpeed": 14.0,
+            "acceleration": 3.0
+          },
+          "throttle": 1.0,
+          "stays": false,
+          "stints": [
+            {
+              "leg": {
+                "distance": 20.0,
+                "curves": [],
+                "signs": [],
+                "signals": [],
+                "block": 5
+              },
+              "departs": 0,
+              "minimumStop": 0,
+              "newTrain": true,
+              "length": 10.0
+            },
+            {
+              "leg": {
+                "distance": 50.0,
+                "curves": [],
+                "signs": [],
+                "signals": [],
+                "block": 5
+              },
+              "departs": 6000,
+              "minimumStop": 0,
+              "newTrain": false,
+              "length": 10.0
+            }
+          ]
+        },
+        {
+          "name": "behind",
+          "spec": {
+            "topSpeed": 28.0,
+            "turnSpeed": 14.0,
+            "acceleration": 3.0
+          },
+          "throttle": 1.0,
+          "stays": false,
+          "stints": [
+            {
+              "leg": {
+                "distance": 940.0,
+                "curves": [],
+                "signs": [],
+                "signals": [
+                  {
+                    "at": 190.0,
+                    "signal": 0
+                  },
+                  {
+                    "at": 290.0,
+                    "signal": 1
+                  },
+                  {
+                    "at": 390.0,
+                    "signal": 2
+                  },
+                  {
+                    "at": 490.0,
+                    "signal": 3
+                  },
+                  {
+                    "at": 590.0,
+                    "signal": 4
+                  }
+                ],
+                "block": 0
+              },
+              "departs": 200,
+              "minimumStop": 0,
+              "newTrain": true,
+              "length": 10.0
+            }
+          ]
+        }
+      ],
+      "trips": [
+        [
+          {
+            "departed": 0,
+            "arrived": 96,
+            "free": 96,
+            "waits": []
+          },
+          {
+            "departed": 6000,
+            "arrived": 6154,
+            "free": 154,
+            "waits": []
+          }
+        ],
+        [
+          {
+            "departed": 200,
+            "arrived": 6578,
+            "free": 846,
+            "waits": [
+              {
+                "signal": 4,
+                "from": 1150,
+                "ticks": 5005
+              }
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "about": "no Create Train Next",
+      "blocks": {
+        "count": 6,
+        "crossings": [],
+        "signals": [
+          {
+            "block": 1,
+            "next": [
+              1
+            ],
+            "lights": [],
+            "cross": false
+          },
+          {
+            "block": 2,
+            "next": [
+              2
+            ],
+            "lights": [],
+            "cross": false
+          },
+          {
+            "block": 3,
+            "next": [
+              3
+            ],
+            "lights": [],
+            "cross": false
+          },
+          {
+            "block": 4,
+            "next": [
+              4
+            ],
+            "lights": [],
+            "cross": false
+          },
+          {
+            "block": 5,
+            "next": [],
+            "lights": [],
+            "cross": false
+          }
+        ]
+      },
+      "runs": [
+        {
+          "name": "standing",
+          "spec": {
+            "topSpeed": 28.0,
+            "turnSpeed": 14.0,
+            "acceleration": 3.0
+          },
+          "throttle": 1.0,
+          "stays": false,
+          "stints": [
+            {
+              "leg": {
+                "distance": 20.0,
+                "curves": [],
+                "signs": [],
+                "signals": [],
+                "block": 5
+              },
+              "departs": 0,
+              "minimumStop": 0,
+              "newTrain": true,
+              "length": 10.0
+            },
+            {
+              "leg": {
+                "distance": 250.0,
+                "curves": [],
+                "signs": [],
+                "signals": [],
+                "block": 5
+              },
+              "departs": 6000,
+              "minimumStop": 0,
+              "newTrain": false,
+              "length": 10.0
+            }
+          ]
+        },
+        {
+          "name": "behind",
+          "spec": {
+            "topSpeed": 28.0,
+            "turnSpeed": 14.0,
+            "acceleration": 3.0
+          },
+          "throttle": 1.0,
+          "stays": false,
+          "stints": [
+            {
+              "leg": {
+                "distance": 570.0,
+                "curves": [],
+                "signs": [],
+                "signals": [
+                  {
+                    "at": 190.0,
+                    "signal": 0
+                  },
+                  {
+                    "at": 290.0,
+                    "signal": 1
+                  },
+                  {
+                    "at": 390.0,
+                    "signal": 2
+                  },
+                  {
+                    "at": 490.0,
+                    "signal": 3
+                  }
+                ],
+                "block": 0
+              },
+              "departs": 200,
+              "minimumStop": 0,
+              "newTrain": true,
+              "length": 10.0
+            }
+          ]
+        }
+      ],
+      "trips": [
+        [
+          {
+            "departed": 0,
+            "arrived": 96,
+            "free": 96,
+            "waits": []
+          },
+          {
+            "departed": 6000,
+            "arrived": 6351,
+            "free": 351,
+            "waits": []
+          }
+        ],
+        [
+          {
+            "departed": 200,
+            "arrived": 778,
+            "free": 578,
+            "waits": []
+          }
+        ]
+      ]
+    },
+    {
+      "about": "a train behind a moving one",
+      "blocks": {
+        "count": 6,
+        "crossings": [],
+        "signals": [
+          {
+            "block": 1,
+            "next": [
+              1
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 2,
+            "next": [
+              2
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 3,
+            "next": [
+              3
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 4,
+            "next": [
+              4
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 5,
+            "next": [],
+            "lights": [
+              5
+            ],
+            "cross": false
+          }
+        ],
+        "lightSpeeds": {
+          "restricted": 25,
+          "approach": 45,
+          "reduced": 75,
+          "sixProceed": 130
+        }
+      },
+      "runs": [
+        {
+          "name": "first",
+          "spec": {
+            "topSpeed": 28.0,
+            "turnSpeed": 14.0,
+            "acceleration": 3.0
+          },
+          "throttle": 1.0,
+          "stays": false,
+          "stints": [
+            {
+              "leg": {
+                "distance": 890.0,
+                "curves": [],
+                "signs": [],
+                "signals": [
+                  {
+                    "at": 190.0,
+                    "signal": 0
+                  },
+                  {
+                    "at": 290.0,
+                    "signal": 1
+                  },
+                  {
+                    "at": 390.0,
+                    "signal": 2
+                  },
+                  {
+                    "at": 490.0,
+                    "signal": 3
+                  },
+                  {
+                    "at": 590.0,
+                    "signal": 4
+                  }
+                ],
+                "block": 0
+              },
+              "departs": 0,
+              "minimumStop": 0,
+              "newTrain": true,
+              "length": 10.0
+            }
+          ]
+        },
+        {
+          "name": "second",
+          "spec": {
+            "topSpeed": 28.0,
+            "turnSpeed": 14.0,
+            "acceleration": 3.0
+          },
+          "throttle": 1.0,
+          "stays": false,
+          "stints": [
+            {
+              "leg": {
+                "distance": 890.0,
+                "curves": [],
+                "signs": [],
+                "signals": [
+                  {
+                    "at": 190.0,
+                    "signal": 0
+                  },
+                  {
+                    "at": 290.0,
+                    "signal": 1
+                  },
+                  {
+                    "at": 390.0,
+                    "signal": 2
+                  },
+                  {
+                    "at": 490.0,
+                    "signal": 3
+                  },
+                  {
+                    "at": 590.0,
+                    "signal": 4
+                  }
+                ],
+                "block": 0
+              },
+              "departs": 200,
+              "minimumStop": 0,
+              "newTrain": true,
+              "length": 10.0
+            }
+          ]
+        }
+      ],
+      "trips": [
+        [
+          {
+            "departed": 0,
+            "arrived": 813,
+            "free": 813,
+            "waits": []
+          }
+        ],
+        [
+          {
+            "departed": 200,
+            "arrived": 1230,
+            "free": 813,
+            "waits": []
+          }
+        ]
+      ]
+    },
+    {
+      "about": "a signal limit carried past a stop",
+      "blocks": {
+        "count": 6,
+        "crossings": [],
+        "signals": [
+          {
+            "block": 1,
+            "next": [
+              1
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 2,
+            "next": [
+              2
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 3,
+            "next": [
+              3
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 4,
+            "next": [
+              4
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 5,
+            "next": [],
+            "lights": [
+              5
+            ],
+            "cross": false
+          }
+        ],
+        "lightSpeeds": {
+          "restricted": 25,
+          "approach": 45,
+          "reduced": 75,
+          "sixProceed": 130
+        }
+      },
+      "runs": [
+        {
+          "name": "standing",
+          "spec": {
+            "topSpeed": 28.0,
+            "turnSpeed": 14.0,
+            "acceleration": 3.0
+          },
+          "throttle": 1.0,
+          "stays": false,
+          "stints": [
+            {
+              "leg": {
+                "distance": 20.0,
+                "curves": [],
+                "signs": [],
+                "signals": [],
+                "block": 5
+              },
+              "departs": 0,
+              "minimumStop": 0,
+              "newTrain": true,
+              "length": 10.0
+            },
+            {
+              "leg": {
+                "distance": 250.0,
+                "curves": [],
+                "signs": [],
+                "signals": [],
+                "block": 5
+              },
+              "departs": 6000,
+              "minimumStop": 0,
+              "newTrain": false,
+              "length": 10.0
+            }
+          ]
+        },
+        {
+          "name": "behind",
+          "spec": {
+            "topSpeed": 28.0,
+            "turnSpeed": 14.0,
+            "acceleration": 3.0
+          },
+          "throttle": 1.0,
+          "stays": false,
+          "stints": [
+            {
+              "leg": {
+                "distance": 540.0,
+                "curves": [],
+                "signs": [],
+                "signals": [
+                  {
+                    "at": 190.0,
+                    "signal": 0
+                  },
+                  {
+                    "at": 290.0,
+                    "signal": 1
+                  },
+                  {
+                    "at": 390.0,
+                    "signal": 2
+                  },
+                  {
+                    "at": 490.0,
+                    "signal": 3
+                  }
+                ],
+                "block": 0
+              },
+              "departs": 200,
+              "minimumStop": 0,
+              "newTrain": true,
+              "length": 10.0
+            },
+            {
+              "leg": {
+                "distance": 40.0,
+                "curves": [],
+                "signs": [],
+                "signals": [],
+                "block": 4
+              },
+              "departs": 2000,
+              "minimumStop": 0,
+              "newTrain": false,
+              "length": 10.0
+            }
+          ]
+        }
+      ],
+      "trips": [
+        [
+          {
+            "departed": 0,
+            "arrived": 96,
+            "free": 96,
+            "waits": []
+          },
+          {
+            "departed": 6000,
+            "arrived": 6351,
+            "free": 351,
+            "waits": []
+          }
+        ],
+        [
+          {
+            "departed": 200,
+            "arrived": 1006,
+            "free": 563,
+            "waits": []
+          },
+          {
+            "departed": 2000,
+            "arrived": 2211,
+            "free": 133,
+            "waits": []
+          }
+        ]
+      ]
+    },
+    {
+      "about": "a new train starts under no signal limit",
+      "blocks": {
+        "count": 6,
+        "crossings": [],
+        "signals": [
+          {
+            "block": 1,
+            "next": [
+              1
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 2,
+            "next": [
+              2
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 3,
+            "next": [
+              3
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 4,
+            "next": [
+              4
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 5,
+            "next": [],
+            "lights": [
+              5
+            ],
+            "cross": false
+          }
+        ],
+        "lightSpeeds": {
+          "restricted": 25,
+          "approach": 45,
+          "reduced": 75,
+          "sixProceed": 130
+        }
+      },
+      "runs": [
+        {
+          "name": "standing",
+          "spec": {
+            "topSpeed": 28.0,
+            "turnSpeed": 14.0,
+            "acceleration": 3.0
+          },
+          "throttle": 1.0,
+          "stays": false,
+          "stints": [
+            {
+              "leg": {
+                "distance": 20.0,
+                "curves": [],
+                "signs": [],
+                "signals": [],
+                "block": 5
+              },
+              "departs": 0,
+              "minimumStop": 0,
+              "newTrain": true,
+              "length": 10.0
+            },
+            {
+              "leg": {
+                "distance": 250.0,
+                "curves": [],
+                "signs": [],
+                "signals": [],
+                "block": 5
+              },
+              "departs": 6000,
+              "minimumStop": 0,
+              "newTrain": false,
+              "length": 10.0
+            }
+          ]
+        },
+        {
+          "name": "behind",
+          "spec": {
+            "topSpeed": 28.0,
+            "turnSpeed": 14.0,
+            "acceleration": 3.0
+          },
+          "throttle": 1.0,
+          "stays": false,
+          "stints": [
+            {
+              "leg": {
+                "distance": 540.0,
+                "curves": [],
+                "signs": [],
+                "signals": [
+                  {
+                    "at": 190.0,
+                    "signal": 0
+                  },
+                  {
+                    "at": 290.0,
+                    "signal": 1
+                  },
+                  {
+                    "at": 390.0,
+                    "signal": 2
+                  },
+                  {
+                    "at": 490.0,
+                    "signal": 3
+                  }
+                ],
+                "block": 0
+              },
+              "departs": 200,
+              "minimumStop": 0,
+              "newTrain": true,
+              "length": 10.0
+            },
+            {
+              "leg": {
+                "distance": 40.0,
+                "curves": [],
+                "signs": [],
+                "signals": [],
+                "block": 4
+              },
+              "departs": 2000,
+              "minimumStop": 0,
+              "newTrain": true,
+              "length": 10.0
+            }
+          ]
+        }
+      ],
+      "trips": [
+        [
+          {
+            "departed": 0,
+            "arrived": 96,
+            "free": 96,
+            "waits": []
+          },
+          {
+            "departed": 6000,
+            "arrived": 6351,
+            "free": 351,
+            "waits": []
+          }
+        ],
+        [
+          {
+            "departed": 200,
+            "arrived": 1006,
+            "free": 563,
+            "waits": []
+          },
+          {
+            "departed": 2000,
+            "arrived": 2133,
+            "free": 133,
+            "waits": []
+          }
+        ]
+      ]
+    },
+    {
+      "about": "a cross signal",
+      "blocks": {
+        "count": 6,
+        "crossings": [],
+        "signals": [
+          {
+            "block": 1,
+            "next": [
+              1
+            ],
+            "lights": [],
+            "cross": true
+          },
+          {
+            "block": 2,
+            "next": [
+              2
+            ],
+            "lights": [],
+            "cross": false
+          },
+          {
+            "block": 3,
+            "next": [
+              3
+            ],
+            "lights": [],
+            "cross": false
+          },
+          {
+            "block": 4,
+            "next": [
+              4
+            ],
+            "lights": [],
+            "cross": false
+          },
+          {
+            "block": 5,
+            "next": [],
+            "lights": [],
+            "cross": false
+          }
+        ]
+      },
+      "runs": [
+        {
+          "name": "standing",
+          "spec": {
+            "topSpeed": 28.0,
+            "turnSpeed": 14.0,
+            "acceleration": 3.0
+          },
+          "throttle": 1.0,
+          "stays": false,
+          "stints": [
+            {
+              "leg": {
+                "distance": 20.0,
+                "curves": [],
+                "signs": [],
+                "signals": [],
+                "block": 2
+              },
+              "departs": 0,
+              "minimumStop": 0,
+              "newTrain": true,
+              "length": 10.0
+            },
+            {
+              "leg": {
+                "distance": 30.0,
+                "curves": [],
+                "signs": [],
+                "signals": [],
+                "block": 2
+              },
+              "departs": 6000,
+              "minimumStop": 0,
+              "newTrain": false,
+              "length": 10.0
+            }
+          ]
+        },
+        {
+          "name": "behind",
+          "spec": {
+            "topSpeed": 28.0,
+            "turnSpeed": 14.0,
+            "acceleration": 3.0
+          },
+          "throttle": 1.0,
+          "stays": false,
+          "stints": [
+            {
+              "leg": {
+                "distance": 940.0,
+                "curves": [],
+                "signs": [],
+                "signals": [
+                  {
+                    "at": 190.0,
+                    "signal": 0
+                  },
+                  {
+                    "at": 290.0,
+                    "signal": 1
+                  },
+                  {
+                    "at": 390.0,
+                    "signal": 2
+                  },
+                  {
+                    "at": 490.0,
+                    "signal": 3
+                  },
+                  {
+                    "at": 590.0,
+                    "signal": 4
+                  }
+                ],
+                "block": 0
+              },
+              "departs": 200,
+              "minimumStop": 0,
+              "newTrain": true,
+              "length": 10.0
+            }
+          ]
+        }
+      ],
+      "trips": [
+        [
+          {
+            "departed": 0,
+            "arrived": 96,
+            "free": 96,
+            "waits": []
+          },
+          {
+            "departed": 6000,
+            "arrived": 6116,
+            "free": 116,
+            "waits": []
+          }
+        ],
+        [
+          {
+            "departed": 200,
+            "arrived": 6829,
+            "free": 846,
+            "waits": [
+              {
+                "signal": 0,
+                "from": 500,
+                "ticks": 5617
+              }
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "about": "single track, met",
+      "blocks": {
+        "count": 5,
+        "crossings": [],
+        "signals": [
+          {
+            "block": 1,
+            "next": [
+              1
+            ],
+            "lights": [],
+            "cross": false
+          },
+          {
+            "block": 2,
+            "next": [],
+            "lights": [],
+            "cross": false
+          },
+          {
+            "block": 1,
+            "next": [
+              3
+            ],
+            "lights": [],
+            "cross": false
+          },
+          {
+            "block": 4,
+            "next": [],
+            "lights": [],
+            "cross": false
+          }
+        ]
+      },
+      "runs": [
+        {
+          "name": "east",
+          "spec": {
+            "topSpeed": 28.0,
+            "turnSpeed": 14.0,
+            "acceleration": 3.0
+          },
+          "throttle": 1.0,
+          "stays": false,
+          "stints": [
+            {
+              "leg": {
+                "distance": 80.0,
+                "curves": [],
+                "signs": [],
+                "signals": [
+                  {
+                    "at": 30.0,
+                    "signal": 0
+                  },
+                  {
+                    "at": 50.0,
+                    "signal": 1
+                  }
+                ],
+                "block": 0
+              },
+              "departs": 0,
+              "minimumStop": 0,
+              "newTrain": true,
+              "length": 10.0
+            }
+          ]
+        },
+        {
+          "name": "west",
+          "spec": {
+            "topSpeed": 28.0,
+            "turnSpeed": 14.0,
+            "acceleration": 3.0
+          },
+          "throttle": 1.0,
+          "stays": false,
+          "stints": [
+            {
+              "leg": {
+                "distance": 80.0,
+                "curves": [],
+                "signs": [],
+                "signals": [
+                  {
+                    "at": 30.0,
+                    "signal": 2
+                  },
+                  {
+                    "at": 50.0,
+                    "signal": 3
+                  }
+                ],
+                "block": 3
+              },
+              "departs": 0,
+              "minimumStop": 0,
+              "newTrain": true,
+              "length": 10.0
+            }
+          ]
+        }
+      ],
+      "trips": [
+        [
+          {
+            "departed": 0,
+            "arrived": 322,
+            "free": 193,
+            "waits": [
+              {
+                "signal": 0,
+                "from": 98,
+                "ticks": 71
+              }
+            ]
+          }
+        ],
+        [
+          {
+            "departed": 0,
+            "arrived": 231,
+            "free": 193,
+            "waits": []
+          }
+        ]
+      ]
+    },
+    {
+      "about": "single track, held up",
+      "blocks": {
+        "count": 3,
+        "crossings": [],
+        "signals": [
+          {
+            "block": 1,
+            "next": [
+              1
+            ],
+            "lights": [],
+            "cross": false
+          },
+          {
+            "block": 2,
+            "next": [],
+            "lights": [],
+            "cross": false
+          },
+          {
+            "block": 1,
+            "next": [
+              3
+            ],
+            "lights": [],
+            "cross": false
+          },
+          {
+            "block": 0,
+            "next": [],
+            "lights": [],
+            "cross": false
+          }
+        ]
+      },
+      "runs": [
+        {
+          "name": "east",
+          "spec": {
+            "topSpeed": 28.0,
+            "turnSpeed": 14.0,
+            "acceleration": 3.0
+          },
+          "throttle": 1.0,
+          "stays": false,
+          "stints": [
+            {
+              "leg": {
+                "distance": 40.0,
+                "curves": [],
+                "signs": [],
+                "signals": [
+                  {
+                    "at": 30.0,
+                    "signal": 0
+                  }
+                ],
+                "block": 0
+              },
+              "departs": 0,
+              "minimumStop": 0,
+              "newTrain": true,
+              "length": 10.0
+            },
+            {
+              "leg": {
+                "distance": 40.0,
+                "curves": [],
+                "signs": [],
+                "signals": [
+                  {
+                    "at": 10.0,
+                    "signal": 1
+                  }
+                ],
+                "block": 1
+              },
+              "departs": 1000,
+              "minimumStop": 0,
+              "newTrain": false,
+              "length": 10.0
+            }
+          ]
+        },
+        {
+          "name": "west",
+          "spec": {
+            "topSpeed": 28.0,
+            "turnSpeed": 14.0,
+            "acceleration": 3.0
+          },
+          "throttle": 1.0,
+          "stays": false,
+          "stints": [
+            {
+              "leg": {
+                "distance": 20.0,
+                "curves": [],
+                "signs": [],
+                "signals": [],
+                "block": 2
+              },
+              "departs": 0,
+              "minimumStop": 0,
+              "newTrain": true,
+              "length": 10.0
+            },
+            {
+              "leg": {
+                "distance": 60.0,
+                "curves": [],
+                "signs": [],
+                "signals": [
+                  {
+                    "at": 10.0,
+                    "signal": 2
+                  },
+                  {
+                    "at": 30.0,
+                    "signal": 3
+                  }
+                ],
+                "block": 2
+              },
+              "departs": 1000,
+              "minimumStop": 0,
+              "newTrain": false,
+              "length": 10.0
+            }
+          ]
+        }
+      ],
+      "trips": [
+        [
+          {
+            "departed": 0,
+            "arrived": 133,
+            "free": 133,
+            "waits": []
+          },
+          {
+            "departed": 1000,
+            "arrived": -1,
+            "free": 133,
+            "waits": []
+          }
+        ],
+        [
+          {
+            "departed": 0,
+            "arrived": 96,
+            "free": 96,
+            "waits": []
+          },
+          {
+            "departed": 1000,
+            "arrived": -1,
+            "free": 168,
+            "waits": [
+              {
+                "signal": 2,
+                "from": 1066,
+                "ticks": 12069
+              }
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "about": "a branch",
+      "blocks": {
+        "count": 5,
+        "crossings": [],
+        "signals": [
+          {
+            "block": 1,
+            "next": [
+              1,
+              2
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 2,
+            "next": [],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 3,
+            "next": [],
+            "lights": [
+              5
+            ],
+            "cross": false
+          }
+        ],
+        "lightSpeeds": {
+          "restricted": 25,
+          "approach": 45,
+          "reduced": 75,
+          "sixProceed": 130
+        }
+      },
+      "runs": [
+        {
+          "name": "standing",
+          "spec": {
+            "topSpeed": 28.0,
+            "turnSpeed": 14.0,
+            "acceleration": 3.0
+          },
+          "throttle": 1.0,
+          "stays": false,
+          "stints": [
+            {
+              "leg": {
+                "distance": 20.0,
+                "curves": [],
+                "signs": [],
+                "signals": [],
+                "block": 3
+              },
+              "departs": 0,
+              "minimumStop": 0,
+              "newTrain": true,
+              "length": 10.0
+            },
+            {
+              "leg": {
+                "distance": 40.0,
+                "curves": [],
+                "signs": [],
+                "signals": [],
+                "block": 3
+              },
+              "departs": 6000,
+              "minimumStop": 0,
+              "newTrain": false,
+              "length": 10.0
+            }
+          ]
+        },
+        {
+          "name": "behind",
+          "spec": {
+            "topSpeed": 28.0,
+            "turnSpeed": 14.0,
+            "acceleration": 3.0
+          },
+          "throttle": 1.0,
+          "stays": false,
+          "stints": [
+            {
+              "leg": {
+                "distance": 180.0,
+                "curves": [],
+                "signs": [],
+                "signals": [
+                  {
+                    "at": 90.0,
+                    "signal": 0
+                  }
+                ],
+                "block": 0
+              },
+              "departs": 200,
+              "minimumStop": 0,
+              "newTrain": true,
+              "length": 10.0
+            }
+          ]
+        }
+      ],
+      "trips": [
+        [
+          {
+            "departed": 0,
+            "arrived": 96,
+            "free": 96,
+            "waits": []
+          },
+          {
+            "departed": 6000,
+            "arrived": 6133,
+            "free": 133,
+            "waits": []
+          }
+        ],
+        [
+          {
+            "departed": 200,
+            "arrived": 720,
+            "free": 302,
+            "waits": []
+          }
+        ]
+      ]
+    },
+    {
+      "about": "a crossing",
+      "blocks": {
+        "count": 5,
+        "crossings": [
+          [
+            1,
+            3
+          ]
+        ],
+        "signals": [
+          {
+            "block": 1,
+            "next": [
+              1,
+              2
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 2,
+            "next": [],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 3,
+            "next": [],
+            "lights": [
+              5
+            ],
+            "cross": false
+          }
+        ],
+        "lightSpeeds": {
+          "restricted": 25,
+          "approach": 45,
+          "reduced": 75,
+          "sixProceed": 130
+        }
+      },
+      "runs": [
+        {
+          "name": "standing",
+          "spec": {
+            "topSpeed": 28.0,
+            "turnSpeed": 14.0,
+            "acceleration": 3.0
+          },
+          "throttle": 1.0,
+          "stays": false,
+          "stints": [
+            {
+              "leg": {
+                "distance": 20.0,
+                "curves": [],
+                "signs": [],
+                "signals": [],
+                "block": 3
+              },
+              "departs": 0,
+              "minimumStop": 0,
+              "newTrain": true,
+              "length": 10.0
+            },
+            {
+              "leg": {
+                "distance": 40.0,
+                "curves": [],
+                "signs": [],
+                "signals": [],
+                "block": 3
+              },
+              "departs": 6000,
+              "minimumStop": 0,
+              "newTrain": false,
+              "length": 10.0
+            }
+          ]
+        },
+        {
+          "name": "behind",
+          "spec": {
+            "topSpeed": 28.0,
+            "turnSpeed": 14.0,
+            "acceleration": 3.0
+          },
+          "throttle": 1.0,
+          "stays": false,
+          "stints": [
+            {
+              "leg": {
+                "distance": 180.0,
+                "curves": [],
+                "signs": [],
+                "signals": [
+                  {
+                    "at": 90.0,
+                    "signal": 0
+                  }
+                ],
+                "block": 0
+              },
+              "departs": 200,
+              "minimumStop": 0,
+              "newTrain": true,
+              "length": 10.0
+            }
+          ]
+        }
+      ],
+      "trips": [
+        [
+          {
+            "departed": 0,
+            "arrived": 96,
+            "free": 96,
+            "waits": []
+          },
+          {
+            "departed": 6000,
+            "arrived": 6133,
+            "free": 133,
+            "waits": []
+          }
+        ],
+        [
+          {
+            "departed": 200,
+            "arrived": 6488,
+            "free": 302,
+            "waits": [
+              {
+                "signal": 0,
+                "from": 408,
+                "ticks": 5726
+              }
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "about": "a train that stays where it ends",
+      "blocks": {
+        "count": 6,
+        "crossings": [],
+        "signals": [
+          {
+            "block": 1,
+            "next": [
+              1
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 2,
+            "next": [
+              2
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 3,
+            "next": [
+              3
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 4,
+            "next": [
+              4
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 5,
+            "next": [],
+            "lights": [
+              5
+            ],
+            "cross": false
+          }
+        ],
+        "lightSpeeds": {
+          "restricted": 25,
+          "approach": 45,
+          "reduced": 75,
+          "sixProceed": 130
+        }
+      },
+      "runs": [
+        {
+          "name": "ahead",
+          "spec": {
+            "topSpeed": 28.0,
+            "turnSpeed": 14.0,
+            "acceleration": 3.0
+          },
+          "throttle": 1.0,
+          "stays": true,
+          "stints": [
+            {
+              "leg": {
+                "distance": 20.0,
+                "curves": [],
+                "signs": [],
+                "signals": [],
+                "block": 5
+              },
+              "departs": 0,
+              "minimumStop": 0,
+              "newTrain": true,
+              "length": 10.0
+            }
+          ]
+        },
+        {
+          "name": "behind",
+          "spec": {
+            "topSpeed": 28.0,
+            "turnSpeed": 14.0,
+            "acceleration": 3.0
+          },
+          "throttle": 1.0,
+          "stays": false,
+          "stints": [
+            {
+              "leg": {
+                "distance": 570.0,
+                "curves": [],
+                "signs": [],
+                "signals": [
+                  {
+                    "at": 190.0,
+                    "signal": 0
+                  },
+                  {
+                    "at": 290.0,
+                    "signal": 1
+                  },
+                  {
+                    "at": 390.0,
+                    "signal": 2
+                  },
+                  {
+                    "at": 490.0,
+                    "signal": 3
+                  }
+                ],
+                "block": 0
+              },
+              "departs": 200,
+              "minimumStop": 0,
+              "newTrain": true,
+              "length": 10.0
+            }
+          ]
+        }
+      ],
+      "trips": [
+        [
+          {
+            "departed": 0,
+            "arrived": 96,
+            "free": 96,
+            "waits": []
+          }
+        ],
+        [
+          {
+            "departed": 200,
+            "arrived": 1093,
+            "free": 578,
+            "waits": []
+          }
+        ]
+      ]
+    },
+    {
+      "about": "ten minutes late",
+      "blocks": {
+        "count": 6,
+        "crossings": [],
+        "signals": [
+          {
+            "block": 1,
+            "next": [
+              1
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 2,
+            "next": [
+              2
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 3,
+            "next": [
+              3
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 4,
+            "next": [
+              4
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 5,
+            "next": [],
+            "lights": [
+              5
+            ],
+            "cross": false
+          }
+        ],
+        "lightSpeeds": {
+          "restricted": 25,
+          "approach": 45,
+          "reduced": 75,
+          "sixProceed": 130
+        }
+      },
+      "runs": [
+        {
+          "name": "standing",
+          "spec": {
+            "topSpeed": 28.0,
+            "turnSpeed": 14.0,
+            "acceleration": 3.0
+          },
+          "throttle": 1.0,
+          "stays": false,
+          "stints": [
+            {
+              "leg": {
+                "distance": 20.0,
+                "curves": [],
+                "signs": [],
+                "signals": [],
+                "block": 5
+              },
+              "departs": 0,
+              "minimumStop": 0,
+              "newTrain": true,
+              "length": 10.0
+            },
+            {
+              "leg": {
+                "distance": 50.0,
+                "curves": [],
+                "signs": [],
+                "signals": [],
+                "block": 5
+              },
+              "departs": 24000,
+              "minimumStop": 0,
+              "newTrain": false,
+              "length": 10.0
+            }
+          ]
+        },
+        {
+          "name": "held",
+          "spec": {
+            "topSpeed": 28.0,
+            "turnSpeed": 14.0,
+            "acceleration": 3.0
+          },
+          "throttle": 1.0,
+          "stays": false,
+          "stints": [
+            {
+              "leg": {
+                "distance": 440.0,
+                "curves": [],
+                "signs": [],
+                "signals": [
+                  {
+                    "at": 190.0,
+                    "signal": 0
+                  },
+                  {
+                    "at": 290.0,
+                    "signal": 1
+                  },
+                  {
+                    "at": 390.0,
+                    "signal": 2
+                  }
+                ],
+                "block": 0
+              },
+              "departs": 200,
+              "minimumStop": 0,
+              "newTrain": true,
+              "length": 10.0
+            },
+            {
+              "leg": {
+                "distance": 500.0,
+                "curves": [],
+                "signs": [],
+                "signals": [
+                  {
+                    "at": 50.0,
+                    "signal": 3
+                  },
+                  {
+                    "at": 150.0,
+                    "signal": 4
+                  }
+                ],
+                "block": 3
+              },
+              "departs": 300,
+              "minimumStop": 0,
+              "newTrain": false,
+              "length": 10.0
+            }
+          ]
+        },
+        {
+          "name": "late",
+          "spec": {
+            "topSpeed": 28.0,
+            "turnSpeed": 14.0,
+            "acceleration": 3.0
+          },
+          "throttle": 1.0,
+          "stays": false,
+          "stints": [
+            {
+              "leg": {
+                "distance": 440.0,
+                "curves": [],
+                "signs": [],
+                "signals": [
+                  {
+                    "at": 190.0,
+                    "signal": 0
+                  },
+                  {
+                    "at": 290.0,
+                    "signal": 1
+                  },
+                  {
+                    "at": 390.0,
+                    "signal": 2
+                  }
+                ],
+                "block": 0
+              },
+              "departs": 0,
+              "minimumStop": 0,
+              "newTrain": true,
+              "length": 10.0
+            },
+            {
+              "leg": {
+                "distance": 500.0,
+                "curves": [],
+                "signs": [],
+                "signals": [
+                  {
+                    "at": 50.0,
+                    "signal": 3
+                  },
+                  {
+                    "at": 150.0,
+                    "signal": 4
+                  }
+                ],
+                "block": 3
+              },
+              "departs": 0,
+              "minimumStop": 12001,
+              "newTrain": false,
+              "length": 10.0
+            }
+          ]
+        }
+      ],
+      "trips": [
+        [
+          {
+            "departed": 0,
+            "arrived": 96,
+            "free": 96,
+            "waits": []
+          },
+          {
+            "departed": 24000,
+            "arrived": 24154,
+            "free": 154,
+            "waits": []
+          }
+        ],
+        [
+          {
+            "departed": 200,
+            "arrived": -1,
+            "free": 482,
+            "waits": [
+              {
+                "signal": 2,
+                "from": 1005,
+                "ticks": 11546
+              }
+            ]
+          }
+        ],
+        [
+          {
+            "departed": 0,
+            "arrived": 548,
+            "free": 482,
+            "waits": []
+          },
+          {
+            "departed": 12549,
+            "arrived": -1,
+            "free": 528,
+            "waits": []
+          }
+        ]
+      ]
+    },
+    {
+      "about": "a signal at the stop marker",
+      "blocks": {
+        "count": 6,
+        "crossings": [],
+        "signals": [
+          {
+            "block": 1,
+            "next": [
+              1
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 2,
+            "next": [
+              2
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 3,
+            "next": [
+              3
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 4,
+            "next": [
+              4
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 5,
+            "next": [],
+            "lights": [
+              5
+            ],
+            "cross": false
+          }
+        ],
+        "lightSpeeds": {
+          "restricted": 25,
+          "approach": 45,
+          "reduced": 75,
+          "sixProceed": 130
+        }
+      },
+      "runs": [
+        {
+          "name": "standing",
+          "spec": {
+            "topSpeed": 28.0,
+            "turnSpeed": 14.0,
+            "acceleration": 3.0
+          },
+          "throttle": 1.0,
+          "stays": false,
+          "stints": [
+            {
+              "leg": {
+                "distance": 30.0,
+                "curves": [],
+                "signs": [],
+                "signals": [],
+                "block": 3
+              },
+              "departs": 0,
+              "minimumStop": 0,
+              "newTrain": true,
+              "length": 10.0
+            },
+            {
+              "leg": {
+                "distance": 450.0,
+                "curves": [],
+                "signs": [],
+                "signals": [
+                  {
+                    "at": 50.0,
+                    "signal": 3
+                  },
+                  {
+                    "at": 150.0,
+                    "signal": 4
+                  }
+                ],
+                "block": 3
+              },
+              "departs": 6000,
+              "minimumStop": 0,
+              "newTrain": false,
+              "length": 10.0
+            }
+          ]
+        },
+        {
+          "name": "behind",
+          "spec": {
+            "topSpeed": 28.0,
+            "turnSpeed": 14.0,
+            "acceleration": 3.0
+          },
+          "throttle": 1.0,
+          "stays": false,
+          "stints": [
+            {
+              "leg": {
+                "distance": 290.0,
+                "curves": [],
+                "signs": [],
+                "signals": [
+                  {
+                    "at": 190.0,
+                    "signal": 0
+                  },
+                  {
+                    "at": 290.0,
+                    "signal": 1
+                  }
+                ],
+                "block": 0
+              },
+              "departs": 200,
+              "minimumStop": 0,
+              "newTrain": true,
+              "length": 10.0
+            },
+            {
+              "leg": {
+                "distance": 40.0,
+                "curves": [],
+                "signs": [],
+                "signals": [],
+                "block": 2
+              },
+              "departs": 2000,
+              "minimumStop": 0,
+              "newTrain": false,
+              "length": 10.0
+            }
+          ]
+        }
+      ],
+      "trips": [
+        [
+          {
+            "departed": 0,
+            "arrived": 116,
+            "free": 116,
+            "waits": []
+          },
+          {
+            "departed": 6000,
+            "arrived": 6496,
+            "free": 496,
+            "waits": []
+          }
+        ],
+        [
+          {
+            "departed": 200,
+            "arrived": 706,
+            "free": 378,
+            "waits": []
+          },
+          {
+            "departed": 2000,
+            "arrived": 2211,
+            "free": 133,
+            "waits": []
+          }
+        ]
+      ]
+    }
+  ],
+  "timetables": [
+    {
+      "about": "two trains close together",
+      "timetable": {
+        "format": "createrealtimeschedule.timetable",
+        "version": 2,
+        "name": "t",
+        "lines": [
+          {
+            "id": "L",
+            "name": "L",
+            "stations": [
+              "A",
+              "B"
+            ]
+          }
+        ],
+        "trains": [
+          {
+            "number": "1",
+            "line": "L",
+            "stops": [
+              {
+                "station": "A",
+                "depart": "00:00"
+              },
+              {
+                "station": "B",
+                "arrive": "00:01"
+              }
+            ]
+          },
+          {
+            "number": "2",
+            "line": "L",
+            "stops": [
+              {
+                "station": "A",
+                "depart": "00:00:10"
+              },
+              {
+                "station": "B",
+                "arrive": "00:01:10"
+              }
+            ]
+          }
+        ],
+        "duties": []
+      },
+      "blocks": {
+        "count": 6,
+        "crossings": [],
+        "signals": [
+          {
+            "block": 1,
+            "next": [
+              1
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 2,
+            "next": [
+              2
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 3,
+            "next": [
+              3
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 4,
+            "next": [
+              4
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 5,
+            "next": [],
+            "lights": [
+              5
+            ],
+            "cross": false
+          }
+        ],
+        "lightSpeeds": {
+          "restricted": 25,
+          "approach": 45,
+          "reduced": 75,
+          "sixProceed": 130
+        }
+      },
+      "spec": {
+        "topSpeed": 28.0,
+        "turnSpeed": 14.0,
+        "acceleration": 3.0
+      },
+      "defaults": {
+        "minimumStop": 5,
+        "length": 10
+      },
+      "legs": [
+        {
+          "distance": 890.0,
+          "curves": [],
+          "signs": [],
+          "signals": [
+            {
+              "at": 190.0,
+              "signal": 0
+            },
+            {
+              "at": 290.0,
+              "signal": 1
+            },
+            {
+              "at": 390.0,
+              "signal": 2
+            },
+            {
+              "at": 490.0,
+              "signal": 3
+            },
+            {
+              "at": 590.0,
+              "signal": 4
+            }
+          ],
+          "block": 0,
+          "from": "A",
+          "to": "B",
+          "tag": ""
+        }
+      ],
+      "trips": [
+        {
+          "train": "1",
+          "stop": 0,
+          "trip": {
+            "departed": 0,
+            "arrived": 813,
+            "free": 813,
+            "waits": []
+          },
+          "signalTicks": 0
+        },
+        {
+          "train": "2",
+          "stop": 0,
+          "trip": {
+            "departed": 200,
+            "arrived": 1230,
+            "free": 813,
+            "waits": []
+          },
+          "signalTicks": 217
+        }
+      ]
+    },
+    {
+      "about": "a duty",
+      "timetable": {
+        "format": "createrealtimeschedule.timetable",
+        "version": 2,
+        "name": "t",
+        "lines": [
+          {
+            "id": "L",
+            "name": "L",
+            "stations": [
+              "A",
+              "B",
+              "C"
+            ]
+          }
+        ],
+        "trains": [
+          {
+            "number": "1",
+            "line": "L",
+            "stops": [
+              {
+                "station": "A",
+                "depart": "00:00"
+              },
+              {
+                "station": "B",
+                "arrive": "00:00:05",
+                "depart": "00:00:06"
+              },
+              {
+                "station": "C",
+                "arrive": "00:01"
+              }
+            ]
+          },
+          {
+            "number": "2",
+            "line": "L",
+            "stops": [
+              {
+                "station": "C",
+                "depart": "00:01:01"
+              },
+              {
+                "station": "A",
+                "arrive": "00:02"
+              }
+            ]
+          },
+          {
+            "number": "3",
+            "line": "L",
+            "stops": [
+              {
+                "station": "A",
+                "depart": "00:05"
+              },
+              {
+                "station": "C",
+                "arrive": "00:06"
+              }
+            ]
+          }
+        ],
+        "duties": [
+          {
+            "id": "d",
+            "depot": "A",
+            "trains": [
+              "1",
+              "2"
+            ]
+          }
+        ]
+      },
+      "blocks": {
+        "count": 6,
+        "crossings": [],
+        "signals": [
+          {
+            "block": 1,
+            "next": [
+              1
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 2,
+            "next": [
+              2
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 3,
+            "next": [
+              3
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 4,
+            "next": [
+              4
+            ],
+            "lights": [
+              5
+            ],
+            "cross": false
+          },
+          {
+            "block": 5,
+            "next": [],
+            "lights": [
+              5
+            ],
+            "cross": false
+          }
+        ],
+        "lightSpeeds": {
+          "restricted": 25,
+          "approach": 45,
+          "reduced": 75,
+          "sixProceed": 130
+        }
+      },
+      "spec": {
+        "topSpeed": 28.0,
+        "turnSpeed": 14.0,
+        "acceleration": 3.0
+      },
+      "defaults": {
+        "minimumStop": 5,
+        "length": 10
+      },
+      "legs": [
+        {
+          "distance": 440.0,
+          "curves": [],
+          "signs": [],
+          "signals": [
+            {
+              "at": 190.0,
+              "signal": 0
+            },
+            {
+              "at": 290.0,
+              "signal": 1
+            },
+            {
+              "at": 390.0,
+              "signal": 2
+            }
+          ],
+          "block": 0,
+          "from": "A",
+          "to": "B",
+          "tag": ""
+        },
+        {
+          "distance": 890.0,
+          "curves": [],
+          "signs": [],
+          "signals": [
+            {
+              "at": 190.0,
+              "signal": 0
+            },
+            {
+              "at": 290.0,
+              "signal": 1
+            },
+            {
+              "at": 390.0,
+              "signal": 2
+            },
+            {
+              "at": 490.0,
+              "signal": 3
+            },
+            {
+              "at": 590.0,
+              "signal": 4
+            }
+          ],
+          "block": 0,
+          "from": "A",
+          "to": "C",
+          "tag": ""
+        },
+        {
+          "distance": 450.0,
+          "curves": [],
+          "signs": [],
+          "signals": [
+            {
+              "at": 50.0,
+              "signal": 3
+            },
+            {
+              "at": 150.0,
+              "signal": 4
+            }
+          ],
+          "block": 3,
+          "from": "B",
+          "to": "C",
+          "tag": ""
+        }
+      ],
+      "trips": [
+        {
+          "train": "1",
+          "stop": 0,
+          "trip": {
+            "departed": 0,
+            "arrived": 482,
+            "free": 482,
+            "waits": []
+          },
+          "signalTicks": 0
+        },
+        {
+          "train": "1",
+          "stop": 1,
+          "trip": {
+            "departed": 582,
+            "arrived": 1078,
+            "free": 496,
+            "waits": []
+          },
+          "signalTicks": 0
+        },
+        {
+          "train": "3",
+          "stop": 0,
+          "trip": {
+            "departed": 6000,
+            "arrived": 6813,
+            "free": 813,
+            "waits": []
+          },
+          "signalTicks": 0
+        }
+      ]
+    },
+    {
+      "about": "the length of a train",
+      "timetable": {
+        "format": "createrealtimeschedule.timetable",
+        "version": 9,
+        "name": "t",
+        "lines": [
+          {
+            "id": "L",
+            "name": "L",
+            "stations": [
+              "A",
+              "B",
+              "C",
+              "D",
+              "E"
+            ]
+          }
+        ],
+        "trains": [
+          {
+            "number": "1",
+            "line": "L",
+            "length": 100,
+            "stops": [
+              {
+                "station": "B",
+                "depart": "00:00"
+              },
+              {
+                "station": "C",
+                "arrive": "00:00:20",
+                "depart": "00:05"
+              },
+              {
+                "station": "D",
+                "arrive": "00:06"
+              }
+            ]
+          },
+          {
+            "number": "2",
+            "line": "L",
+            "stops": [
+              {
+                "station": "A",
+                "depart": "00:00:10"
+              },
+              {
+                "station": "E",
+                "arrive": "00:02"
+              }
+            ]
+          }
+        ],
+        "duties": []
+      },
+      "blocks": {
+        "count": 6,
+        "crossings": [],
+        "signals": [
+          {
+            "block": 1,
+            "next": [
+              1
+            ],
+            "lights": [],
+            "cross": false
+          },
+          {
+            "block": 2,
+            "next": [
+              2
+            ],
+            "lights": [],
+            "cross": false
+          },
+          {
+            "block": 3,
+            "next": [
+              3
+            ],
+            "lights": [],
+            "cross": false
+          },
+          {
+            "block": 4,
+            "next": [
+              4
+            ],
+            "lights": [],
+            "cross": false
+          },
+          {
+            "block": 5,
+            "next": [],
+            "lights": [],
+            "cross": false
+          }
+        ]
+      },
+      "spec": {
+        "topSpeed": 28.0,
+        "turnSpeed": 14.0,
+        "acceleration": 3.0
+      },
+      "defaults": {
+        "minimumStop": 5,
+        "length": 10
+      },
+      "legs": [
+        {
+          "distance": 440.0,
+          "curves": [],
+          "signs": [],
+          "signals": [
+            {
+              "at": 190.0,
+              "signal": 0
+            },
+            {
+              "at": 290.0,
+              "signal": 1
+            },
+            {
+              "at": 390.0,
+              "signal": 2
+            }
+          ],
+          "block": 0,
+          "from": "A",
+          "to": "B",
+          "tag": ""
+        },
+        {
+          "distance": 640.0,
+          "curves": [],
+          "signs": [],
+          "signals": [
+            {
+              "at": 190.0,
+              "signal": 0
+            },
+            {
+              "at": 290.0,
+              "signal": 1
+            },
+            {
+              "at": 390.0,
+              "signal": 2
+            },
+            {
+              "at": 490.0,
+              "signal": 3
+            },
+            {
+              "at": 590.0,
+              "signal": 4
+            }
+          ],
+          "block": 0,
+          "from": "A",
+          "to": "C",
+          "tag": ""
+        },
+        {
+          "distance": 690.0,
+          "curves": [],
+          "signs": [],
+          "signals": [
+            {
+              "at": 190.0,
+              "signal": 0
+            },
+            {
+              "at": 290.0,
+              "signal": 1
+            },
+            {
+              "at": 390.0,
+              "signal": 2
+            },
+            {
+              "at": 490.0,
+              "signal": 3
+            },
+            {
+              "at": 590.0,
+              "signal": 4
+            }
+          ],
+          "block": 0,
+          "from": "A",
+          "to": "D",
+          "tag": ""
+        },
+        {
+          "distance": 940.0,
+          "curves": [],
+          "signs": [],
+          "signals": [
+            {
+              "at": 190.0,
+              "signal": 0
+            },
+            {
+              "at": 290.0,
+              "signal": 1
+            },
+            {
+              "at": 390.0,
+              "signal": 2
+            },
+            {
+              "at": 490.0,
+              "signal": 3
+            },
+            {
+              "at": 590.0,
+              "signal": 4
+            }
+          ],
+          "block": 0,
+          "from": "A",
+          "to": "E",
+          "tag": ""
+        },
+        {
+          "distance": 200.0,
+          "curves": [],
+          "signs": [],
+          "signals": [
+            {
+              "at": 50.0,
+              "signal": 3
+            },
+            {
+              "at": 150.0,
+              "signal": 4
+            }
+          ],
+          "block": 3,
+          "from": "B",
+          "to": "C",
+          "tag": ""
+        },
+        {
+          "distance": 250.0,
+          "curves": [],
+          "signs": [],
+          "signals": [
+            {
+              "at": 50.0,
+              "signal": 3
+            },
+            {
+              "at": 150.0,
+              "signal": 4
+            }
+          ],
+          "block": 3,
+          "from": "B",
+          "to": "D",
+          "tag": ""
+        },
+        {
+          "distance": 500.0,
+          "curves": [],
+          "signs": [],
+          "signals": [
+            {
+              "at": 50.0,
+              "signal": 3
+            },
+            {
+              "at": 150.0,
+              "signal": 4
+            }
+          ],
+          "block": 3,
+          "from": "B",
+          "to": "E",
+          "tag": ""
+        },
+        {
+          "distance": 50.0,
+          "curves": [],
+          "signs": [],
+          "signals": [],
+          "block": 5,
+          "from": "C",
+          "to": "D",
+          "tag": ""
+        },
+        {
+          "distance": 300.0,
+          "curves": [],
+          "signs": [],
+          "signals": [],
+          "block": 5,
+          "from": "C",
+          "to": "E",
+          "tag": ""
+        },
+        {
+          "distance": 250.0,
+          "curves": [],
+          "signs": [],
+          "signals": [],
+          "block": 5,
+          "from": "D",
+          "to": "E",
+          "tag": ""
+        }
+      ],
+      "trips": [
+        {
+          "train": "1",
+          "stop": 0,
+          "trip": {
+            "departed": 0,
+            "arrived": 310,
+            "free": 310,
+            "waits": []
+          },
+          "signalTicks": 0
+        },
+        {
+          "train": "1",
+          "stop": 1,
+          "trip": {
+            "departed": 6000,
+            "arrived": 6154,
+            "free": 154,
+            "waits": []
+          },
+          "signalTicks": 0
+        },
+        {
+          "train": "2",
+          "stop": 0,
+          "trip": {
+            "departed": 200,
+            "arrived": 6650,
+            "free": 846,
+            "waits": [
+              {
+                "signal": 3,
+                "from": 724,
+                "ticks": 5431
+              }
+            ]
+          },
+          "signalTicks": 5604
+        }
+      ]
+    }
+  ]
+}

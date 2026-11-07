@@ -18,10 +18,18 @@ import com.simibubi.create.content.trains.track.TrackTargetingBehaviour;
 import com.simibubi.create.foundation.blockEntity.behaviour.BlockEntityBehaviour;
 
 import io.github.eyunya11.createrealtimeschedule.Createrealtimeschedule;
+import io.github.eyunya11.createrealtimeschedule.operation.Call;
+import io.github.eyunya11.createrealtimeschedule.operation.DutyPlan;
+import io.github.eyunya11.createrealtimeschedule.operation.Forecast;
+import io.github.eyunya11.createrealtimeschedule.operation.OperationData;
+import io.github.eyunya11.createrealtimeschedule.operation.RunTimes;
+import io.github.eyunya11.createrealtimeschedule.operation.TimetableTraffic;
+import io.github.eyunya11.createrealtimeschedule.operation.TrackFacts;
 import io.github.eyunya11.createrealtimeschedule.railway.CreateNetwork;
 import io.github.eyunya11.createrealtimeschedule.railway.Leg;
 import io.github.eyunya11.createrealtimeschedule.railway.RailNetwork;
 import io.github.eyunya11.createrealtimeschedule.railway.SignalBlocks;
+import io.github.eyunya11.createrealtimeschedule.timetable.Timetable;
 import io.github.eyunya11.createrealtimeschedule.traffic.Traffic;
 import io.github.eyunya11.createrealtimeschedule.travel.TrainSpecs;
 import net.minecraft.core.BlockPos;
@@ -56,6 +64,11 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
  * and the ticks the one behind takes are compared with what the simulation says, which has to be well
  * over what the line takes on its own for the test to mean anything.
  *
+ * <p>The operation runs the same simulation for its forecasts ({@code theoperationforecastswiththesignals}):
+ * on the same line, with a timetable of the two trains leaving together, {@link TrackFacts} reads the
+ * signal blocks from the track, the simulation of the timetable holds the train behind up, and the
+ * forecast of its way adds that to the track's running time.
+ *
  * <p>Each test has a batch of its own (see {@link TrackLine}).
  */
 @GameTestHolder(Createrealtimeschedule.MODID)
@@ -81,11 +94,13 @@ public class SignalTrafficTests {
         if (!ModList.get().isLoaded("createtrainnext"))
             return List.of();
         return List.of(new TestFunction("realtimesignaltraffic_behind", "signaltraffictests.atrainbehindanotherasthesimulationhasit",
-            LONG_TRACK_LINE, TIMEOUT_TICKS, 0, true, helper -> new Run(helper).begin()));
+                LONG_TRACK_LINE, TIMEOUT_TICKS, 0, true, helper -> new Run(helper, false).begin()),
+            new TestFunction("realtimesignaltraffic_forecast", "signaltraffictests.theoperationforecastswiththesignals",
+                LONG_TRACK_LINE, TIMEOUT_TICKS, 0, true, helper -> new Run(helper, true).begin()));
     }
 
     private enum Phase {
-        SET_UP, WAIT_FOR_LIGHTS, RUN
+        SET_UP, WAIT_FOR_LIGHTS, RUN, FORECAST
     }
 
     /** What is known of a train once it moves: when it started and where its front was then. */
@@ -113,9 +128,15 @@ public class SignalTrafficTests {
         private Started ahead;
         private SignalBlocks blocks;
         private final List<Started> order = new ArrayList<>();
+        /** Whether this is the test of the forecast, which sends no train. */
+        private final boolean forecast;
+        /** For the test of the forecast: the timetable, and the operation's data the simulation is run for. */
+        private Timetable timetable;
+        private OperationData data;
 
-        Run(GameTestHelper helper) {
+        Run(GameTestHelper helper, boolean forecast) {
             this.helper = helper;
+            this.forecast = forecast;
             this.level = helper.getLevel();
             this.line = new TrackLine(helper, 310, STATION_X, NAMES).parkATrainAt(1);
         }
@@ -137,6 +158,7 @@ public class SignalTrafficTests {
                 }
                 case WAIT_FOR_LIGHTS -> waitForLights();
                 case RUN -> run();
+                case FORECAST -> forecast();
             }
         }
 
@@ -179,6 +201,10 @@ public class SignalTrafficTests {
                 return;
             }
 
+            if (forecast) {
+                startForecast();
+                return;
+            }
             RailNetwork network = CreateNetwork.read(Create.RAILWAYS.trackNetworks.values());
             blocks = network.blocks();
             behind = new Started(line.train(), line.station(2));
@@ -199,6 +225,49 @@ public class SignalTrafficTests {
             behind.train.runtime.setSchedule(ScheduleTests.schedule(ScheduleTests.stop("Gamma")), false);
             ahead.train.runtime.setSchedule(ScheduleTests.schedule(ScheduleTests.stop("Delta")), false);
             enter(Phase.RUN);
+        }
+
+        /**
+         * The operation's own way to the forecast: the track facts of a timetable of the two trains leaving
+         * together, the train ahead from Beta for Delta and the one behind from Alpha for Gamma.
+         */
+        private void startForecast() {
+            timetable = new Timetable("signals", List.of(new Timetable.Line("L", "L", List.of(NAMES), false)),
+                List.of(new Timetable.Train("1", "L", "", List.of(Timetable.Stop.leaving("Beta", 0), Timetable.Stop.arriving("Delta", 60))),
+                    new Timetable.Train("2", "L", "", List.of(Timetable.Stop.leaving("Alpha", 0), Timetable.Stop.arriving("Gamma", 60)))),
+                List.of());
+            data = new OperationData();
+            // The simulation runs on a thread of its own: the tick that asks for it does not wait, and has none yet.
+            helper.assertTrue(TrackFacts.traffic(data, timetable) == TimetableTraffic.NONE, "the simulation is run in the tick that asks for it");
+            helper.assertTrue(data.traffic(TrackFacts.trafficKey()) == null, "the simulation is done in the tick that asks for it");
+            helper.assertTrue(data.blocks().count() > 0, "the track facts have no signal blocks");
+            enter(Phase.FORECAST);
+        }
+
+        /** Once the simulation is done, the forecast takes it. */
+        private void forecast() {
+            TimetableTraffic traffic = TrackFacts.traffic(data, timetable);
+            if (data.traffic(TrackFacts.trafficKey()) == null) {
+                if (phaseTicks > 200)
+                    helper.fail("the simulation of the timetable is not done after " + phaseTicks + " ticks");
+                return;
+            }
+            LOGGER.info("[{}] the simulation was done {} ticks after it was asked for", helper.testInfo.getTestName(), phaseTicks);
+            helper.assertTrue(traffic.finished(), "the simulation of the timetable did not finish");
+            long signals = traffic.signalTicks("2", 0);
+            LOGGER.info("[{}] the signals hold train 2 up {} ticks, train 1 {}", helper.testInfo.getTestName(), signals, traffic.signalTicks("1", 0));
+            helper.assertTrue(signals >= SLOWED_AT_LEAST, "the signals hold the train behind up only " + signals + " ticks");
+            helper.assertValueEqual(0L, traffic.signalTicks("1", 0), "ticks the signals hold the train ahead up");
+            List<Call> calls = DutyPlan.calls(timetable, new Timetable.Duty("2", "Alpha", List.of("2")));
+            RunTimes track = TrackFacts.fastestTimes(TrackFacts.legs(data, timetable));
+            helper.assertValueEqual(Forecast.runTicks(calls, 0, track) + signals,
+                Forecast.runTicks(calls, 0, TrackFacts.withSignals(data, timetable, track)), "the forecast of the way of the train behind");
+            helper.assertTrue(TrackFacts.traffic(data, timetable) == traffic, "the simulation is worked out again while the track is the same");
+            helper.assertTrue(data.traffic(TrackFacts.trafficKey()) == traffic, "the simulation is not kept for the config it was worked out with");
+            helper.assertTrue(data.traffic(List.of(0L, 1)) == null, "the simulation is kept for another minimum stop and train length");
+            data.forgetAxes();
+            helper.assertTrue(data.traffic() == null, "the simulation is kept after the track facts are dropped");
+            helper.succeed();
         }
 
         private static Leg legOf(RailNetwork network, String from, String to) {

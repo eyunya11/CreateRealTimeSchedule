@@ -41,16 +41,17 @@ public final class CreateReach implements Reach {
 
     /**
      * What {@code train} can reach, its running times from {@code legs} (see {@link TrackFacts#legs})
-     * at its own speed and throttle; empty if Create's config leaves the train no speed.
+     * at its own speed and throttle, with what the signals add to the ways of the trains of the timetable
+     * ({@code traffic}); empty if Create's config leaves the train no speed.
      */
-    public static Optional<CreateReach> of(Train train, Map<List<String>, Leg> legs) {
+    public static Optional<CreateReach> of(Train train, Map<List<String>, Leg> legs, TimetableTraffic traffic) {
         TrainSpec spec;
         try {
             spec = TrainSpecs.of(train);
         } catch (IllegalArgumentException e) {
             return Optional.empty();
         }
-        return Optional.of(new CreateReach(train, spec, TrackFacts.runTimes(legs, spec, train.throttle)));
+        return Optional.of(new CreateReach(train, spec, RunTimes.withSignals(TrackFacts.runTimes(legs, spec, train.throttle), traffic)));
     }
 
     @Override
@@ -66,6 +67,11 @@ public final class CreateReach implements Reach {
     @Override
     public OptionalInt limitAtEnd(String from, String to, String tag, OptionalInt limitAtStart) {
         return times.limitAtEnd(from, to, tag, limitAtStart);
+    }
+
+    @Override
+    public long signalTicks(String train, int stop) {
+        return times.signalTicks(train, stop);
     }
 
     @Override

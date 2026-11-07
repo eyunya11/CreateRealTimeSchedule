@@ -43,10 +43,23 @@ public final class TimetableTraffic {
     /** A leg of a train of the timetable: from its stop {@code stop} (0 for the first) to the next. */
     public record Key(String train, int stop) {}
 
-    private final Map<Key, Trip> trips;
+    /** Nothing known of the signals: no train is held up by them. */
+    public static final TimetableTraffic NONE = new TimetableTraffic(Map.of(), true);
 
-    private TimetableTraffic(Map<Key, Trip> trips) {
+    private final Map<Key, Trip> trips;
+    private final boolean finished;
+
+    private TimetableTraffic(Map<Key, Trip> trips, boolean finished) {
         this.trips = trips;
+        this.finished = finished;
+    }
+
+    /**
+     * Whether the simulation ran to the end ({@link Traffic.Result#finished}); if not, it says nothing of
+     * any train.
+     */
+    public boolean finished() {
+        return finished;
     }
 
     /**
@@ -112,12 +125,22 @@ public final class TimetableTraffic {
             for (int i = 0; i < ran.size(); i++)
                 trips.put(keys.get(run).get(i), ran.get(i));
         }
-        return new TimetableTraffic(trips);
+        return new TimetableTraffic(result.finished() ? trips : Map.of(), result.finished());
     }
 
-    /** How the leg from stop {@code stop} of {@code train} to the next went, if the train set out on it. */
+    /** How the leg from stop {@code stop} of {@code train} to the next went, if the train set out on it or was taken off before it could. */
     public Optional<Trip> trip(String train, int stop) {
         return Optional.ofNullable(trips.get(new Key(train, stop)));
+    }
+
+    /**
+     * The ticks the signals added to the leg from stop {@code stop} of {@code train} to the next, waits
+     * at red and all ({@link Trip#signalTicks}); 0 where the train did not set out on it, never got
+     * there, or runs on a way it cannot finish on an empty line.
+     */
+    public long signalTicks(String train, int stop) {
+        Trip trip = trips.get(new Key(train, stop));
+        return trip == null || !trip.hasArrived() || trip.free() < 0 ? 0 : Math.max(0, trip.signalTicks());
     }
 
     /** The ticks the leg from stop {@code stop} of {@code train} to the next took, if it got there. */

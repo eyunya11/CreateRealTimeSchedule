@@ -500,6 +500,45 @@ test('each train starts under no limit', () => {
   assert.deepEqual(edit.tooFast(edit.addTrain(tt, fromY), SIGNED).map(way => way.number), ['3']);
 });
 
+/**
+ * SIGNED, with the trains of the timetable run together with the signals: on time, train 3 is slowed 30
+ * ticks between Y and Z by the signals, and stands 21 ticks at one 12.4 blocks out of Y; between X and
+ * Y it never gets there.
+ */
+const SIGNALS = Object.assign({}, SIGNED, {
+  ticks: (from, to, tag, limit) => {
+    const seconds = SIGNED.seconds(from, to, tag, limit);
+    return seconds === null ? null : seconds * 20 - 5;
+  },
+  signalTicks: (number, i) => (number === '3' && i === 1 ? 30 : 0),
+  trip: (number, i) => (number !== '3' ? null : i === 0 ? { departed: 0, arrived: -1, free: 4795, waits: [] }
+    : { departed: 0, arrived: 6025, free: 5995, waits: [{ signal: 7, from: 100, ticks: 21 }] }),
+  leg: from => ({ signals: from === 'Y' ? [{ at: 12.4, signal: 7 }] : [] }),
+});
+
+test("what the signals add to a way is added to the track's ticks before they are rounded up", () => {
+  const { tt } = threeWithTrack();
+  const way = edit.forTrain(SIGNALS, tt.trains[2]);
+  assert.equal(way(tt.trains[2].stops, 0), 240, 'nothing added');
+  assert.equal(way(tt.trains[2].stops, 1), 302, '5995 ticks and 30 more');
+  assert.equal(edit.forTrain(SIGNALS, {})(tt.trains[2].stops, 1), 300, 'a train not of the timetable, such as one drawn');
+  assert.deepEqual(edit.tooFast(tt, SIGNALS), [{ number: '3', from: 'Y', to: 'Z', given: 240, needed: 302, signals: 2 }]);
+  const later = edit.setStopTime(tt, '3', 2, 'arrive', t('09:20'), SIGNALS);
+  assert.equal(edit.setStopTime(later, '3', 2, 'arrive', t('09:08'), SIGNALS).trains[2].stops[2].arrive, t('09:11') + 2,
+    'held to the running time with the signals');
+});
+
+test('the notes say which signals at red a train stops at, and where it never gets', () => {
+  const { tt, running } = threeWithTrack();
+  assert.deepEqual(edit.redSignals(tt, SIGNALS), [
+    { number: '3', from: 'X', to: 'Y', stuck: true },
+    { number: '3', from: 'Y', to: 'Z', at: 12, seconds: 2 },
+  ]);
+  assert.deepEqual(edit.redSignals(tt, SIGNED), [], 'running times that know of no signals');
+  assert.deepEqual(edit.redSignals(tt, running), []);
+  assert.deepEqual(edit.redSignals(tt, null), []);
+});
+
 test('the limits of a train are worked out once for each stop', () => {
   const stops = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'].map(station => ({ station, arrive: NONE, depart: NONE }));
   const asked = [];

@@ -440,6 +440,16 @@
   }
 
   /**
+   * The ticks a train held to tag takes from one station to another, under the limit in km/h of a sign
+   * it passed before (null for none), as seconds has them before they are rounded up; null if the
+   * network has no running time for the way.
+   */
+  function ticks(network, from, to, tag, limit) {
+    const way = leg(network, from, to, tag);
+    return way === null || way.ticks === null ? null : ticksUnder(network, way, limit);
+  }
+
+  /**
    * The ticks of way for a train that leaves under limit: the leg's own ticks, and what the limit adds
    * to them until the train passes the next sign. The leg's distance and signs are written to a
    * hundredth of a block and its ticks were worked out before that, so what is added is the
@@ -503,5 +513,5 @@
     return -1;
   }
 
-  return { FORMAT, VERSION, read, leg, seconds, limitAfter, untaggedLegs, platforms, way };
+  return { FORMAT, VERSION, read, leg, seconds, ticks, limitAfter, untaggedLegs, platforms, way };
 });

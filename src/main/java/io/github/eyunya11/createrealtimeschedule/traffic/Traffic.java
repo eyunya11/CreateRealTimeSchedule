@@ -63,6 +63,13 @@ import io.github.eyunya11.createrealtimeschedule.travel.TrainSpec;
  */
 public final class Traffic {
 
+    /**
+     * How many times at most a train is moved on, in all, before the simulation gives up: once a tick for
+     * each train on its way, so that a day of a train a minute, each on its way for two minutes, is a fifth
+     * of it. A timetable that asks far more of the line than it can take keeps
+     * dozens of trains held up on it for ten minutes each, and would take tens of seconds.
+     */
+    public static final long MAX_STEPS = 5_000_000;
     /** How long after the last departure of the timetable a train that has not arrived is given up on: an hour. */
     static final long GIVE_UP_TICKS = 20L * 60 * 60;
     /**
@@ -178,8 +185,11 @@ public final class Traffic {
      * How the trains went: for each {@link Run}, in order, a trip for each of its legs it set out on, or
      * was to set out on and was taken off before it did. A train that never arrived somewhere has a trip
      * that says so, and none for the legs after.
+     *
+     * @param finished whether the simulation ran to the end, and did not give up after {@link #MAX_STEPS};
+     *                 the trips of one that gave up are not to be gone by
      */
-    public record Result(List<List<Trip>> trips) {
+    public record Result(List<List<Trip>> trips, boolean finished) {
         public Result {
             trips = trips.stream().map(List::copyOf).toList();
         }
@@ -187,7 +197,12 @@ public final class Traffic {
 
     /** Runs the trains of {@code runs} on the signal blocks of their network; those that come onto the line together, in that order. */
     public static Result run(SignalBlocks blocks, List<Run> runs) {
-        return new Traffic(blocks, runs).simulate();
+        return run(blocks, runs, MAX_STEPS);
+    }
+
+    /** {@link #run(SignalBlocks, List)}, giving up after {@code maxSteps} moves of a train. */
+    static Result run(SignalBlocks blocks, List<Run> runs, long maxSteps) {
+        return new Traffic(blocks, runs).simulate(maxSteps);
     }
 
     private final SignalBlocks blocks;
@@ -212,6 +227,8 @@ public final class Traffic {
     /** The trains on the line this tick, waiting ones first; filled again every tick. */
     private final List<Train> onTheLine = new ArrayList<>();
     private long now;
+    /** How many times a train has been moved on. */
+    private long steps;
 
     private Traffic(SignalBlocks blocks, List<Run> runs) {
         this.blocks = blocks;
@@ -246,13 +263,15 @@ public final class Traffic {
         return crossing;
     }
 
-    private Result simulate() {
+    private Result simulate(long maxSteps) {
         if (trains.isEmpty())
-            return new Result(List.of());
+            return new Result(List.of(), true);
         now = coming.getFirst().appears();
         long giveUp = trains.stream().flatMap(train -> train.run.stints().stream()).mapToLong(Stint::departs).max().orElseThrow()
             + GIVE_UP_TICKS;
         while (now <= giveUp && (nextToCome < coming.size() || !waiting.isEmpty() || !moving.isEmpty())) {
+            if (steps > maxSteps)
+                break;
             if (tick()) {
                 now++;
                 continue;
@@ -276,7 +295,7 @@ public final class Traffic {
                 train.trips.add(new Trip(train.departed, Trip.NOT_ARRIVED, train.free, train.waits));
             trips.add(train.trips);
         }
-        return new Result(trips);
+        return new Result(trips, steps <= maxSteps);
     }
 
     /** One tick of every train; whether anything moved or changed. */
@@ -401,6 +420,7 @@ public final class Traffic {
 
     /** Navigation.tick and the move of Train.tick for a train on its way; whether it moved or changed. */
     private boolean control(Train train) {
+        steps++;
         Leg leg = train.leg;
         Drive drive = train.drive;
         double front = drive.position();
