@@ -689,9 +689,10 @@
 
   /**
    * The signals at red that trains stop at running on time with the others, and the ways they never
-   * get to the end of, held up by the signals (running, as trackOf takes it, with trip and leg). A stop
-   * is at its signal's distance from the stop before, in whole blocks, or null where the leg does not
-   * say.
+   * get to the end of, ten minutes behind (running, as trackOf takes it, with trip and leg): held up at
+   * the signals, or given less time than the track or a minimum stop takes, which the trip does not
+   * tell apart. A stop is at its signal's distance from the stop before, in whole blocks, or null where
+   * the leg does not say.
    *
    * @returns {Array<{number: string, from: string, to: string, at?: ?number, seconds?: number, stuck?: boolean}>}
    *   a stop at red, for seconds, or a way the train is stuck on
