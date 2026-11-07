@@ -290,6 +290,33 @@
     return next;
   }
 
+  /** The length a train is taken to be where neither it nor the settings say, in blocks: the server's default train_length_blocks. */
+  const DEFAULT_LENGTH = 40;
+
+  /**
+   * The length typed for a train: NONE for none (left empty), the number of blocks for a whole number
+   * from 1 to MAX_LENGTH, or null for anything else, which is not taken (-1 would read as none).
+   */
+  function typedLength(text) {
+    const trimmed = text.trim();
+    if (trimmed === '')
+      return NONE;
+    const blocks = Number(trimmed);
+    return check.isLength(blocks) ? blocks : null;
+  }
+
+  /**
+   * The train length of the settings as typed: the number of blocks, rounded and kept from 1 to
+   * MAX_LENGTH, or DEFAULT_LENGTH for a box left empty or what is not a number.
+   */
+  function typedDefaultLength(text) {
+    const trimmed = text.trim();
+    const value = Math.round(Number(trimmed));
+    if (trimmed === '' || !Number.isFinite(value))
+      return DEFAULT_LENGTH;
+    return Math.max(1, Math.min(check.MAX_LENGTH, value));
+  }
+
   /**
    * Changes a train's number, type, deadhead mark, keep mark, track tag and length (NONE for none); its
    * duties, and the waits for it, follow a new number.
@@ -351,11 +378,6 @@
     return running;
   }
 
-  /** The track tag a train runs on from stop k of stops: the stop's own, or else the train's; '' for none. */
-  function tagFrom(train, stops, k) {
-    return stops[k].tag || train.tag || '';
-  }
-
   /**
    * The running times for the stops of train: a function (stops, i) giving the seconds from stops[i]
    * to stops[i + 1] (null where the track does not say), on the stop's track tag or else the train's.
@@ -365,18 +387,33 @@
    * the signals add to the train's ways (signalTicks), they are added to the track's ticks before
    * these are rounded up to seconds. Null for no running times; what this gave already is given back as
    * it is.
+   *
+   * The limits at the stops are worked out once for each list of stops it is given, from the first
+   * stop on as far as asked, so that asking for every way of a train in turn goes over its stops once.
+   * The stations and tags of a list must not change while it is in use; a change here makes a new list.
    */
   function forTrain(running, train) {
     if (!running || running.forTrain === true)
       return running || null;
     const track = trackOf(running);
+    const tagFrom = (stops, k) => timetables.tagAt({ tag: train.tag, stops }, k);
+    // For each list of stops, the limit the train is under as it leaves each stop worked out so far.
+    const known = new WeakMap();
+    const limitAt = (stops, i) => {
+      let limits = known.get(stops);
+      if (limits === undefined) {
+        limits = [null];
+        known.set(stops, limits);
+      }
+      for (let k = limits.length - 1; k < i; k++)
+        limits.push(track.limitAfter(stops[k].station, stops[k + 1].station, tagFrom(stops, k), limits[k]));
+      return limits[i];
+    };
     const way = (stops, i) => {
-      let limit = null;
-      for (let k = 0; k < i; k++)
-        limit = track.limitAfter(stops[k].station, stops[k + 1].station, tagFrom(train, stops, k), limit);
       const from = stops[i].station;
       const to = stops[i + 1].station;
-      const tag = tagFrom(train, stops, i);
+      const tag = tagFrom(stops, i);
+      const limit = limitAt(stops, i);
       const seconds = track.seconds(from, to, tag, limit);
       const signals = seconds === null || !track.signalTicks || train.number === undefined ? 0 : track.signalTicks(train.number, i);
       if (!(signals > 0))
@@ -402,14 +439,13 @@
    * How early and how late one stop of a train can be, by the stops either side of it and the track:
    * the train comes in no sooner than the running time after it leaves the stop before, and leaves
    * no later than the running time before it comes in at the stop after. A stop with no arrival time
-   * comes in when it leaves. running is as forTrain makes it, or as trackOf takes it for a train of no
-   * track tag of its own.
+   * comes in when it leaves.
    *
+   * @param way the running times as forTrain makes them for the train of stops, or null for none
    * @returns {{earliest: number, latest: number}} the earliest time the train can come in, and the
    *   latest it can leave; -Infinity and Infinity where nothing holds it
    */
-  function stopLimits(stops, index, running) {
-    const way = forTrain(running, {});
+  function stopLimits(stops, index, way) {
     const stop = stops[index];
     const before = stops[index - 1];
     const after = stops[index + 1];
@@ -672,7 +708,7 @@
           continue;
         const from = train.stops[k].station;
         const to = train.stops[k + 1].station;
-        const leg = track.leg(from, to, tagFrom(train, train.stops, k));
+        const leg = track.leg(from, to, timetables.tagAt(train, k));
         for (const wait of trip.waits) {
           const signal = leg === null ? undefined : leg.signals.find(each => each.signal === wait.signal);
           found.push({ number: train.number, from, to, at: signal === undefined ? null : Math.round(signal.at),
@@ -914,7 +950,7 @@
 
   return {
     NONE, copy, setName, putLine, removeLine, setLineTrack, setTrackHidden, stationTimes, dwellAt, setStations, typeList, setTypes, typeChanges, trainsOfType,
-    nextNumber, addTrain, removeTrain, setTrain, trackOf, forTrain, stopLimits, moveStop, moveRun, moveArrival, stretchStop, draggedTime, drag, sameStops, shiftTrain, setStopTime, setDwell, setStopMinimum, setStopType, setStopWaits, setStopStation,
+    nextNumber, addTrain, removeTrain, DEFAULT_LENGTH, typedLength, typedDefaultLength, setTrain, trackOf, forTrain, stopLimits, moveStop, moveRun, moveArrival, stretchStop, draggedTime, drag, sameStops, shiftTrain, setStopTime, setDwell, setStopMinimum, setStopType, setStopWaits, setStopStation,
     removeStop, tooFast, redSignals, setStopTag, tagsOf, noWay,
     snap, snapUp, snapDown, drawStop, drawClick, setDrawnDwell, finishDrawing,
   };

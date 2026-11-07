@@ -313,7 +313,7 @@ function threeWithTrack() {
 
 test('a stop dragged stops where the track\'s running time to the stops either side runs out', () => {
   const { tt, running } = threeWithTrack();
-  assert.deepEqual(edit.stopLimits(tt.trains[2].stops, 1, running), { earliest: t('09:04'), latest: t('09:07') });
+  assert.deepEqual(edit.stopLimits(tt.trains[2].stops, 1, edit.forTrain(running, tt.trains[2])), { earliest: t('09:04'), latest: t('09:07') });
   const times = next => next.trains[2].stops[1];
   // Two minutes earlier would come in at 09:03, a minute short of the running time from X: it stops at 09:04.
   assert.deepEqual(times(edit.moveStop(tt, '3', 1, -120, running)), { station: 'Y', arrive: t('09:04'), depart: t('09:05') });
@@ -537,6 +537,58 @@ test('the notes say which signals at red a train stops at, and where it never ge
   assert.deepEqual(edit.redSignals(tt, SIGNED), [], 'running times that know of no signals');
   assert.deepEqual(edit.redSignals(tt, running), []);
   assert.deepEqual(edit.redSignals(tt, null), []);
+});
+
+test('the limits of a train are worked out once for each stop', () => {
+  const stops = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'].map(station => ({ station, arrive: NONE, depart: NONE }));
+  const asked = [];
+  const track = {
+    seconds: (from, to, tag, limit) => (limit === null ? 60 : 90),
+    limitAfter: (from, to, tag, limit) => {
+      asked.push(from);
+      return from === 'C' ? 40 : limit;
+    },
+  };
+  const way = edit.forTrain(track, { tag: 'local' });
+  const seconds = [];
+  for (let i = 0; i < stops.length - 1; i++)
+    seconds.push(way(stops, i));
+  assert.deepEqual(seconds, [60, 60, 60, 90, 90, 90, 90, 90, 90]);
+  // Worked out again from A for each way, it would be 36.
+  assert.deepEqual(asked, ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']);
+  assert.equal(way(stops, 2), 60, 'asked again');
+  assert.equal(asked.length, 8);
+  const other = stops.map(stop => ({ ...stop }));
+  assert.equal(way(other, 4), 90, 'another list of stops is worked out for itself');
+  assert.equal(asked.length, 12);
+});
+
+test('the tag of a way is the stop\'s own, or else the train\'s', () => {
+  const tags = [];
+  const track = { seconds: (from, to, tag) => { tags.push(tag); return 60; }, limitAfter: (from, to, tag, limit) => limit };
+  const stops = [{ station: 'A', tag: 'fast' }, { station: 'B' }, { station: 'C' }];
+  edit.forTrain(track, { tag: 'local' })(stops, 0);
+  edit.forTrain(track, { tag: 'local' })(stops, 1);
+  edit.forTrain(track, {})(stops, 1);
+  assert.deepEqual(tags, ['fast', 'local', '']);
+});
+
+test('a length typed for a train is taken only if it is one', () => {
+  assert.equal(edit.typedLength(''), NONE, 'left empty, the settings\' length');
+  assert.equal(edit.typedLength(' 120 '), 120);
+  assert.equal(edit.typedLength('10000'), 10000);
+  for (const text of ['-1', '0', '-2', '10001', '2.5', 'abc'])
+    assert.equal(edit.typedLength(text), null, text);
+});
+
+test('the train length of the settings goes back to the default when left empty', () => {
+  assert.equal(edit.typedDefaultLength(''), edit.DEFAULT_LENGTH);
+  assert.equal(edit.DEFAULT_LENGTH, 40);
+  assert.equal(edit.typedDefaultLength('abc'), 40);
+  assert.equal(edit.typedDefaultLength('120'), 120);
+  assert.equal(edit.typedDefaultLength('0'), 1);
+  assert.equal(edit.typedDefaultLength('20000'), 10000);
+  assert.equal(edit.typedDefaultLength('2.6'), 3);
 });
 
 test('running times as a function know of no signs', () => {

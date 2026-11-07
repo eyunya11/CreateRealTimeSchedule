@@ -27,7 +27,7 @@
     selection: null,
     // Times dragged or drawn land on the step, or on the fine step while Shift is held.
     settings: {
-      language: i18n.guess(navigator.language), dwell: 20, snap: 15, fineSnap: 5, length: 40,
+      language: i18n.guess(navigator.language), dwell: 20, snap: 15, fineSnap: 5, length: rt.edit.DEFAULT_LENGTH,
       // The diagram or the map, the lines whose track the map shows (none for all), what it shows on it,
       // and the track tags turned off ('' for no tag).
       view: 'diagram', mapLines: [], mapLayers: {}, mapTagsOff: [],
@@ -1727,10 +1727,13 @@
       value: rt.problems.hasLength(train) ? String(train.length) : '', placeholder: String(state.settings.length),
       title: t('trainLengthHelp', state.settings.length),
       onchange: event => {
-        // Left empty, the train takes the length of the settings; a length out of range is for the problems to say.
-        const text = event.target.value.trim();
-        const value = Math.round(Number(text));
-        change(rt.edit.setTrain(state.timetable, number, { length: text === '' || !Number.isFinite(value) ? rt.edit.NONE : value }));
+        // Left empty, the train takes the length of the settings; what is not a length is not taken.
+        const length = rt.edit.typedLength(event.target.value);
+        if (length === null) {
+          error.textContent = t('badLength');
+          return;
+        }
+        change(rt.edit.setTrain(state.timetable, number, { length }));
       },
     })));
     panel.append(error);
@@ -1883,8 +1886,7 @@
     panel.append(field(t('defaultLength'), h('input', {
       type: 'number', min: '1', max: String(rt.problems.MAX_LENGTH), step: '1', value: String(state.settings.length),
       onchange: event => {
-        const value = Math.round(Number(event.target.value));
-        state.settings.length = Number.isFinite(value) ? Math.max(1, Math.min(rt.problems.MAX_LENGTH, value)) : 40;
+        state.settings.length = rt.edit.typedDefaultLength(event.target.value);
         saveSoon();
         render();
       },

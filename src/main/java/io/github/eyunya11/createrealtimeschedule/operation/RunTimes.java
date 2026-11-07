@@ -113,9 +113,10 @@ public interface RunTimes {
         };
     }
 
-    /** What {@code times} says, worked out once for each two stations, tag and limit and then remembered. */
+    /** What {@code times} says, and the limit at the end, worked out once for each two stations, tag and limit and then remembered. */
     static RunTimes remembered(RunTimes times) {
         Map<List<Object>, OptionalLong> known = new HashMap<>();
+        Map<List<Object>, OptionalInt> limits = new HashMap<>();
         return new RunTimes() {
             @Override
             public OptionalLong ticks(String from, String to, String tag) {
@@ -129,7 +130,7 @@ public interface RunTimes {
 
             @Override
             public OptionalInt limitAtEnd(String from, String to, String tag, OptionalInt limitAtStart) {
-                return times.limitAtEnd(from, to, tag, limitAtStart);
+                return limits.computeIfAbsent(List.of(from, to, tag, limitAtStart), ends -> times.limitAtEnd(from, to, tag, limitAtStart));
             }
 
             @Override
