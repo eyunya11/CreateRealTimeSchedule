@@ -656,6 +656,38 @@ footer h2 {
   width: 80px;
 }
 
+/*
+ * A train's stops keep to the panel's width: the times and the button have the width they need,
+ * and the station takes what is left, a long name cut short. A time's column is in ch of the
+ * table's font, so that "08:06:30" fits in whatever font the page is shown in: six digits of
+ * 1ch, two colons of less, and the box's padding and border (14px) and the cell's padding (6px).
+ */
+#inspector table.stops {
+  table-layout: fixed;
+}
+
+#inspector table.stops col.time {
+  width: calc(7.5ch + 20px);
+}
+
+#inspector table.stops col.remove {
+  width: 34px;
+}
+
+#inspector table.stops td > select,
+#inspector table.stops td > input {
+  width: 100%;
+}
+
+#inspector table.stops td > input {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Narrower than other buttons, to keep within its column (28px inside the cell's padding). */
+#inspector table.stops td > button {
+  padding: 4px 6px;
+}
+
 /* The row under a stop's times, with how long the train stands there. */
 #inspector tr.stop-times td {
   padding-top: 0;
@@ -682,10 +714,6 @@ footer h2 {
   align-items: center;
   gap: 4px 10px;
   margin-top: 4px;
-}
-
-#inspector tr.stop-times .wait {
-  white-space: nowrap;
 }
 
 #inspector tr.stop-times .wait-add select {
