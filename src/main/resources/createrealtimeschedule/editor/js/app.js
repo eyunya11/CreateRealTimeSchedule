@@ -1790,6 +1790,7 @@
         }, '×'))), stopTimesRow(train, i)];
     });
     panel.append(h('table', { class: 'stops' },
+      h('colgroup', null, h('col'), h('col', { class: 'time' }), h('col', { class: 'time' }), h('col', { class: 'remove' })),
       h('thead', null, h('tr', null, h('th', null, t('station')), h('th', null, t('arrive')), h('th', null, t('depart')), h('th'))),
       h('tbody', null, rows.flat())));
     if (trainNote !== '')
