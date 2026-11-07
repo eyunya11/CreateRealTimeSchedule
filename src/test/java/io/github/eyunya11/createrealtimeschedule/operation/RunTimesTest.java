@@ -99,4 +99,27 @@ class RunTimesTest {
         }
         assertEquals(OptionalInt.of(25), RunTimes.fastest(List.of()).limitAtEnd("A", "B", "", OptionalInt.of(25)));
     }
+
+    @Test
+    void rememberedLimitsAreWorkedOutOnceForEachWayAndLimit() {
+        int[] asked = {0};
+        RunTimes remembered = RunTimes.remembered(new RunTimes() {
+            @Override
+            public OptionalLong ticks(String from, String to, String tag) {
+                return OptionalLong.empty();
+            }
+
+            @Override
+            public OptionalInt limitAtEnd(String from, String to, String tag, OptionalInt limitAtStart) {
+                asked[0]++;
+                return from.equals("A") ? OptionalInt.of(40) : limitAtStart;
+            }
+        });
+        for (int k = 0; k < 3; k++) {
+            assertEquals(OptionalInt.of(40), remembered.limitAtEnd("A", "B", "", OptionalInt.empty()));
+            assertEquals(OptionalInt.of(25), remembered.limitAtEnd("B", "C", "", OptionalInt.of(25)));
+            assertEquals(OptionalInt.empty(), remembered.limitAtEnd("B", "C", "", OptionalInt.empty()), "by the limit too");
+        }
+        assertEquals(3, asked[0]);
+    }
 }
