@@ -169,6 +169,8 @@ class ForecastTest {
         assertEquals(at("08:28:20"), Forecast.leaves(calls, DAY, 1, at("08:16"), 3, SIGNED, MINIMUM));
         assertEquals(OptionalInt.of(40), Forecast.limitAfter(calls, 0, OptionalInt.empty(), SIGNED));
         assertEquals(OptionalInt.empty(), Forecast.limitAfter(calls, 1, OptionalInt.of(40), SIGNED), "train 2 leaves C under none");
+        // With the signals: 7 seconds more on train 1's second way, at C at 08:21:07, off at 08:21:27; and 3 on train 2's first.
+        assertEquals(at("08:28:30"), Forecast.leaves(calls, DAY, 1, at("08:16"), 3, SIGNALLED, MINIMUM));
     }
 
     @Test

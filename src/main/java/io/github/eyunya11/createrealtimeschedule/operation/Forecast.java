@@ -31,11 +31,15 @@ public final class Forecast {
         long leaves = departure;
         // The limit is carried on from call to call here, not worked out again from the train's first call for each.
         OptionalInt limit = from < to ? limitAt(calls, from, times) : OptionalInt.empty();
+        int first = firstOfTrain(calls, from);
         for (int call = from + 1; call <= to; call++) {
-            long arrives = leaves + runTicks(calls, call - 1, times, limit);
+            long arrives = leaves + runTicks(calls, call - 1, times, limit, first);
             leaves = Math.max(DutyPlan.at(day, calls.get(call).depart()), arrives + DutyPlan.minimumStop(calls.get(call), defaultMinimumStop));
-            if (call < to)
+            if (call < to) {
                 limit = limitAfter(calls, call - 1, limit, times);
+                if (!calls.get(call).leavingTrain().equals(calls.get(call - 1).leavingTrain()))
+                    first = call;
+            }
         }
         return leaves;
     }
@@ -46,16 +50,19 @@ public final class Forecast {
      * timetable's.
      */
     public static long runTicks(List<Call> calls, int from, RunTimes times) {
-        return runTicks(calls, from, times, limitAt(calls, from, times));
+        return runTicks(calls, from, times, limitAt(calls, from, times), firstOfTrain(calls, from));
     }
 
-    /** {@link #runTicks(List, int, RunTimes)} for a set that leaves call {@code from} under {@code limit} ({@link #limitAt}). */
-    private static long runTicks(List<Call> calls, int from, RunTimes times, OptionalInt limit) {
+    /**
+     * {@link #runTicks(List, int, RunTimes)} for a set that leaves call {@code from} under {@code limit}
+     * ({@link #limitAt}), as the train that starts at call {@code first} ({@link #firstOfTrain}).
+     */
+    private static long runTicks(List<Call> calls, int from, RunTimes times, OptionalInt limit, int first) {
         Call leaving = calls.get(from);
         Call coming = calls.get(from + 1);
         OptionalLong track = times.ticks(leaving.station(), coming.station(), leaving.tag(), limit);
         if (track.isPresent())
-            return track.getAsLong() + times.signalTicks(leaving.leavingTrain(), from - firstOfTrain(calls, from));
+            return track.getAsLong() + times.signalTicks(leaving.leavingTrain(), from - first);
         return plannedRunTicks(calls, from);
     }
 
