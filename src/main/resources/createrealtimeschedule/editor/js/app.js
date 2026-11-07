@@ -540,10 +540,7 @@
     if (ran === null || !ran.finished)
       return times;
     times.ticks = (from, to, tag, limit) => rt.network.ticks(state.network, from, to, tag || '', limit);
-    times.signalTicks = (number, i) => {
-      const trip = ran.trip(number, i);
-      return trip === null || trip.arrived === -1 || trip.free < 0 ? 0 : Math.max(0, trip.arrived - trip.departed - trip.free);
-    };
+    times.signalTicks = (number, i) => ran.signalTicks(number, i);
     times.trip = (number, i) => ran.trip(number, i);
     times.leg = (from, to, tag) => rt.network.leg(state.network, from, to, tag || '');
     return times;

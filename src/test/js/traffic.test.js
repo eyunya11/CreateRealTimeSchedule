@@ -41,7 +41,7 @@ for (const kase of CASES.timetables)
       for (let stop = 0; stop + 1 < train.stops.length; stop++) {
         const trip = ran.trip(train.number, stop);
         if (trip !== null)
-          trips.push({ train: train.number, stop, trip });
+          trips.push({ train: train.number, stop, trip, signalTicks: ran.signalTicks(train.number, stop) });
       }
     assert.deepEqual(trips, kase.trips);
     for (const each of kase.trips)

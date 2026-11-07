@@ -12,10 +12,10 @@
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports)
-    module.exports = factory(require('./travel.js'), require('./problems.js'));
+    module.exports = factory(require('./travel.js'), require('./problems.js'), require('./timetable.js'));
   else
-    (root.rt = root.rt || {}).traffic = factory(root.rt.travel, root.rt.problems);
-})(typeof globalThis !== 'undefined' ? globalThis : this, function (travel, check) {
+    (root.rt = root.rt || {}).traffic = factory(root.rt.travel, root.rt.problems, root.rt.timetable);
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (travel, check, timetables) {
   'use strict';
 
   const NONE = check.NONE;
@@ -565,11 +565,6 @@
     return { trips, finished: steps <= most };
   }
 
-  /** The track tag a train runs on from its stop k: the stop's own, or else the train's. */
-  function tagAt(train, k) {
-    return train.stops[k].tag || train.tag || '';
-  }
-
   /** The minimum stop of a stop in seconds: its own, or else its station's; NONE for the server's. */
   function minimumStopOf(timetable, stop) {
     if (stop.minimumStop !== undefined && stop.minimumStop !== NONE)
@@ -590,16 +585,16 @@
       const first = stops[0];
       if (previous === null) {
         made.push({ station: first.station, depart: first.depart, arriving: '', leaving: number,
-          minimumStop: minimumStopOf(timetable, first), tag: tagAt(train, 0) });
+          minimumStop: minimumStopOf(timetable, first), tag: timetables.tagAt(train, 0) });
       } else {
         const end = made.pop();
         made.push({ station: end.station, depart: first.depart, arriving: previous.number, leaving: number,
-          minimumStop: minimumStopOf(timetable, first), tag: tagAt(train, 0) });
+          minimumStop: minimumStopOf(timetable, first), tag: timetables.tagAt(train, 0) });
       }
       for (let k = 1; k < stops.length; k++) {
         const last = k === stops.length - 1;
         made.push({ station: stops[k].station, depart: last ? NONE : stops[k].depart, arriving: number, leaving: last ? '' : number,
-          minimumStop: last ? NONE : minimumStopOf(timetable, stops[k]), tag: last ? '' : tagAt(train, k) });
+          minimumStop: last ? NONE : minimumStopOf(timetable, stops[k]), tag: last ? '' : timetables.tagAt(train, k) });
       }
       previous = train;
     }
@@ -619,10 +614,13 @@
    * @param spec the trains' {topSpeed, turnSpeed, acceleration}
    * @param defaults {minimumStop, length}: the minimum stop in seconds and the length in blocks where the
    *   timetable gives none
-   * @returns {{finished: boolean, trip: function(string, number): ?Object, ticks: function(string, number): ?number}}
+   * @returns {{finished: boolean, trip: function(string, number): ?Object, ticks: function(string, number): ?number,
+   *   signalTicks: function(string, number): number}}
    *   whether the simulation ran to the end (if not, it says nothing of any train); how the leg from a
    *   train's stop (from 0) to the next went, null where the train was never to set out on it (one taken
-   *   off before it could has a trip that never arrives); and the ticks it took, null where it never got there
+   *   off before it could has a trip that never arrives); the ticks it took, null where it never got there;
+   *   and the ticks the signals added to it, waits at red and all, 0 where the train did not set out on it,
+   *   never got there, or runs on a way it cannot finish on an empty line (TimetableTraffic.signalTicks)
    */
   function ofTimetable(timetable, legOf, blocks, spec, defaults) {
     const runs = [];
@@ -677,6 +675,10 @@
       ticks: (train, stop) => {
         const trip = trips.get(key(train, stop));
         return trip === undefined || trip.arrived === -1 ? null : trip.arrived - trip.departed;
+      },
+      signalTicks: (train, stop) => {
+        const trip = trips.get(key(train, stop));
+        return trip === undefined || trip.arrived === -1 || trip.free < 0 ? 0 : Math.max(0, trip.arrived - trip.departed - trip.free);
       },
     };
   }

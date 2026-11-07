@@ -87,7 +87,10 @@ class TrafficCasesTest {
         return tests.stream();
     }
 
-    /** The trips of every leg of every train of timetable that the train set out on, as the cases have them. */
+    /**
+     * The trips of every leg of every train of timetable that the train set out on, as the cases have them,
+     * each with the ticks the signals add to it ({@link TimetableTraffic#signalTicks}).
+     */
     static JsonArray timetableTrips(Timetable timetable, TimetableTraffic traffic) {
         JsonArray trips = new JsonArray();
         for (Timetable.Train train : timetable.trains())
@@ -99,6 +102,7 @@ class TrafficCasesTest {
                 each.addProperty("train", train.number());
                 each.addProperty("stop", stop);
                 each.add("trip", trip(trip.get()));
+                each.addProperty("signalTicks", traffic.signalTicks(train.number(), stop));
                 trips.add(each);
             }
         return trips;

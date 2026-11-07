@@ -1,5 +1,5 @@
 {
-  "about": "Shared cases of the simulation of the trains of a timetable with the signals: TrafficCasesTest (the mod) and src/test/js/traffic.test.js (the editor) hold Traffic, TimetableTraffic and traffic.js to the trips here.",
+  "about": "Shared cases of the simulation of the trains of a timetable with the signals: TrafficCasesTest (the mod) and src/test/js/traffic.test.js (the editor) hold Traffic, TimetableTraffic and traffic.js to the trips here, and for a timetable to the ticks the signals add to each leg (signalTicks).",
   "runs": [
     {
       "about": "a train alone",
@@ -3026,7 +3026,8 @@
             "arrived": 813,
             "free": 813,
             "waits": []
-          }
+          },
+          "signalTicks": 0
         },
         {
           "train": "2",
@@ -3036,7 +3037,8 @@
             "arrived": 1230,
             "free": 813,
             "waits": []
-          }
+          },
+          "signalTicks": 217
         }
       ]
     },
@@ -3270,7 +3272,8 @@
             "arrived": 482,
             "free": 482,
             "waits": []
-          }
+          },
+          "signalTicks": 0
         },
         {
           "train": "1",
@@ -3280,7 +3283,8 @@
             "arrived": 1078,
             "free": 496,
             "waits": []
-          }
+          },
+          "signalTicks": 0
         },
         {
           "train": "3",
@@ -3290,7 +3294,8 @@
             "arrived": 6813,
             "free": 813,
             "waits": []
-          }
+          },
+          "signalTicks": 0
         }
       ]
     },
@@ -3618,7 +3623,8 @@
             "arrived": 310,
             "free": 310,
             "waits": []
-          }
+          },
+          "signalTicks": 0
         },
         {
           "train": "1",
@@ -3628,7 +3634,8 @@
             "arrived": 6154,
             "free": 154,
             "waits": []
-          }
+          },
+          "signalTicks": 0
         },
         {
           "train": "2",
@@ -3644,7 +3651,8 @@
                 "ticks": 5431
               }
             ]
-          }
+          },
+          "signalTicks": 5604
         }
       ]
     }
