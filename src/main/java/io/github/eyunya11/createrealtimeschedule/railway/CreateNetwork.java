@@ -5,11 +5,13 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 
 import org.jetbrains.annotations.Nullable;
@@ -147,6 +149,10 @@ public final class CreateNetwork {
         final List<List<SignalBlocks.Change>> blockChanges = new ArrayList<>();
         /** The signal blocks met so far, Create's signal edge groups, numbered in the order they are met. */
         final Map<UUID, Integer> blocks = new LinkedHashMap<>();
+        /** For the track between two nodes, either way, the block it is taken to be where Create has not worked one out. */
+        final Map<Set<TrackNodeLocation>, Integer> unknownBlocks = new HashMap<>();
+        /** How many stretches of track and signal sides had no block of Create's. */
+        int unknownStretches;
         final Unreadable unreadable = new Unreadable();
         final List<RailNetwork.Place> places = new ArrayList<>();
         final List<RailNetwork.Marker> markers = new ArrayList<>();
@@ -158,7 +164,20 @@ public final class CreateNetwork {
             // The graphs are held in a hash map; sorted by name, the export comes out the same every time.
             List<Station> sorted = new ArrayList<>(stations);
             sorted.sort(Comparator.comparing(Station::name).thenComparingInt(Station::edge).thenComparingDouble(Station::offset));
-            return new RailNetwork(edges, sorted, places, markers, signalBlocks());
+            SignalBlocks blocks = signalBlocks();
+            if (unknownStretches > 0)
+                LOGGER.warn("Create has not worked out the signal blocks of {} stretches of track yet; the track between two nodes "
+                    + "is taken to be a block of its own there until the network is read again", unknownStretches);
+            return new RailNetwork(edges, sorted, places, markers, blocks);
+        }
+
+        /**
+         * The block taken for the track between {@code a} and {@code b}, either way, where Create has not
+         * worked out the block: one of its own, so that trains on it still keep each other out.
+         */
+        int unknownBlock(TrackNodeLocation a, TrackNodeLocation b) {
+            unknownStretches++;
+            return unknownBlocks.computeIfAbsent(new HashSet<>(List.of(a, b)), unused -> block(UUID.randomUUID()));
         }
 
         int block(UUID group) {
@@ -179,8 +198,10 @@ public final class CreateNetwork {
                 SignalBoundary signal = side.signal();
                 boolean primary = signal.isPrimary(side.toward());
                 UUID group = signal.getGroup(side.toward());
-                // A side whose block Create has not worked out yet is a block of its own: nothing else is known to be in it.
-                int block = block(group != null ? group : UUID.randomUUID());
+                // A side whose block Create has not worked out yet leads into that of the track it is on.
+                int block = group != null ? block(group)
+                    : signal.edgeLocation != null ? unknownBlock(signal.edgeLocation.getFirst(), signal.edgeLocation.getSecond())
+                    : block(UUID.randomUUID());
                 List<Integer> next = new ArrayList<>();
                 for (Map.Entry<UUID, Boolean> chained : SignalPropagator.collectChainedSignals(signalGraphs.get(i), signal, primary).entrySet()) {
                     Integer number = sideOf.getOrDefault(chained.getKey(), Map.of()).get(chained.getValue());
@@ -388,15 +409,15 @@ public final class CreateNetwork {
     /**
      * Where {@code edge} changes block, as a train running along it goes: the block it starts in, and at
      * each signal on it, the one a train passing it goes into. A signal a train cannot pass this way
-     * counts too, for the trains that stand behind it. Empty if a block is not known.
+     * counts too, for the trains that stand behind it. Where Create has not worked a block out yet, the
+     * track between the edge's two nodes is taken to be a block of its own ({@link Reading#unknownBlock}).
      */
     private static List<SignalBlocks.Change> blockChanges(TrackGraph graph, TrackEdge edge, Reading reading) {
         EdgeData data = edge.getEdgeData();
         UUID first = data.getGroupAtPosition(graph, 0);
-        if (first == null)
-            return List.of();
         List<SignalBlocks.Change> changes = new ArrayList<>();
-        changes.add(new SignalBlocks.Change(0, reading.block(first)));
+        changes.add(new SignalBlocks.Change(0, first != null ? reading.block(first)
+            : reading.unknownBlock(edge.node1.getLocation(), edge.node2.getLocation())));
         if (!data.hasPoints())
             return changes;
         List<SignalBlocks.Change> atSignals = new ArrayList<>();
@@ -404,9 +425,8 @@ public final class CreateNetwork {
             if (!(point instanceof SignalBoundary signal))
                 continue;
             UUID group = signal.getGroup(edge.node2);
-            if (group == null)
-                return List.of();
-            atSignals.add(new SignalBlocks.Change(Math.max(0, Math.min(edge.getLength(), point.getLocationOn(edge))), reading.block(group)));
+            int block = group != null ? reading.block(group) : reading.unknownBlock(edge.node1.getLocation(), edge.node2.getLocation());
+            atSignals.add(new SignalBlocks.Change(Math.max(0, Math.min(edge.getLength(), point.getLocationOn(edge))), block));
         }
         atSignals.sort(Comparator.comparingDouble(SignalBlocks.Change::position));
         changes.addAll(atSignals);
