@@ -500,14 +500,25 @@
    * default_minimum_stop_seconds has it unless it is changed; the editor cannot know a server's own.
    */
   const SERVER_MINIMUM_STOP = 20;
+  /**
+   * How long the editor waits after the last change before it runs the trains with the signals again, in
+   * milliseconds: a run of a big timetable takes a second or so, which typing time after time should not
+   * wait for.
+   */
+  const TRAFFIC_DELAY = 500;
   /** The trains of the timetable run with the signals, as last worked out, and what for. */
   let trafficMemo = null;
+  /** The run waited for: {timetable, network, length, timer}, or null. */
+  let trafficWanted = null;
 
   /**
    * The trains of the timetable running on time together with the signals of the network (traffic.js),
-   * worked out again only when the timetable, the network or the length of a train changes: while a
-   * stop is dragged, the timetable it is dragged from is what they run. Null for a network without
-   * signal blocks (version 4 and before) or without the speeds of its train.
+   * as last worked out for the timetable, the network and the length of a train as they are now: while
+   * a stop is dragged, the timetable it is dragged from is what they run. Once any of them changes, they
+   * are run again when the changes stop for a moment (TRAFFIC_DELAY), and not while a stop is dragged;
+   * till then this is null, and the notes and the limits leave the signals out, and the notes are shown
+   * again once it is done. Null for a network without signal blocks (version 4 and before) or without
+   * the speeds of its train.
    */
   function traffic() {
     const network = state.network;
@@ -515,12 +526,34 @@
       return null;
     const timetable = state.timetable;
     const length = state.settings.length;
-    if (trafficMemo !== null && trafficMemo.timetable === timetable && trafficMemo.network === network && trafficMemo.length === length)
+    const isNow = each => each !== null && each.timetable === timetable && each.network === network && each.length === length;
+    if (isNow(trafficMemo))
       return trafficMemo.ran;
-    const ran = rt.traffic.ofTimetable(timetable, (from, to, tag) => rt.network.leg(network, from, to, tag || ''), network.blocks,
-      network.train, { minimumStop: SERVER_MINIMUM_STOP, length });
-    trafficMemo = { timetable, network, length, ran };
-    return ran;
+    if (!isNow(trafficWanted)) {
+      if (trafficWanted !== null)
+        clearTimeout(trafficWanted.timer);
+      const wanted = { timetable, network, length, timer: null };
+      wanted.timer = setTimeout(() => runTraffic(wanted), TRAFFIC_DELAY);
+      trafficWanted = wanted;
+    }
+    return null;
+  }
+
+  /** Runs the trains for the run waited for, unless another is waited for since; after a drag, if one is going on. */
+  function runTraffic(wanted) {
+    if (trafficWanted !== wanted)
+      return;
+    if (dragging !== null) {
+      wanted.timer = setTimeout(() => runTraffic(wanted), TRAFFIC_DELAY);
+      return;
+    }
+    trafficWanted = null;
+    const network = wanted.network;
+    const ran = rt.traffic.ofTimetable(wanted.timetable, (from, to, tag) => rt.network.leg(network, from, to, tag || ''), network.blocks,
+      network.train, { minimumStop: SERVER_MINIMUM_STOP, length: wanted.length });
+    trafficMemo = { timetable: wanted.timetable, network, length: wanted.length, ran };
+    // Only the notes show the run; the limits of the next change ask for it themselves.
+    renderProblems();
   }
 
   /**
