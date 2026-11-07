@@ -53,7 +53,13 @@ import io.github.eyunya11.createrealtimeschedule.travel.TrainSpec;
  * <p>Each train is measured by its front, at the stop marker of each station, as {@link Leg} has it. The
  * part of its body behind the start of a leg is taken to lie on the leg before, as it does where the
  * train runs on through the station; a train that turns back there is drawn over the same blocks when it
- * leaves, and its first leg has only the block it starts in behind it.
+ * leaves, and its first leg has only the block it starts in behind it. A signal at the stop marker a train
+ * stops at is one it has passed, as {@link Leg} has it, and the next leg starts past it.
+ *
+ * <p>Each train runs the legs it is given: one per two stations, so a station with more than one
+ * platform has every train at the same one, where Create would send a train to one that is free. A
+ * second train for a platform that a train stands at waits at red until it leaves, or is taken off as
+ * too late if it stays there.
  */
 public final class Traffic {
 
@@ -169,8 +175,9 @@ public final class Traffic {
     }
 
     /**
-     * How the trains went: for each {@link Run}, in order, a trip for each of its legs it set out on.
-     * A train that never arrived somewhere has a trip that says so, and none for the legs after.
+     * How the trains went: for each {@link Run}, in order, a trip for each of its legs it set out on, or
+     * was to set out on and was taken off before it did. A train that never arrived somewhere has a trip
+     * that says so, and none for the legs after.
      */
     public record Result(List<List<Trip>> trips) {
         public Result {
@@ -202,6 +209,8 @@ public final class Traffic {
     /** For each block, the signal side that reserved it this tick, or -1. */
     private final int[] reserved;
     private final List<Integer> touched = new ArrayList<>();
+    /** The trains on the line this tick, waiting ones first; filled again every tick. */
+    private final List<Train> onTheLine = new ArrayList<>();
     private long now;
 
     private Traffic(SignalBlocks blocks, List<Run> runs) {
@@ -250,9 +259,13 @@ public final class Traffic {
             }
             // Nothing moved: nothing will until a train is due to leave or to appear.
             long next = nextToCome < coming.size() ? coming.get(nextToCome).appears() : Long.MAX_VALUE;
-            for (Train train : onTheLine())
+            for (Train train : onTheLine()) {
                 if (train.drive == null)
                     next = Math.min(next, train.leaves + 1);
+                else
+                    // A train held up for good is taken off at its deadline, which may set others free.
+                    next = Math.min(next, train.departed + Math.max(train.free, 0) + TOO_LATE_TICKS + 1);
+            }
             if (next == Long.MAX_VALUE || next <= now)
                 break;
             now = next;
@@ -284,7 +297,7 @@ public final class Traffic {
         touched.clear();
         List<Train> onTheLine = onTheLine();
         for (Train train : parked)
-            for (int block : train.body())
+            for (int block : train.parkedBlocks)
                 enter(block, train);
         for (Train train : onTheLine) {
             for (int block : train.body())
@@ -299,7 +312,7 @@ public final class Traffic {
                 if (now <= train.leaves)
                     continue;
                 if (train.leaves - train.run.stints().get(train.stint).departs() > TOO_LATE_TICKS) {
-                    train.done = true;
+                    train.dropBeforeLeaving();
                     changed = true;
                     continue;
                 }
@@ -338,11 +351,12 @@ public final class Traffic {
         return changed;
     }
 
+    /** The trains on the line, waiting ones first, in a list kept for the purpose: done with it before the next call. */
     private List<Train> onTheLine() {
-        List<Train> all = new ArrayList<>(waiting.size() + moving.size());
-        all.addAll(waiting);
-        all.addAll(moving);
-        return all;
+        onTheLine.clear();
+        onTheLine.addAll(waiting);
+        onTheLine.addAll(moving);
+        return onTheLine;
     }
 
     private void enter(int block, Train train) {
@@ -427,6 +441,9 @@ public final class Traffic {
                 drive.signalLimit(seenFrom(train.waitingFor));
             return changed;
         }
+        // A signal at the stop marker is passed, as the leg has it: the next leg starts past it.
+        while (train.nextSignal < signals.size() && signals.get(train.nextSignal).at() <= leg.distance())
+            pass(train, signals.get(train.nextSignal++).signal());
         train.arrive(now);
         return true;
     }
@@ -641,6 +658,8 @@ public final class Traffic {
         final Set<Integer> chain = new HashSet<>();
         /** The first of the leg's signals its front has not passed. */
         int nextSignal;
+        /** The blocks it takes up where it stays for the rest of the day, once it does. */
+        List<Integer> parkedBlocks = List.of();
         long departed;
         int free;
         List<Wait> waits = new ArrayList<>();
@@ -680,11 +699,22 @@ public final class Traffic {
             atStation = true;
         }
 
+        /** The limit of a sign it leaves the start of {@code stint}, its next leg, under: none for a new train of the timetable. */
+        OptionalInt signAtLeaving(Stint stint) {
+            return this.stint == 0 || stint.newTrain() ? OptionalInt.empty() : leg.limitAtEnd(signAtStart);
+        }
+
+        /** How many ticks {@code stint} takes on an empty line, leaving under {@code sign}; -1 where it never gets there. */
+        int freeTicks(Stint stint, OptionalInt sign) {
+            OptionalInt ticks = stint.leg().ticks(run.spec(), run.throttle(), sign);
+            return ticks.isPresent() ? ticks.getAsInt() : -1;
+        }
+
         /** It sets out on its leg: under the limits it is under, unless a new train of the timetable starts here. */
         void leave() {
             Stint stint = run.stints().get(this.stint);
             if (this.stint > 0) {
-                signAtStart = stint.newTrain() ? OptionalInt.empty() : leg.limitAtEnd(signAtStart);
+                signAtStart = signAtLeaving(stint);
                 behind = leg;
             }
             if (this.stint == 0 || stint.newTrain())
@@ -699,9 +729,18 @@ public final class Traffic {
             drive = new Drive(run.spec(), run.throttle(), zones, new SpeedSigns(signAtStart, leg.signs()));
             drive.signalLimit(signalKmh);
             departed = leaves;
-            OptionalInt ticks = leg.ticks(run.spec(), run.throttle(), signAtStart);
-            free = ticks.isPresent() ? ticks.getAsInt() : -1;
+            free = freeTicks(stint, signAtStart);
             waits = new ArrayList<>();
+        }
+
+        /**
+         * It is too late to leave the station it stands at, and is taken off the line there: the leg it
+         * was to set out on is one it never arrives at the end of.
+         */
+        void dropBeforeLeaving() {
+            Stint stint = run.stints().get(this.stint);
+            trips.add(new Trip(leaves, Trip.NOT_ARRIVED, freeTicks(stint, signAtLeaving(stint)), List.of()));
+            done = true;
         }
 
         void arrive(long at) {
@@ -716,8 +755,10 @@ public final class Traffic {
             stint++;
             if (stint == run.stints().size()) {
                 done = true;
-                if (run.stays())
+                if (run.stays()) {
                     parked.add(this);
+                    parkedBlocks = body();
+                }
                 return;
             }
             Stint next = run.stints().get(stint);
@@ -741,8 +782,9 @@ public final class Traffic {
             double tail = at - length;
             List<Integer> taken = new ArrayList<>(2);
             if (tail < 0 && behind != null)
-                span(behind, Math.max(0, behind.distance() + tail), behind.distance(), taken);
-            span(leg, Math.max(0, tail), at, taken);
+                span(behind, Math.max(0, behind.distance() + tail), behind.distance(), true, taken);
+            // Standing at the end of the leg it came in on, it has passed a signal at the stop marker.
+            span(leg, Math.max(0, tail), at, drive == null && at >= leg.distance(), taken);
             return taken;
         }
     }
@@ -750,9 +792,10 @@ public final class Traffic {
     /**
      * The blocks of {@code leg} from {@code from} up to {@code to}: the one {@code from} is in, a signal
      * there not yet passed by the back, and that of each signal from there up to the front, which has not
-     * gone into the block of one it stands at.
+     * gone into the block of one it stands at; unless {@code atTheEnd}, for a front at the stop marker at
+     * the end of the leg, which has passed a signal there.
      */
-    private void span(Leg leg, double from, double to, List<Integer> taken) {
+    private void span(Leg leg, double from, double to, boolean atTheEnd, List<Integer> taken) {
         int block = leg.block();
         List<Leg.PassedSignal> signals = leg.signals();
         int i = 0;
@@ -761,7 +804,7 @@ public final class Traffic {
         if (i > 0)
             block = blockOf(leg, i - 1);
         add(taken, block);
-        for (; i < signals.size() && signals.get(i).at() < to; i++)
+        for (; i < signals.size() && (signals.get(i).at() < to || atTheEnd && signals.get(i).at() <= to); i++)
             add(taken, blockOf(leg, i));
     }
 

@@ -158,7 +158,46 @@ class TrafficTest {
         Trip lost = trips.get(1);
         assertFalse(lost.hasArrived());
         assertEquals(List.of(), lost.waits(), "the wait it was still in is not over");
-        assertEquals(1, Traffic.run(network.blocks(), List.of(late)).trips().getFirst().size(), "it does not set out from B");
+        List<Trip> lateTrips = Traffic.run(network.blocks(), List.of(late)).trips().getFirst();
+        assertEquals(2, lateTrips.size(), "it does not set out from B, and the leg from there says so");
+        Trip notSetOut = lateTrips.get(1);
+        assertFalse(notSetOut.hasArrived());
+        assertEquals(lateTrips.getFirst().arrived() + Traffic.TOO_LATE_TICKS + 1, notSetOut.departed(), "when it was to leave");
+        assertEquals(leg(network, "B", "F").ticks(SPEC, 1, OptionalInt.empty()).getAsInt(), notSetOut.free());
+        assertEquals(List.of(), notSetOut.waits());
+    }
+
+    /**
+     * A signal at the stop marker a train stops at is passed, as the leg has it: with a train standing two
+     * blocks on, the signal at B shows 警戒 where the one before showed 注意, and the train leaves B still
+     * held to 25 km/h.
+     */
+    @Test
+    void aSignalAtTheStopMarkerIsPassed() {
+        RailNetwork network = TestLines.line(5, SignalBlocks.LightSpeeds.DEFAULT, 10, 300, 340, 420, 450, 900);
+        Run behind = run("behind", SPEC, first(leg(network, "A", "B"), 200), then(leg(network, "B", "C"), 2000));
+        Trip trip = Traffic.run(network.blocks(), List.of(standing(network, "D", "E", "F"), behind)).trips().get(1).get(1);
+        int expected = TravelTime.ticks(SPEC, 1, 40, List.of(), new SpeedSigns(OptionalInt.of(25), List.of())).getAsInt();
+        assertEquals(expected, trip.ticks());
+    }
+
+    /**
+     * A train held up for good is taken off at its deadline though nothing else moves until then, and the
+     * train behind it, which waits for its block, goes on: the clock is not run on past the deadline.
+     */
+    @Test
+    void aTrainHeldUpForGoodIsTakenOffInTimeForTheOnesBehind() {
+        RailNetwork network = TestLines.line(0, null, 10, 320, 350, 450, 550);
+        Run parked = new Run("parked", SPEC, 1, List.of(first(leg(network, "C", "D"), 0)), true);
+        Run held = run("held", SPEC, first(leg(network, "A", "E"), 200));
+        Run behind = run("behind", SPEC, first(leg(network, "A", "B"), 1000));
+        Traffic.Result result = Traffic.run(network.blocks(), List.of(parked, held, behind));
+        assertFalse(result.trips().get(1).getFirst().hasArrived(), "it never gets past the set that stays");
+        Trip trip = result.trips().get(2).getFirst();
+        assertTrue(trip.hasArrived(), "it goes on once the train ahead is taken off");
+        Trip stuck = result.trips().get(1).getFirst();
+        assertEquals(stuck.departed() + stuck.free() + Traffic.TOO_LATE_TICKS + 2, trip.waits().getFirst().from() + trip.waits().getFirst().ticks(),
+            "the tick after the one ahead is taken off");
     }
 
     @Test
