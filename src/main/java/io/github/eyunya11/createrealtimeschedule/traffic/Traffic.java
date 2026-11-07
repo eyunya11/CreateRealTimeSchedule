@@ -58,8 +58,9 @@ import io.github.eyunya11.createrealtimeschedule.travel.TrainSpec;
 public final class Traffic {
 
     /**
-     * How many times at most a train is moved on, in all, before the simulation gives up: a day of a
-     * thousand trains is half of it. A timetable that asks far more of the line than it can take keeps
+     * How many times at most a train is moved on, in all, before the simulation gives up: once a tick for
+     * each train on its way, so that a day of a train a minute, each on its way for two minutes, is a fifth
+     * of it. A timetable that asks far more of the line than it can take keeps
      * dozens of trains held up on it for ten minutes each, and would take tens of seconds.
      */
     public static final long MAX_STEPS = 5_000_000;
