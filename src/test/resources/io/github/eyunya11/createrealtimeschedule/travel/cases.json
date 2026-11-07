@@ -1,0 +1,24 @@
+{
+  "about": "Runs between two stops, with the ticks they take and the limit of a speed-limit sign the train is under at the end. TravelTime (the mod) and travel.js (the editor) have to say the same for each. Positions are blocks from the start, speeds blocks a second, limits km/h.",
+  "cases": [
+    {"about": "a short straight run", "train": {"topSpeed": 28, "turnSpeed": 14, "acceleration": 3}, "throttle": 1, "distance": 20, "ticks": 96},
+    {"about": "a long straight run", "train": {"topSpeed": 28, "turnSpeed": 14, "acceleration": 3}, "throttle": 1, "distance": 300, "ticks": 382},
+    {"about": "at half the throttle", "train": {"topSpeed": 28, "turnSpeed": 14, "acceleration": 3}, "throttle": 0.5, "distance": 300, "ticks": 514},
+    {"about": "a powered train", "train": {"topSpeed": 40, "turnSpeed": 20, "acceleration": 3}, "throttle": 1, "distance": 1000, "ticks": 753},
+    {"about": "over a curve", "train": {"topSpeed": 28, "turnSpeed": 14, "acceleration": 3}, "throttle": 1, "distance": 200,
+      "curves": [[60, 90.5]], "ticks": 339},
+    {"about": "a limit and its release", "train": {"topSpeed": 28, "turnSpeed": 14, "acceleration": 3}, "throttle": 1, "distance": 1000,
+      "signs": [{"at": 400, "kmh": 40}, {"at": 700, "release": true}], "ticks": 1293},
+    {"about": "starting under the limit of a sign passed before", "train": {"topSpeed": 28, "turnSpeed": 14, "acceleration": 3}, "throttle": 1,
+      "distance": 1000, "signs": [{"at": 400, "kmh": 40}, {"at": 700, "release": true}], "limitAtStart": 20, "ticks": 2340},
+    {"about": "under a limit all the way, which goes on past the stop", "train": {"topSpeed": 28, "turnSpeed": 14, "acceleration": 3}, "throttle": 1,
+      "distance": 500, "limitAtStart": 40, "ticks": 986, "limitAfter": 40},
+    {"about": "braking for a slow sign past the stop", "train": {"topSpeed": 28, "turnSpeed": 14, "acceleration": 3}, "throttle": 1,
+      "distance": 100, "signs": [{"at": 105, "kmh": 10}], "ticks": 297},
+    {"about": "a sign at the start is behind the train", "train": {"topSpeed": 28, "turnSpeed": 14, "acceleration": 3}, "throttle": 1,
+      "distance": 300, "signs": [{"at": 0, "kmh": 20}], "limitAtStart": 60, "ticks": 467, "limitAfter": 60},
+    {"about": "curves under a limit, at less than the full throttle", "train": {"topSpeed": 28, "turnSpeed": 14, "acceleration": 3}, "throttle": 0.8,
+      "distance": 400, "curves": [[100, 150], [250.25, 300]], "signs": [{"at": 50, "kmh": 30}, {"at": 200, "release": true}], "ticks": 902},
+    {"about": "no way at all", "train": {"topSpeed": 28, "turnSpeed": 14, "acceleration": 3}, "throttle": 1, "distance": 0, "ticks": 0}
+  ]
+}

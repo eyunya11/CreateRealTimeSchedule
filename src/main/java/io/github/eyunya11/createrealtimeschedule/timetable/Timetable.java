@@ -61,11 +61,12 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
      * stations' times and the stops' minimum stops, version 4 the trains that are never cancelled to
      * get a late set back on time, version 5 the trains a stop waits for, and version 6 the types'
      * colours and the stops that change a train's type, version 7 the track tags trains run on, and
-     * version 8 the tracks a map shows and hides for a line, and hides for all. A timetable is written
+     * version 8 the tracks a map shows and hides for a line, and hides for all, and version 9 the length
+     * of a train, which the running times take into account for the signals. A timetable is written
      * in the oldest version that holds it ({@link #version()}), so that a mod that reads only version 2
      * still takes one that has none of what the later versions added.
      */
-    public static final int VERSION = 8;
+    public static final int VERSION = 9;
 
     /** The longest line id, train number or duty id. */
     public static final int MAX_ID_LENGTH = 32;
@@ -75,6 +76,17 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
 
     /** The longest a train waits for another past its own time, in seconds: the longest the server's config takes. */
     public static final int MAX_WAIT_SECONDS = 3600;
+
+    /** The longest a train can be said to be, in blocks. */
+    public static final int MAX_LENGTH = 10000;
+
+    /** The range a length of a train has to be in, as a problem says it. */
+    static final String LENGTH_RANGE = "must be 1 to " + MAX_LENGTH + " blocks";
+
+    /** Whether {@code blocks} is a length a train can be said to be. */
+    public static boolean isLength(int blocks) {
+        return blocks >= 1 && blocks <= MAX_LENGTH;
+    }
 
     public Timetable {
         Objects.requireNonNull(name, "name");
@@ -166,14 +178,23 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
      *                 set back on time, such as the last train of the day
      * @param tag      the track tag it runs on between its stops, unless a stop says another (see
      *                 {@link #tagAt}); empty for none, when it runs wherever the track takes it
+     * @param length   how long the train is, in whole blocks, for the stretches of track between signals
+     *                 it takes up; {@link Stop#NONE} where the timetable does not say, and a length of the
+     *                 settings is taken
      */
-    public record Train(String number, String line, String type, List<Stop> stops, boolean deadhead, boolean keep, String tag) {
+    public record Train(String number, String line, String type, List<Stop> stops, boolean deadhead, boolean keep, String tag,
+                        int length) {
         public Train {
             Objects.requireNonNull(number, "number");
             Objects.requireNonNull(line, "line");
             Objects.requireNonNull(type, "type");
             Objects.requireNonNull(tag, "tag");
             stops = List.copyOf(stops);
+        }
+
+        /** A train whose length the timetable does not say. */
+        public Train(String number, String line, String type, List<Stop> stops, boolean deadhead, boolean keep, String tag) {
+            this(number, line, type, stops, deadhead, keep, tag, Stop.NONE);
         }
 
         /** A train that runs on no track tag of its own. */
@@ -189,6 +210,16 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
         /** A train that carries passengers. */
         public Train(String number, String line, String type, List<Stop> stops) {
             this(number, line, type, stops, false);
+        }
+
+        /** Whether the timetable says how long the train is. */
+        public boolean hasLength() {
+            return length != Stop.NONE;
+        }
+
+        /** How long the train is, in blocks: its own length, or {@code otherwise} where the timetable does not say. */
+        public int lengthOr(int otherwise) {
+            return hasLength() ? length : otherwise;
         }
 
         /**
@@ -397,12 +428,14 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
     }
 
     /**
-     * The oldest version of the JSON that holds this timetable: 8 if it adds a track to a map, takes one
-     * away or hides one, else 7 if a train or a stop has a track tag, else 6 if it gives a type a colour
+     * The oldest version of the JSON that holds this timetable: 9 if a train says how long it is, else 8 if
+     * it adds a track to a map, takes one away or hides one, else 7 if a train or a stop has a track tag, else 6 if it gives a type a colour
      * or a stop changes a train's type, else 5 if a stop waits for a train, else 4 if it has a train
      * that is never cancelled, else 3 if it has anything version 3 added, else 2.
      */
     public int version() {
+        if (trains.stream().anyMatch(Train::hasLength))
+            return 9;
         if (!mapHidden.isEmpty() || lines.stream().anyMatch(line -> !line.mapAdd().isEmpty() || !line.mapRemove().isEmpty()))
             return 8;
         if (trains.stream().anyMatch(train -> !train.tag().isEmpty() || train.stops().stream().anyMatch(Stop::hasTag)))
@@ -556,6 +589,8 @@ public record Timetable(String name, List<Line> lines, List<Station> stations, L
                 problems.add(label + ": the type must not start or end with a space or contain a control character");
             if (!train.tag().isEmpty() && !isText(train.tag()))
                 problems.add(label + ": the track tag must not start or end with a space or contain a control character");
+            if (train.hasLength() && !isLength(train.length()))
+                problems.add(label + ": the length " + LENGTH_RANGE);
             Line line = lineById.get(train.line());
             if (line == null)
                 problems.add(label + ": there is no line \"" + train.line() + "\"");

@@ -24,6 +24,7 @@ class ModSettingsTest {
         assertEquals(60, ModSettings.dutyLeadSeconds());
         assertEquals(600, ModSettings.recoveryThresholdSeconds());
         assertEquals(300, ModSettings.maxWaitSeconds());
+        assertEquals(40, ModSettings.trainLengthBlocks());
     }
 
     @Test
@@ -37,6 +38,8 @@ class ModSettingsTest {
         assertEquals(600, ModSettings.DEFAULT_RECOVERY_THRESHOLD_SECONDS);
         assertEquals(7200, ModSettings.MAX_RECOVERY_THRESHOLD_SECONDS);
         assertEquals(300, ModSettings.DEFAULT_MAX_WAIT_SECONDS);
+        assertEquals(40, ModSettings.DEFAULT_TRAIN_LENGTH);
+        assertTrue(Timetable.isLength(ModSettings.DEFAULT_TRAIN_LENGTH), "the default is a length a timetable can say");
     }
 
     @Test

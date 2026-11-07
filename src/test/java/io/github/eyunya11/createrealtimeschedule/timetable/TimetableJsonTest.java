@@ -334,6 +334,18 @@ class TimetableJsonTest {
         assertEquals(text, TimetableJson.write(timetable));
     }
 
+    /** The example the editor's tests read too (src/test/js), which both have to write back as it is. */
+    @Test
+    void writesTheLengthExampleBackIdenticallyToTheCharacter() {
+        String text = resource("example-length.json");
+        Timetable timetable = accepted(text);
+        assertEquals(List.of(Timetable.Stop.NONE, 24, 60, Timetable.Stop.NONE), timetable.trains().stream().map(Train::length).toList());
+        assertEquals(List.of(40, 24, 60, 40), timetable.trains().stream().map(train -> train.lengthOr(40)).toList());
+        assertEquals(9, timetable.version());
+        assertEquals(text, TimetableJson.write(timetable));
+        assertEquals(4, accepted(resource("example-keep.json")).version(), "a timetable whose trains say no length is as it was");
+    }
+
     @Test
     void refusesSecondsThatAreNotAWholeNumber() {
         String json = TimetableJson.write(withStopTimes());
@@ -523,8 +535,8 @@ class TimetableJsonTest {
         for (String version : List.of("0", "-1"))
             assertOnlyProblem("{\"format\": \"createrealtimeschedule.timetable\", \"version\": " + version + "}", "version: must be 1 or more");
         // A newer version may have members this one has never heard of; they are not worth listing.
-        assertOnlyProblem("{\"format\": \"createrealtimeschedule.timetable\", \"version\": 9, \"colours\": [1, 2]}",
-            "version: is 9, but this mod reads timetables up to version 8");
+        assertOnlyProblem("{\"format\": \"createrealtimeschedule.timetable\", \"version\": 10, \"colours\": [1, 2]}",
+            "version: is 10, but this mod reads timetables up to version 9");
     }
 
     @Test

@@ -27,7 +27,7 @@
     selection: null,
     // Times dragged or drawn land on the step, or on the fine step while Shift is held.
     settings: {
-      language: i18n.guess(navigator.language), dwell: 20, snap: 15, fineSnap: 5,
+      language: i18n.guess(navigator.language), dwell: 20, snap: 15, fineSnap: 5, length: rt.edit.DEFAULT_LENGTH,
       // The diagram or the map, the lines whose track the map shows (none for all), what it shows on it,
       // and the track tags turned off ('' for no tag).
       view: 'diagram', mapLines: [], mapLayers: {}, mapTagsOff: [],
@@ -395,7 +395,7 @@
     // Not what the mod refuses a timetable for, but a train that cannot keep its times on this track,
     // or run at all on the track tag it is held to, and what is wrong with the track's tags.
     const network = state.network;
-    const fast = network === null ? [] : rt.edit.tooFast(state.timetable, running);
+    const fast = network === null ? [] : rt.edit.tooFast(state.timetable, runningTimes());
     const track = network === null ? null
       : { platforms: station => rt.network.platforms(network, station), way: (platform, station, tag) => rt.network.way(network, platform, station, tag) };
     const noWays = track === null ? [] : rt.edit.noWay(state.timetable, track);
@@ -482,6 +482,18 @@
   /** The seconds a train held to the track tag tag ('' or none for none) takes from one station to the other, by the network; null if it does not say. */
   function running(from, to, tag) {
     return state.network === null ? null : rt.network.seconds(state.network, from, to, tag || '');
+  }
+
+  /**
+   * The running times of the network with its speed-limit signs, as the changes of edit take them
+   * (edit.trackOf): a train still under the limit of a sign it passed before is slower until it
+   * passes the next. Null without a network.
+   */
+  function runningTimes() {
+    return state.network === null ? null : {
+      seconds: (from, to, tag, limit) => rt.network.seconds(state.network, from, to, tag || '', limit),
+      limitAfter: (from, to, tag, limit) => rt.network.limitAfter(state.network, from, to, tag || '', limit),
+    };
   }
 
   /** The seconds a train drawn at the station stands there: the station's own, or the setting's. */
@@ -745,12 +757,13 @@
     // and both for a stop with one time.
     const ways = dragging.part === 'arrive' ? [k - 1] : dragging.part === 'stretch' || dragging.part === 'run' ? [k] : [k - 1, k];
     const guides = [];
+    const way = rt.edit.forTrain(runningTimes(), train);
     for (const i of ways) {
       const from = train.stops[i];
       const to = train.stops[i + 1];
       if (from === undefined || to === undefined || from.depart === rt.edit.NONE)
         continue;
-      const seconds = running(from.station, to.station, rt.timetable.tagAt(train, i));
+      const seconds = way === null ? null : way(train.stops, i);
       if (seconds === null)
         continue;
       const fastest = { number: '', line: train.line, type: '', deadhead: false, stops: [
@@ -797,11 +810,21 @@
     group.append(label);
   }
 
+  /**
+   * The running time from the last stop of the train being drawn to station, under the limit of a
+   * speed-limit sign it passed since its first stop; null where the track does not say.
+   */
+  function drawnRunning(station) {
+    const way = rt.edit.forTrain(runningTimes(), {});
+    const stops = drawing.stops.concat([{ station }]);
+    return way === null ? null : way(stops, stops.length - 2);
+  }
+
   /** What a click at point does to the train being drawn (see edit.drawClick). */
   function clickAt(point) {
     const last = drawing.stops[drawing.stops.length - 1];
     return rt.edit.drawClick(drawing.stops, drawing.leaving, point.station, point.second,
-      last === undefined ? null : running(last.station, point.station), drawingDwellAt(point.station), stepOf(point.fine));
+      last === undefined ? null : drawnRunning(point.station), drawingDwellAt(point.station), stepOf(point.fine));
   }
 
   /** The step times land on: the fine one while Shift is held, else the usual one. */
@@ -912,7 +935,7 @@
         dragging.px = event.clientX - box.left;
         dragging.py = event.clientY - box.top;
         const raw = (event.clientX - dragging.x0) / view.width * view.span;
-        const moved = rt.edit.drag(dragging.base, dragging.number, dragging.index, dragging.part, raw, running, stepOf(event.shiftKey));
+        const moved = rt.edit.drag(dragging.base, dragging.number, dragging.index, dragging.part, raw, runningTimes(), stepOf(event.shiftKey));
         if (moved.delta !== dragging.delta) {
           dragging.delta = moved.delta;
           shown = moved.delta === 0 ? null : moved.timetable;
@@ -1533,7 +1556,7 @@
       const dwell = stop.depart - stop.arrive;
       const input = secondsInput(dwell, '', Number.MAX_SAFE_INTEGER, t('badDwell'),
         seconds => (seconds === NONE ? render()
-          : changeStop(rt.edit.setDwell(state.timetable, number, i, seconds, running), number, i, 'depart', stop.arrive + seconds)));
+          : changeStop(rt.edit.setDwell(state.timetable, number, i, seconds, runningTimes()), number, i, 'depart', stop.arrive + seconds)));
       if (minimum !== NONE && dwell < minimum) {
         input.classList.add('warn');
         input.title = t('dwellShorter', minimum);
@@ -1646,6 +1669,20 @@
       type: 'checkbox', checked: train.keep === true,
       onchange: event => change(rt.edit.setTrain(state.timetable, number, { keep: event.target.checked })),
     }))));
+    panel.append(field(t('trainLength'), h('input', {
+      type: 'number', min: '1', max: String(rt.problems.MAX_LENGTH), step: '1',
+      value: rt.problems.hasLength(train) ? String(train.length) : '', placeholder: String(state.settings.length),
+      title: t('trainLengthHelp', state.settings.length),
+      onchange: event => {
+        // Left empty, the train takes the length of the settings; what is not a length is not taken.
+        const length = rt.edit.typedLength(event.target.value);
+        if (length === null) {
+          error.textContent = t('badLength');
+          return;
+        }
+        change(rt.edit.setTrain(state.timetable, number, { length }));
+      },
+    })));
     panel.append(error);
 
     const line = state.timetable.lines.find(each => each.id === train.line);
@@ -1659,9 +1696,9 @@
       return [h('tr', null,
         h('td', null, select),
         h('td', null, timeInput(stop.arrive, i === 0 && stop.arrive === rt.edit.NONE,
-          seconds => changeStop(rt.edit.setStopTime(state.timetable, number, i, 'arrive', seconds, running), number, i, 'arrive', seconds))),
+          seconds => changeStop(rt.edit.setStopTime(state.timetable, number, i, 'arrive', seconds, runningTimes()), number, i, 'arrive', seconds))),
         h('td', null, timeInput(stop.depart, i === last && stop.depart === rt.edit.NONE,
-          seconds => changeStop(rt.edit.setStopTime(state.timetable, number, i, 'depart', seconds, running), number, i, 'depart', seconds))),
+          seconds => changeStop(rt.edit.setStopTime(state.timetable, number, i, 'depart', seconds, runningTimes()), number, i, 'depart', seconds))),
         h('td', null, h('button', {
           type: 'button', title: t('removeStop'), disabled: train.stops.length <= 2,
           onclick: () => change(rt.edit.removeStop(state.timetable, number, i)),
@@ -1793,6 +1830,15 @@
       },
     })));
     panel.append(h('p', { class: 'note' }, t('dwellHelp')));
+    panel.append(field(t('defaultLength'), h('input', {
+      type: 'number', min: '1', max: String(rt.problems.MAX_LENGTH), step: '1', value: String(state.settings.length),
+      onchange: event => {
+        state.settings.length = rt.edit.typedDefaultLength(event.target.value);
+        saveSoon();
+        render();
+      },
+    })));
+    panel.append(h('p', { class: 'note' }, t('defaultLengthHelp')));
     panel.append(field(t('snap'), h('select', {
       onchange: event => {
         state.settings.snap = Number(event.target.value);

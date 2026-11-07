@@ -29,7 +29,10 @@
     return made;
   }
 
-  /** A train as it is, with a keep mark only if it is never to be cancelled, and a tag only if it has one. */
+  /**
+   * A train as it is, with a keep mark only if it is never to be cancelled, a tag only if it has one,
+   * and a length only if it says how long it is.
+   */
   function copyTrain(train) {
     const made = {
       number: train.number,
@@ -42,6 +45,8 @@
       made.keep = true;
     if (train.tag !== undefined && train.tag !== '')
       made.tag = train.tag;
+    if (check.hasLength(train))
+      made.length = train.length;
     return made;
   }
 
@@ -283,7 +288,37 @@
     return next;
   }
 
-  /** Changes a train's number, type, deadhead mark and keep mark; its duties, and the waits for it, follow a new number. */
+  /** The length a train is taken to be where neither it nor the settings say, in blocks: the server's default train_length_blocks. */
+  const DEFAULT_LENGTH = 40;
+
+  /**
+   * The length typed for a train: NONE for none (left empty), the number of blocks for a whole number
+   * from 1 to MAX_LENGTH, or null for anything else, which is not taken (-1 would read as none).
+   */
+  function typedLength(text) {
+    const trimmed = text.trim();
+    if (trimmed === '')
+      return NONE;
+    const blocks = Number(trimmed);
+    return check.isLength(blocks) ? blocks : null;
+  }
+
+  /**
+   * The train length of the settings as typed: the number of blocks, rounded and kept from 1 to
+   * MAX_LENGTH, or DEFAULT_LENGTH for a box left empty or what is not a number.
+   */
+  function typedDefaultLength(text) {
+    const trimmed = text.trim();
+    const value = Math.round(Number(trimmed));
+    if (trimmed === '' || !Number.isFinite(value))
+      return DEFAULT_LENGTH;
+    return Math.max(1, Math.min(check.MAX_LENGTH, value));
+  }
+
+  /**
+   * Changes a train's number, type, deadhead mark, keep mark, track tag and length (NONE for none); its
+   * duties, and the waits for it, follow a new number.
+   */
   function setTrain(timetable, number, fields) {
     const next = copy(timetable);
     const train = trainAt(next, number);
@@ -299,6 +334,10 @@
       train.keep = true;
     else if (fields.keep === false)
       delete train.keep;
+    if (fields.length === NONE)
+      delete train.length;
+    else if (fields.length !== undefined)
+      train.length = fields.length;
     if (fields.number !== undefined && fields.number !== number) {
       train.number = fields.number;
       for (const duty of next.duties)
@@ -317,23 +356,63 @@
   }
 
   /**
-   * The seconds a train takes at the least from one stop to the next: the running time the track
-   * gives (running, from one station's name to another's on the stop's own track tag, '' for none,
-   * null where it does not say), and in any case a second, since a train has to arrive after it leaves.
+   * The track's running times as they are given to the changes here (running): either a function
+   * (from, to, tag) giving the seconds from one station's name to another's on a track tag ('' for
+   * none), null where the track does not say; or an object that knows the speed-limit signs of Create
+   * Train Next as well, {seconds(from, to, tag, limit), limitAfter(from, to, tag, limit)}, where limit
+   * is that of a sign a train passed before and is still under, in km/h, or null (see network.seconds
+   * and network.limitAfter). Both, as the object; null for none.
    */
-  function leastRunning(running, from, to) {
-    const seconds = running ? running(from.station, to.station, from.tag || '') : null;
-    return Math.max(1, seconds === null ? 1 : seconds);
+  function trackOf(running) {
+    if (!running)
+      return null;
+    if (typeof running === 'function')
+      return { seconds: (from, to, tag) => running(from, to, tag), limitAfter: (from, to, tag, limit) => limit };
+    return running;
   }
 
   /**
-   * running for the stops of train: a way from a stop with no track tag of its own is on the train's.
-   * Null for null.
+   * The running times for the stops of train: a function (stops, i) giving the seconds from stops[i]
+   * to stops[i + 1] (null where the track does not say), on the stop's track tag or else the train's.
+   * A speed-limit sign holds a train until it passes the next, stops and all, so the train runs each
+   * way under the limit it was under when it stopped, from its first stop, where it is under none:
+   * where trains turn back, the signs are put up facing both ways. Null for no running times; what
+   * this gave already is given back as it is.
+   *
+   * The limits at the stops are worked out once for each list of stops it is given, from the first
+   * stop on as far as asked, so that asking for every way of a train in turn goes over its stops once.
+   * The stations and tags of a list must not change while it is in use; a change here makes a new list.
    */
   function forTrain(running, train) {
-    if (!running)
-      return running;
-    return (from, to, tag) => running(from, to, tag || train.tag || '');
+    if (!running || running.forTrain === true)
+      return running || null;
+    const track = trackOf(running);
+    const tagFrom = (stops, k) => timetables.tagAt({ tag: train.tag, stops }, k);
+    // For each list of stops, the limit the train is under as it leaves each stop worked out so far.
+    const known = new WeakMap();
+    const limitAt = (stops, i) => {
+      let limits = known.get(stops);
+      if (limits === undefined) {
+        limits = [null];
+        known.set(stops, limits);
+      }
+      for (let k = limits.length - 1; k < i; k++)
+        limits.push(track.limitAfter(stops[k].station, stops[k + 1].station, tagFrom(stops, k), limits[k]));
+      return limits[i];
+    };
+    const way = (stops, i) => track.seconds(stops[i].station, stops[i + 1].station, tagFrom(stops, i), limitAt(stops, i));
+    way.forTrain = true;
+    return way;
+  }
+
+  /**
+   * The seconds a train takes at the least from stops[i] to the next: the running time the track
+   * gives (way, as forTrain makes it), and in any case a second, since a train has to arrive after
+   * it leaves.
+   */
+  function leastRunning(way, stops, i) {
+    const seconds = way ? way(stops, i) : null;
+    return Math.max(1, seconds === null ? 1 : seconds);
   }
 
   /**
@@ -342,16 +421,17 @@
    * no later than the running time before it comes in at the stop after. A stop with no arrival time
    * comes in when it leaves.
    *
+   * @param way the running times as forTrain makes them for the train of stops, or null for none
    * @returns {{earliest: number, latest: number}} the earliest time the train can come in, and the
    *   latest it can leave; -Infinity and Infinity where nothing holds it
    */
-  function stopLimits(stops, index, running) {
+  function stopLimits(stops, index, way) {
     const stop = stops[index];
     const before = stops[index - 1];
     const after = stops[index + 1];
-    const earliest = before !== undefined && before.depart !== NONE ? before.depart + leastRunning(running, before, stop) : -Infinity;
+    const earliest = before !== undefined && before.depart !== NONE ? before.depart + leastRunning(way, stops, index - 1) : -Infinity;
     const reach = after === undefined ? NONE : after.arrive !== NONE ? after.arrive : after.depart;
-    const latest = reach !== NONE ? reach - leastRunning(running, stop, after) : Infinity;
+    const latest = reach !== NONE ? reach - leastRunning(way, stops, index) : Infinity;
     return { earliest, latest };
   }
 
@@ -554,24 +634,27 @@
 
   /**
    * The ways between stops that trains run faster than the track lets them: those where a train
-   * comes in at a stop sooner after leaving the one before than the running time (running, null
-   * where it does not say). Ways the track gives no running time for are not counted.
+   * comes in at a stop sooner after leaving the one before than the running time (running, as
+   * trackOf takes it; for each train as forTrain has it, under the limit of a sign passed before).
+   * Ways the track gives no running time for are not counted.
    *
    * @returns {Array<{number: string, from: string, to: string, given: number, needed: number}>}
    */
   function tooFast(timetable, running) {
     const found = [];
-    for (const train of timetable.trains)
+    for (const train of timetable.trains) {
+      const way = forTrain(running, train);
       for (let k = 1; k < train.stops.length; k++) {
         const before = train.stops[k - 1];
         const stop = train.stops[k];
-        const needed = running(before.station, stop.station, timetables.tagAt(train, k - 1));
+        const needed = way(train.stops, k - 1);
         if (needed === null || before.depart === NONE || comesIn(stop) === NONE)
           continue;
         const given = comesIn(stop) - before.depart;
         if (given < needed)
           found.push({ number: train.number, from: before.station, to: stop.station, given, needed });
       }
+    }
     return found;
   }
 
@@ -805,7 +888,7 @@
 
   return {
     NONE, copy, setName, putLine, removeLine, setLineTrack, setTrackHidden, stationTimes, dwellAt, setStations, typeList, setTypes, typeChanges, trainsOfType,
-    nextNumber, addTrain, removeTrain, setTrain, stopLimits, moveStop, moveRun, moveArrival, stretchStop, draggedTime, drag, sameStops, shiftTrain, setStopTime, setDwell, setStopMinimum, setStopType, setStopWaits, setStopStation,
+    nextNumber, addTrain, removeTrain, DEFAULT_LENGTH, typedLength, typedDefaultLength, setTrain, trackOf, forTrain, stopLimits, moveStop, moveRun, moveArrival, stretchStop, draggedTime, drag, sameStops, shiftTrain, setStopTime, setDwell, setStopMinimum, setStopType, setStopWaits, setStopStation,
     removeStop, tooFast, setStopTag, tagsOf, noWay,
     snap, snapUp, snapDown, drawStop, drawClick, setDrawnDwell, finishDrawing,
   };

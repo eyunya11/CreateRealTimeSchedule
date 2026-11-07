@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
+import java.util.OptionalInt;
 
 import org.slf4j.Logger;
 
@@ -59,6 +60,11 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
  * world too. The ticks the train takes are then compared with what the model says for the signs of
  * that leg, as {@code TravelTimeRunTests} does for runs without signs.
  *
+ * <p>A train that stops at a station inside a limited stretch leaves it still under the limit, which
+ * lasts until it passes the next sign ({@code alimitcarriedpastastop}): the train runs on from Beta,
+ * halfway, to Gamma, and the run from Beta is compared with what the model says for a train that leaves
+ * under the limit the leg to Beta ends under ({@link Leg#limitAtEnd}).
+ *
  * <p>Each test has a batch of its own (see {@link TrackLine}).
  */
 @GameTestHolder(Createrealtimeschedule.MODID)
@@ -105,16 +111,23 @@ public class SpeedSignRunTests {
             run("alimitandareleaseathalfthrottle", 0.5, new Sign(100, 40), new Sign(200, 0)),
             run("alimituptothestop", 1.0, new Sign(150, 40)),
             run("aslowsignjustpastthestop", 1.0, new Sign(DISTANCE + 3, 10)),
-            run("asignfacingtheotherway", 1.0, new Sign(150, 10, false)));
+            run("asignfacingtheotherway", 1.0, new Sign(150, 10, false)),
+            runVia("alimitcarriedpastastop", new Sign(100, 40), new Sign(250, 0)));
     }
 
     private static TestFunction run(String name, double throttle, Sign... signs) {
         return new TestFunction("realtimesigns_" + name, "speedsignruntests." + name, LONG_TRACK_LINE, TIMEOUT_TICKS, 0, true,
-            helper -> new Run(helper, throttle, List.of(signs)).begin());
+            helper -> new Run(helper, throttle, List.of(signs), false).begin());
+    }
+
+    /** A run from Alpha that stops at Beta, halfway, and goes on to Gamma; the run from Beta is the one timed. */
+    private static TestFunction runVia(String name, Sign... signs) {
+        return new TestFunction("realtimesigns_" + name, "speedsignruntests." + name, LONG_TRACK_LINE, TIMEOUT_TICKS, 0, true,
+            helper -> new Run(helper, 1.0, List.of(signs), true).begin());
     }
 
     private enum Phase {
-        SET_UP, WAIT_FOR_SIGNS, RUN
+        SET_UP, WAIT_FOR_SIGNS, TO_BETA, RUN
     }
 
     /** One train on one line with signs, stepped once a tick by the game test. */
@@ -124,24 +137,34 @@ public class SpeedSignRunTests {
         private final MinecraftServer server;
         private final double throttle;
         private final List<Sign> signs;
+        /** Whether the train stops at Beta, halfway, on the way to Gamma; the run timed is the one from Beta. */
+        private final boolean via;
         private final TrackLine line;
 
         private Phase phase = Phase.SET_UP;
         private int phaseTicks;
         private Train train;
         private GlobalStation beta;
+        /** The station the timed run ends at: Beta, or Gamma for a run via Beta. */
+        private GlobalStation end;
         private Leg leg;
+        /** The limit the train is under as it leaves for the timed run, by the leg before it. */
+        private OptionalInt limitAtStart = OptionalInt.empty();
         private long startTick = -1;
         private double distance;
 
-        Run(GameTestHelper helper, double throttle, List<Sign> signs) {
+        Run(GameTestHelper helper, double throttle, List<Sign> signs, boolean via) {
             this.helper = helper;
             this.level = helper.getLevel();
             this.server = level.getServer();
             this.throttle = throttle;
             this.signs = signs;
-            this.line = new TrackLine(helper, ALPHA_X + DISTANCE + 4, new int[] {ALPHA_X, ALPHA_X + DISTANCE},
-                new String[] {"Alpha", "Beta"});
+            this.via = via;
+            this.line = via
+                ? new TrackLine(helper, ALPHA_X + DISTANCE + 4, new int[] {ALPHA_X, ALPHA_X + DISTANCE / 2, ALPHA_X + DISTANCE},
+                    new String[] {"Alpha", "Beta", "Gamma"})
+                : new TrackLine(helper, ALPHA_X + DISTANCE + 4, new int[] {ALPHA_X, ALPHA_X + DISTANCE},
+                    new String[] {"Alpha", "Beta"});
         }
 
         void begin() {
@@ -173,11 +196,13 @@ public class SpeedSignRunTests {
                     if (line.setUp()) {
                         train = line.train();
                         beta = line.station(1);
+                        end = via ? line.station(2) : beta;
                         placeSigns();
                         enter(Phase.WAIT_FOR_SIGNS);
                     }
                 }
                 case WAIT_FOR_SIGNS -> waitForSigns();
+                case TO_BETA -> toBeta();
                 case RUN -> run();
             }
         }
@@ -224,28 +249,64 @@ public class SpeedSignRunTests {
                 }
             }
 
-            leg = CreateNetwork.read(Create.RAILWAYS.trackNetworks.values()).legs().stream()
-                .filter(l -> l.from().equals("Alpha") && l.to().equals("Beta")).findFirst()
-                .orElseThrow(() -> new GameTestAssertException("the network has no leg from Alpha to Beta"));
+            List<Leg> legs = CreateNetwork.read(Create.RAILWAYS.trackNetworks.values()).legs();
             List<Sign> facing = signs.stream().filter(Sign::eastward).toList();
-            helper.assertTrue(leg.signs().size() == facing.size(),
-                "the leg from Alpha to Beta lists the signs " + leg.signs() + ", but " + facing + " face its way");
-            for (int i = 0; i < facing.size(); i++) {
-                Sign put = facing.get(i);
-                SpeedSign read = leg.signs().get(i);
-                helper.assertTrue(read.release() == put.release() && read.kmh() == put.kmh()
-                        && Math.abs(read.position() - put.blocksPastAlpha()) <= 1,
-                    "the sign " + put + " was read as " + read);
+            if (via) {
+                // The leg to Beta lists the signs past it too, which the train brakes for on the way in.
+                Leg toBeta = legOf(legs, "Alpha", "Beta");
+                assertSigns(toBeta, facing, 0);
+                limitAtStart = toBeta.limitAtEnd(OptionalInt.empty());
+                helper.assertTrue(limitAtStart.isPresent(), "the leg to Beta, with the signs " + toBeta.signs() + ", should end under a limit");
+                leg = legOf(legs, "Beta", "Gamma");
+                assertSigns(leg, facing.stream().filter(sign -> sign.blocksPastAlpha() > DISTANCE / 2).toList(), DISTANCE / 2);
+                train.runtime.setSchedule(ScheduleTests.schedule(ScheduleTests.stop("Beta")), false);
+                enter(Phase.TO_BETA);
+                return;
             }
+            leg = legOf(legs, "Alpha", "Beta");
+            assertSigns(leg, facing, 0);
 
             train.throttle = throttle;
             train.runtime.setSchedule(ScheduleTests.schedule(ScheduleTests.stop("Beta")), false);
             enter(Phase.RUN);
         }
 
+        /** That {@code leg}, which starts {@code start} blocks past Alpha, lists {@code put} and nothing else, in order. */
+        private void assertSigns(Leg leg, List<Sign> put, int start) {
+            String way = "the leg from " + leg.from() + " to " + leg.to();
+            helper.assertTrue(leg.signs().size() == put.size(), way + " lists the signs " + leg.signs() + ", but " + put + " face its way");
+            for (int i = 0; i < put.size(); i++) {
+                Sign sign = put.get(i);
+                SpeedSign read = leg.signs().get(i);
+                helper.assertTrue(read.release() == sign.release() && read.kmh() == sign.kmh()
+                        && Math.abs(read.position() - (sign.blocksPastAlpha() - start)) <= 1,
+                    "the sign " + sign + " was read on " + way + " as " + read);
+            }
+        }
+
+        private static Leg legOf(List<Leg> legs, String from, String to) {
+            return legs.stream().filter(l -> l.from().equals(from) && l.to().equals(to)).findFirst()
+                .orElseThrow(() -> new GameTestAssertException("the network has no leg from " + from + " to " + to));
+        }
+
+        /** The train runs to Beta and stops there; the timed run starts as it leaves. */
+        private void toBeta() {
+            if (train.getCurrentStation() == beta) {
+                // Sent on from where it stands, as it was sent from Alpha: a stop of a schedule with nothing to wait for keeps it.
+                train.runtime.setSchedule(ScheduleTests.schedule(ScheduleTests.stop("Gamma")), false);
+                enter(Phase.RUN);
+                return;
+            }
+            if (phaseTicks > TIMEOUT_TICKS / 2)
+                helper.fail("the train has not come to Beta after " + phaseTicks + " ticks (" + line.describe() + ")");
+        }
+
         private void run() {
             long gameTime = server.overworld().getGameTime();
             if (startTick < 0) {
+                // A train that stopped at Beta is still there for a tick or more before it leaves.
+                if (via && train.getCurrentStation() == beta)
+                    return;
                 // The first tick in which the train moves is the first tick of the model.
                 if (Math.abs(train.speed) > 0) {
                     startTick = gameTime;
@@ -255,7 +316,7 @@ public class SpeedSignRunTests {
                 return;
             }
 
-            if (train.getCurrentStation() == beta && train.runtime.state == ScheduleRuntime.State.POST_TRANSIT)
+            if (train.getCurrentStation() == end && train.runtime.state == ScheduleRuntime.State.POST_TRANSIT)
                 finish(gameTime - startTick + 1);
             else if (gameTime - startTick > TIMEOUT_TICKS - 400)
                 helper.fail("the train has not arrived after " + (gameTime - startTick) + " ticks (" + line.describe() + ")");
@@ -268,14 +329,20 @@ public class SpeedSignRunTests {
             List<SpeedSign> fromTheFront = new ArrayList<>();
             for (SpeedSign sign : leg.signs())
                 fromTheFront.add(new SpeedSign(sign.position() - ahead, sign.kmh(), sign.release()));
-            int model = TravelTime.ticks(TrainSpecs.of(train), throttle, distance, List.of(), SpeedSigns.of(fromTheFront)).orElseThrow();
+            int model = TravelTime.ticks(TrainSpecs.of(train), throttle, distance, List.of(), new SpeedSigns(limitAtStart, fromTheFront))
+                .orElseThrow();
             int withoutSigns = TravelTime.ticks(TrainSpecs.of(train), throttle, distance, List.of()).orElseThrow();
-            LOGGER.info("[{}] signs {}, throttle {}, the train went {} blocks: measured {} ticks ({}s), model {} ticks, {} without the signs",
-                helper.testInfo.getTestName(), leg.signs(), throttle, String.format(Locale.ROOT, "%.3f", distance), measured,
-                String.format(Locale.ROOT, "%.2f", measured / 20.0), model, withoutSigns);
+            int notCarried = TravelTime.ticks(TrainSpecs.of(train), throttle, distance, List.of(), SpeedSigns.of(fromTheFront)).orElseThrow();
+            LOGGER.info("[{}] signs {}, limit at the start {}, throttle {}, the train went {} blocks: measured {} ticks ({}s), model {} ticks, "
+                    + "{} without the signs, {} without the limit at the start",
+                helper.testInfo.getTestName(), leg.signs(), limitAtStart, throttle, String.format(Locale.ROOT, "%.3f", distance), measured,
+                String.format(Locale.ROOT, "%.2f", measured / 20.0), model, withoutSigns, notCarried);
 
-            if (!leg.signs().isEmpty())
+            if (!leg.signs().isEmpty() || limitAtStart.isPresent())
                 helper.assertTrue(model > withoutSigns, "the signs should cost time in the model: " + model + " against " + withoutSigns);
+            if (limitAtStart.isPresent())
+                helper.assertTrue(model > notCarried,
+                    "the limit the train is under as it leaves should cost time in the model: " + model + " against " + notCarried);
             helper.assertTrue(Math.abs(measured - model) <= TOLERANCE_TICKS,
                 "the train took " + measured + " ticks under the signs " + leg.signs() + " and the model says " + model);
             helper.succeed();

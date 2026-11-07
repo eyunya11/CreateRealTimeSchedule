@@ -38,6 +38,8 @@ public final class ModSettings {
     public static final int MAX_RECOVERY_THRESHOLD_SECONDS = 7200;
     /** The longest a train waits for another past its own time to leave, until the config or the timetable says otherwise. */
     public static final int DEFAULT_MAX_WAIT_SECONDS = 300;
+    /** How long a train of the timetable is taken to be, in blocks, where the timetable does not say, until the config says otherwise. */
+    public static final int DEFAULT_TRAIN_LENGTH = 40;
 
     private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
 
@@ -84,6 +86,10 @@ public final class ModSettings {
             "It leaves without waiting when that train is forecast to be later than this. A wait of the timetable may say its own.",
             "0 waits only while that costs no time.")
         .defineInRange("max_wait_seconds", DEFAULT_MAX_WAIT_SECONDS, 0, Timetable.MAX_WAIT_SECONDS);
+    private static final ModConfigSpec.IntValue TRAIN_LENGTH = BUILDER
+        .comment("How long, in blocks, a train of the timetable loaded with /rttimetable is taken to be where the timetable",
+            "does not say (a train's length). The running times count the stretches of track between signals it takes up.")
+        .defineInRange("train_length_blocks", DEFAULT_TRAIN_LENGTH, 1, Timetable.MAX_LENGTH);
 
     private static final ModConfigSpec.IntValue MAP_SCREEN_MAX_SIZE = BUILDER
         .comment("The most map screen blocks a screen has each way. Blocks in a wall that fill a rectangle no larger than this",
@@ -122,6 +128,11 @@ public final class ModSettings {
     /** How many seconds past its own time a set waits at the most for a train a wait of the timetable gives no longest wait for. */
     public static int maxWaitSeconds() {
         return read(SPEC.isLoaded(), MAX_WAIT, DEFAULT_MAX_WAIT_SECONDS);
+    }
+
+    /** How long a train of the timetable is taken to be, in blocks, where the timetable does not say. */
+    public static int trainLengthBlocks() {
+        return read(SPEC.isLoaded(), TRAIN_LENGTH, DEFAULT_TRAIN_LENGTH);
     }
 
     /** How many seconds late a set may be before trains are cancelled to get it back on time; 0 if never. */

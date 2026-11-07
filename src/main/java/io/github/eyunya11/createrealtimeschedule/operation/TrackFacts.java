@@ -7,7 +7,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.OptionalInt;
-import java.util.OptionalLong;
 import java.util.Set;
 import java.util.function.Supplier;
 
@@ -186,12 +185,6 @@ public final class TrackFacts {
      * tag, as {@link #legs} has them), for a train of {@code spec} at {@code throttle}.
      */
     public static RunTimes runTimes(Map<List<String>, Leg> legs, TrainSpec spec, double throttle) {
-        return (from, to, tag) -> {
-            Leg leg = legs.get(List.of(from, to, tag));
-            if (leg == null)
-                return OptionalLong.empty();
-            OptionalInt ticks = leg.ticks(spec, throttle);
-            return ticks.isPresent() ? OptionalLong.of(ticks.getAsInt()) : OptionalLong.empty();
-        };
+        return RunTimes.ofLegs(legs, spec, throttle);
     }
 }

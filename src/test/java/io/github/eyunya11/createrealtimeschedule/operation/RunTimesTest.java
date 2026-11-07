@@ -1,12 +1,18 @@
 package io.github.eyunya11.createrealtimeschedule.operation;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalInt;
 import java.util.OptionalLong;
 
 import org.junit.jupiter.api.Test;
+
+import io.github.eyunya11.createrealtimeschedule.railway.Leg;
+import io.github.eyunya11.createrealtimeschedule.travel.SpeedSign;
+import io.github.eyunya11.createrealtimeschedule.travel.TrainSpec;
 
 class RunTimesTest {
 
@@ -57,5 +63,63 @@ class RunTimesTest {
             assertEquals(OptionalLong.empty(), remembered.ticks("B", "A"), "what is not known is remembered too");
         }
         assertEquals(2, asked[0]);
+    }
+
+    /**
+     * A 40 km/h sign 50 blocks into the 100 from A to B, and nothing more: a train that stopped at B is
+     * still under it on the 1000 blocks to C, and slower there than one that comes to B under none.
+     */
+    private static final Map<List<String>, Leg> SIGNED = Map.of(
+        List.of("A", "B", ""), new Leg("A", "B", 100, List.of(), List.of(), List.of(SpeedSign.limit(50, 40))),
+        List.of("B", "C", ""), new Leg("B", "C", 1000, List.of(), List.of()));
+
+    @Test
+    void theTimesOfLegsCarryTheLimitOfTheLastSign() {
+        RunTimes times = RunTimes.ofLegs(SIGNED, TrainSpec.STANDARD, 1);
+        assertEquals(OptionalInt.of(40), times.limitAtEnd("A", "B", "", OptionalInt.empty()));
+        assertEquals(OptionalInt.of(40), times.limitAtEnd("B", "C", "", OptionalInt.of(40)), "no sign: the limit goes on");
+        assertEquals(OptionalInt.empty(), times.limitAtEnd("B", "C", "", OptionalInt.empty()));
+        assertEquals(OptionalInt.of(60), times.limitAtEnd("C", "A", "", OptionalInt.of(60)), "a way it does not know keeps the limit");
+
+        long free = times.ticks("B", "C").orElseThrow();
+        long limited = times.ticks("B", "C", "", OptionalInt.of(40)).orElseThrow();
+        assertEquals(SIGNED.get(List.of("B", "C", "")).ticks(TrainSpec.STANDARD, 1, OptionalInt.of(40)).orElseThrow(), limited);
+        // 1000 blocks at 40 km/h (11.1 blocks a second) is 90 seconds; at the top speed of 28 a second, about 36.
+        assertTrue(limited > free + 50 * 20, free + " and " + limited);
+    }
+
+    @Test
+    void rememberedAndFastestTimesPassTheLimitOn() {
+        RunTimes times = RunTimes.ofLegs(SIGNED, TrainSpec.STANDARD, 1);
+        long limited = times.ticks("B", "C", "", OptionalInt.of(40)).orElseThrow();
+        for (RunTimes wrapped : List.of(RunTimes.remembered(times), RunTimes.fastest(List.of(times)))) {
+            assertEquals(OptionalLong.of(limited), wrapped.ticks("B", "C", "", OptionalInt.of(40)));
+            assertEquals(times.ticks("B", "C"), wrapped.ticks("B", "C"), "remembered apart from the limited time");
+            assertEquals(OptionalInt.of(40), wrapped.limitAtEnd("A", "B", "", OptionalInt.empty()));
+        }
+        assertEquals(OptionalInt.of(25), RunTimes.fastest(List.of()).limitAtEnd("A", "B", "", OptionalInt.of(25)));
+    }
+
+    @Test
+    void rememberedLimitsAreWorkedOutOnceForEachWayAndLimit() {
+        int[] asked = {0};
+        RunTimes remembered = RunTimes.remembered(new RunTimes() {
+            @Override
+            public OptionalLong ticks(String from, String to, String tag) {
+                return OptionalLong.empty();
+            }
+
+            @Override
+            public OptionalInt limitAtEnd(String from, String to, String tag, OptionalInt limitAtStart) {
+                asked[0]++;
+                return from.equals("A") ? OptionalInt.of(40) : limitAtStart;
+            }
+        });
+        for (int k = 0; k < 3; k++) {
+            assertEquals(OptionalInt.of(40), remembered.limitAtEnd("A", "B", "", OptionalInt.empty()));
+            assertEquals(OptionalInt.of(25), remembered.limitAtEnd("B", "C", "", OptionalInt.of(25)));
+            assertEquals(OptionalInt.empty(), remembered.limitAtEnd("B", "C", "", OptionalInt.empty()), "by the limit too");
+        }
+        assertEquals(3, asked[0]);
     }
 }

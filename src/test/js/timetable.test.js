@@ -67,10 +67,10 @@ test('a timetable not of the right shape is not read', () => {
 });
 
 test('a newer version is not read, and says the editor needs updating', () => {
-  const result = timetable.read('{"format": "createrealtimeschedule.timetable", "version": 9, "whatever": 1}');
+  const result = timetable.read('{"format": "createrealtimeschedule.timetable", "version": 10, "whatever": 1}');
   assert.equal(result.timetable, null);
   assert.deepEqual(result.problems,
-    ['version: is 9, but this editor reads timetables up to version 8; the editor needs updating to read this one']);
+    ['version: is 10, but this editor reads timetables up to version 9; the editor needs updating to read this one']);
 });
 
 test('the types\' colours and the stops that change a train\'s type are read and written back as the mod writes them, as version 6', () => {
@@ -167,6 +167,17 @@ test('a train that is never cancelled is read and written back as the mod writes
   const stopTimes = timetable.read(readText(path.join(RESOURCES, 'timetable', 'example-stop-times.json'))).timetable;
   stopTimes.trains[0].keep = true;
   assert.equal(timetable.version(stopTimes), 4, 'version 4 holds what version 3 added too');
+});
+
+test('a train\'s length is read and written back as the mod writes it, as version 9', () => {
+  const text = readText(path.join(RESOURCES, 'timetable', 'example-length.json'));
+  const result = timetable.read(text);
+  assert.deepEqual(result.problems, []);
+  assert.deepEqual(result.timetable.trains.map(train => train.length), [undefined, 24, 60, undefined]);
+  assert.equal(timetable.version(result.timetable), 9);
+  assert.equal(timetable.write(result.timetable), text);
+  const keep = timetable.read(readText(path.join(RESOURCES, 'timetable', 'example-keep.json'))).timetable;
+  assert.equal(timetable.version(keep), 4, 'a timetable whose trains say no length is as it was');
 });
 
 test('the stations\' times and the stops\' minimum stops are read and written back as the mod writes them, as version 3', () => {
