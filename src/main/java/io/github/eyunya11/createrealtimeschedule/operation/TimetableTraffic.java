@@ -32,6 +32,11 @@ import io.github.eyunya11.createrealtimeschedule.travel.TrainSpec;
  * which the timetable says nothing more of, is taken off the line where the train ends. It runs at full throttle. Each train starts under no limit
  * of a sign or a signal, and carries them from stop to stop. A set whose way from one station to the
  * next is not on the track runs no further.
+ *
+ * <p>The way from one station to another is the one leg the track facts have for the two names, so
+ * every set comes in at the same platform of a station, where Create would send it to one that is free
+ * ({@link Traffic}): at a depot or a terminus where one set stands while another comes in, the second
+ * waits at red, or never gets in, though in the game it would go to another platform.
  */
 public final class TimetableTraffic {
 
@@ -71,6 +76,9 @@ public final class TimetableTraffic {
         long defaultMinimumStop, int defaultLength) {
         List<Run> runs = new ArrayList<>();
         List<List<Key>> keys = new ArrayList<>();
+        Map<String, Train> byNumber = new HashMap<>();
+        for (Train train : timetable.trains())
+            byNumber.putIfAbsent(train.number(), train);
         Set<String> inDuties = new HashSet<>();
         List<Duty> sets = new ArrayList<>();
         Set<Duty> duties = new HashSet<>(timetable.duties());
@@ -99,7 +107,8 @@ public final class TimetableTraffic {
                 Leg leg = legs.get(List.of(call.station(), calls.get(i + 1).station(), call.tag()));
                 if (leg == null || !call.hasDepart())
                     break;
-                int length = timetable.train(call.leavingTrain()).map(train -> train.lengthOr(defaultLength)).orElse(defaultLength);
+                Train train = byNumber.get(call.leavingTrain());
+                int length = train == null ? defaultLength : train.lengthOr(defaultLength);
                 stints.add(new Stint(leg, DutyPlan.at(0, call.depart()), i == 0 ? 0 : DutyPlan.minimumStop(call, defaultMinimumStop),
                     newTrain, length));
                 legKeys.add(new Key(call.leavingTrain(), stop));
