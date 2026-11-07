@@ -396,13 +396,17 @@
     // or run at all on the track tag it is held to, and what is wrong with the track's tags.
     const network = state.network;
     const fast = network === null ? [] : rt.edit.tooFast(state.timetable, runningTimes());
+    const reds = network === null ? [] : rt.edit.redSignals(state.timetable, runningTimes());
+    // A timetable that holds up too many trains for too long to be worked out: the signals are left out.
+    const ran = traffic();
+    const unworked = ran !== null && !ran.finished ? 1 : 0;
     const track = network === null ? null
       : { platforms: station => rt.network.platforms(network, station), way: (platform, station, tag) => rt.network.way(network, platform, station, tag) };
     const noWays = track === null ? [] : rt.edit.noWay(state.timetable, track);
     // A network of before the tags (version 2 and older) cannot say which tags the world has.
     const unknown = network === null || !network.tagged ? [] : rt.edit.tagsOf(state.timetable).filter(tag => !network.tags.includes(tag));
     const tagProblems = network === null ? [] : network.tagProblems;
-    const notes = fast.length + noWays.length + unknown.length + tagProblems.length;
+    const notes = fast.length + reds.length + unworked + noWays.length + unknown.length + tagProblems.length;
     $('problems-title').textContent = (found.length === 0 ? t('noProblems') : t('problemCount', found.length))
       + (notes === 0 ? '' : t('tooFastCount', notes));
     // Tracks the timetable names that the map does not have: laid again since, or taken up.
@@ -425,7 +429,14 @@
         t('noWay', way.train, way.from, way.stop + 1, way.to, way.tag)));
     for (const way of fast)
       list.append(h('li', { class: 'warning', onclick: () => select({ kind: 'train', number: way.number }) },
-        t('tooFast', way.number, way.from, way.to, way.given, way.needed)));
+        way.signals === undefined ? t('tooFast', way.number, way.from, way.to, way.given, way.needed)
+          : t('tooFastSignals', way.number, way.from, way.to, way.given, way.needed, way.signals)));
+    if (unworked > 0)
+      list.append(h('li', { class: 'warning' }, t('trafficUnfinished')));
+    for (const way of reds)
+      list.append(h('li', { class: 'warning', onclick: () => select({ kind: 'train', number: way.number }) },
+        way.stuck ? t('heldUp', way.number, way.from, way.to)
+          : t('redSignal', way.number, way.from, way.to, way.at === null ? '?' : way.at, way.seconds)));
     for (const problem of found)
       list.append(h('li', {
         onclick: () => {
@@ -485,15 +496,57 @@
   }
 
   /**
+   * The minimum stop of the server where the timetable gives none, as the mod's setting
+   * default_minimum_stop_seconds has it unless it is changed; the editor cannot know a server's own.
+   */
+  const SERVER_MINIMUM_STOP = 20;
+  /** The trains of the timetable run with the signals, as last worked out, and what for. */
+  let trafficMemo = null;
+
+  /**
+   * The trains of the timetable running on time together with the signals of the network (traffic.js),
+   * worked out again only when the timetable, the network or the length of a train changes: while a
+   * stop is dragged, the timetable it is dragged from is what they run. Null for a network without
+   * signal blocks (version 4 and before) or without the speeds of its train.
+   */
+  function traffic() {
+    const network = state.network;
+    if (network === null || !network.blocks || !network.train)
+      return null;
+    const timetable = state.timetable;
+    const length = state.settings.length;
+    if (trafficMemo !== null && trafficMemo.timetable === timetable && trafficMemo.network === network && trafficMemo.length === length)
+      return trafficMemo.ran;
+    const ran = rt.traffic.ofTimetable(timetable, (from, to, tag) => rt.network.leg(network, from, to, tag || ''), network.blocks,
+      network.train, { minimumStop: SERVER_MINIMUM_STOP, length });
+    trafficMemo = { timetable, network, length, ran };
+    return ran;
+  }
+
+  /**
    * The running times of the network with its speed-limit signs, as the changes of edit take them
    * (edit.trackOf): a train still under the limit of a sign it passed before is slower until it
-   * passes the next. Null without a network.
+   * passes the next. With signal blocks, a train of the timetable is slower too by what the signals
+   * add to its ways running on time with the others (traffic). Null without a network.
    */
   function runningTimes() {
-    return state.network === null ? null : {
+    if (state.network === null)
+      return null;
+    const times = {
       seconds: (from, to, tag, limit) => rt.network.seconds(state.network, from, to, tag || '', limit),
       limitAfter: (from, to, tag, limit) => rt.network.limitAfter(state.network, from, to, tag || '', limit),
     };
+    const ran = traffic();
+    if (ran === null || !ran.finished)
+      return times;
+    times.ticks = (from, to, tag, limit) => rt.network.ticks(state.network, from, to, tag || '', limit);
+    times.signalTicks = (number, i) => {
+      const trip = ran.trip(number, i);
+      return trip === null || trip.arrived === -1 || trip.free < 0 ? 0 : Math.max(0, trip.arrived - trip.departed - trip.free);
+    };
+    times.trip = (number, i) => ran.trip(number, i);
+    times.leg = (from, to, tag) => rt.network.leg(state.network, from, to, tag || '');
+    return times;
   }
 
   /** The seconds a train drawn at the station stands there: the station's own, or the setting's. */

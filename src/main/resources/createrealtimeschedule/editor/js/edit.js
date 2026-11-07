@@ -11,6 +11,8 @@
   'use strict';
 
   const NONE = check.NONE;
+  /** Ticks in a second of the running times. */
+  const TICKS_PER_SECOND = 20;
 
   /**
    * A stop as it is, with a minimumStop only if it has one of its own, a type only if it changes the
@@ -335,6 +337,11 @@
    * Train Next as well, {seconds(from, to, tag, limit), limitAfter(from, to, tag, limit)}, where limit
    * is that of a sign a train passed before and is still under, in km/h, or null (see network.seconds
    * and network.limitAfter). Both, as the object; null for none.
+   *
+   * The object may also know how the trains of the timetable run together with the signals (traffic.js):
+   * ticks(from, to, tag, limit), the track's running time in ticks, and signalTicks(number, i), the ticks
+   * the signals add to train number's way from its stop i (0 for none); and for the notes, trip(number,
+   * i), how that way went, and leg(from, to, tag), the network's leg.
    */
   function trackOf(running) {
     if (!running)
@@ -354,8 +361,10 @@
    * to stops[i + 1] (null where the track does not say), on the stop's track tag or else the train's.
    * A speed-limit sign holds a train until it passes the next, stops and all, so the train runs each
    * way under the limit it was under when it stopped, from its first stop, where it is under none:
-   * where trains turn back, the signs are put up facing both ways. Null for no running times; what
-   * this gave already is given back as it is.
+   * where trains turn back, the signs are put up facing both ways. Where the running times know what
+   * the signals add to the train's ways (signalTicks), they are added to the track's ticks before
+   * these are rounded up to seconds. Null for no running times; what this gave already is given back as
+   * it is.
    */
   function forTrain(running, train) {
     if (!running || running.forTrain === true)
@@ -365,7 +374,15 @@
       let limit = null;
       for (let k = 0; k < i; k++)
         limit = track.limitAfter(stops[k].station, stops[k + 1].station, tagFrom(train, stops, k), limit);
-      return track.seconds(stops[i].station, stops[i + 1].station, tagFrom(train, stops, i), limit);
+      const from = stops[i].station;
+      const to = stops[i + 1].station;
+      const tag = tagFrom(train, stops, i);
+      const seconds = track.seconds(from, to, tag, limit);
+      const signals = seconds === null || !track.signalTicks || train.number === undefined ? 0 : track.signalTicks(train.number, i);
+      if (!(signals > 0))
+        return seconds;
+      const ticks = track.ticks(from, to, tag, limit);
+      return ticks === null ? seconds : Math.ceil((ticks + signals) / TICKS_PER_SECOND);
     };
     way.forTrain = true;
     return way;
@@ -602,15 +619,19 @@
   /**
    * The ways between stops that trains run faster than the track lets them: those where a train
    * comes in at a stop sooner after leaving the one before than the running time (running, as
-   * trackOf takes it; for each train as forTrain has it, under the limit of a sign passed before).
-   * Ways the track gives no running time for are not counted.
+   * trackOf takes it; for each train as forTrain has it, under the limit of a sign passed before, and
+   * with what the signals add). Ways the track gives no running time for are not counted.
    *
-   * @returns {Array<{number: string, from: string, to: string, given: number, needed: number}>}
+   * @returns {Array<{number: string, from: string, to: string, given: number, needed: number, signals?: number}>}
+   *   signals, the seconds of needed the signals add, where they add any
    */
   function tooFast(timetable, running) {
     const found = [];
+    const track = trackOf(running);
+    const plain = track === null || !track.signalTicks ? null : { seconds: track.seconds, limitAfter: track.limitAfter };
     for (const train of timetable.trains) {
       const way = forTrain(running, train);
+      const onTrack = plain === null ? null : forTrain(plain, train);
       for (let k = 1; k < train.stops.length; k++) {
         const before = train.stops[k - 1];
         const stop = train.stops[k];
@@ -618,10 +639,48 @@
         if (needed === null || before.depart === NONE || comesIn(stop) === NONE)
           continue;
         const given = comesIn(stop) - before.depart;
-        if (given < needed)
-          found.push({ number: train.number, from: before.station, to: stop.station, given, needed });
+        if (given >= needed)
+          continue;
+        const item = { number: train.number, from: before.station, to: stop.station, given, needed };
+        const alone = onTrack === null ? null : onTrack(train.stops, k - 1);
+        if (alone !== null && needed > alone)
+          item.signals = needed - alone;
+        found.push(item);
       }
     }
+    return found;
+  }
+
+  /**
+   * The signals at red that trains stop at running on time with the others, and the ways they never
+   * get to the end of, held up by the signals (running, as trackOf takes it, with trip and leg). A stop
+   * is at its signal's distance from the stop before, in whole blocks, or null where the leg does not
+   * say.
+   *
+   * @returns {Array<{number: string, from: string, to: string, at?: ?number, seconds?: number, stuck?: boolean}>}
+   *   a stop at red, for seconds, or a way the train is stuck on
+   */
+  function redSignals(timetable, running) {
+    const found = [];
+    const track = trackOf(running);
+    if (track === null || !track.trip)
+      return found;
+    for (const train of timetable.trains)
+      for (let k = 0; k + 1 < train.stops.length; k++) {
+        const trip = track.trip(train.number, k);
+        if (trip === null)
+          continue;
+        const from = train.stops[k].station;
+        const to = train.stops[k + 1].station;
+        const leg = track.leg(from, to, tagFrom(train, train.stops, k));
+        for (const wait of trip.waits) {
+          const signal = leg === null ? undefined : leg.signals.find(each => each.signal === wait.signal);
+          found.push({ number: train.number, from, to, at: signal === undefined ? null : Math.round(signal.at),
+            seconds: Math.ceil(wait.ticks / TICKS_PER_SECOND) });
+        }
+        if (trip.arrived === -1)
+          found.push({ number: train.number, from, to, stuck: true });
+      }
     return found;
   }
 
@@ -856,7 +915,7 @@
   return {
     NONE, copy, setName, putLine, removeLine, setLineTrack, setTrackHidden, stationTimes, dwellAt, setStations, typeList, setTypes, typeChanges, trainsOfType,
     nextNumber, addTrain, removeTrain, setTrain, trackOf, forTrain, stopLimits, moveStop, moveRun, moveArrival, stretchStop, draggedTime, drag, sameStops, shiftTrain, setStopTime, setDwell, setStopMinimum, setStopType, setStopWaits, setStopStation,
-    removeStop, tooFast, setStopTag, tagsOf, noWay,
+    removeStop, tooFast, redSignals, setStopTag, tagsOf, noWay,
     snap, snapUp, snapDown, drawStop, drawClick, setDrawnDwell, finishDrawing,
   };
 });
