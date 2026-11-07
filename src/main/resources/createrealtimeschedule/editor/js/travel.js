@@ -32,7 +32,7 @@
   const KMH_PER_BLOCK_PER_TICK = 3.6 * 20;
   /** The share of the train's braking that Create Train Next counts on to be down to a limit in time. */
   const SIGN_BRAKING_SHARE = 0.8;
-  /** How far past its braking distance Create Train Next looks for signs, in blocks. */
+  /** How far past its braking distance Create Train Next looks for signs and signals, in blocks. */
   const SIGN_REACH_MARGIN = 30;
   /** How far before a sign Create Train Next has the train down to its limit, in blocks. */
   const SIGN_ARRIVE_EARLY = 1;
@@ -82,42 +82,145 @@
     return ticks + ticksAt(limit, distance - from);
   }
 
-  /** The limits of the signs as the run goes on, as TravelTime.SignLimits keeps them; speeds in blocks a tick. */
-  function signLimits(signs, limitAtStart, topPerTick, acceleration) {
+  /**
+   * A train on a run under Create's speed control, a tick at a time (Drive in the mod): what ticks runs to
+   * the end of a run, and what the simulation of the trains of a timetable runs alongside the others,
+   * stopping it short of a signal at red. Positions are from the start of the run; speeds and limits in
+   * blocks a tick inside, km/h outside.
+   *
+   * @param zones [{start, end, cap}]: where the head may not go faster than cap, in blocks a second
+   * @param signs [{at, kmh}, or {at, release: true}], sorted by at
+   * @param limitAtStart the limit of a sign it passed before, or null for none
+   */
+  function drive(spec, throttle, zones, signs, limitAtStart) {
+    const topPerTick = spec.topSpeed / 20;
+    const acceleration = spec.acceleration / 400;
     const braking = SIGN_BRAKING_SHARE * acceleration;
     const reach = topPerTick * topPerTick / (2 * braking) + SIGN_REACH_MARGIN;
-    let next = 0;
-    let limit = limitAtStart !== null ? limitAtStart / KMH_PER_BLOCK_PER_TICK : Infinity;
+    let position = 0;
+    let speed = 0;
+    let nextSign = 0;
+    let signLimit = limitAtStart !== null ? limitAtStart / KMH_PER_BLOCK_PER_TICK : Infinity;
+    let signalLimit = Infinity;
 
-    function pass(position) {
-      while (next < signs.length && signs[next].at <= position) {
-        const sign = signs[next++];
+    function passSigns(to) {
+      while (nextSign < signs.length && signs[nextSign].at <= to) {
+        const sign = signs[nextSign++];
         if (sign.at > 0)
-          limit = sign.release ? Infinity : sign.kmh / KMH_PER_BLOCK_PER_TICK;
+          signLimit = sign.release ? Infinity : sign.kmh / KMH_PER_BLOCK_PER_TICK;
       }
     }
 
-    function cap(top, position, speed) {
-      let capped = Math.min(top, limit);
+    /**
+     * TrainSpeedLimits.cap: the top speed held to the limits and, while the train moves, to what it can
+     * slow from in time for each sign and signal ahead (ahead: {count, position(i), kmh(i)}, kmh infinity
+     * where a signal lifts the limit and NaN where it says nothing).
+     */
+    function cap(ahead) {
+      let capped = Math.min(topPerTick, Math.min(signLimit, signalLimit));
       if (speed === 0)
         return capped;
-      for (let i = next; i < signs.length; i++) {
-        const sign = signs[i];
-        const ahead = sign.at - position;
-        if (ahead > reach)
+      let sign = signLimit;
+      let signal = signalLimit;
+      let s = nextSign;
+      let g = 0;
+      const lights = ahead.count();
+      for (;;) {
+        const signAt = s < signs.length ? signs[s].at : Infinity;
+        const signalAt = g < lights ? ahead.position(g) : Infinity;
+        const distance = Math.min(signAt, signalAt) - position;
+        if (distance > reach)
           break;
-        if (sign.release)
+        if (signAt <= signalAt) {
+          const each = signs[s++];
+          sign = each.release ? Infinity : each.kmh / KMH_PER_BLOCK_PER_TICK;
+        } else {
+          const kmh = ahead.kmh(g++);
+          if (Number.isNaN(kmh))
+            continue;
+          signal = kmh / KMH_PER_BLOCK_PER_TICK;
+        }
+        const lowest = Math.min(sign, signal);
+        if (lowest === Infinity)
           continue;
-        const kmh = sign.kmh / KMH_PER_BLOCK_PER_TICK;
-        const room = Math.max(0, ahead - SIGN_ARRIVE_EARLY);
-        capped = Math.min(capped, Math.sqrt(kmh * kmh + 2 * braking * room));
+        const room = Math.max(0, distance - SIGN_ARRIVE_EARLY);
+        capped = Math.min(capped, Math.sqrt(lowest * lowest + 2 * braking * room));
       }
       return capped;
     }
 
-    pass(0);
-    return { cap, pass };
+    function reached(stopAt) {
+      position = Math.max(position, stopAt);
+      speed = 0;
+      passSigns(position);
+      return true;
+    }
+
+    function move(stopAt) {
+      if (position + speed >= stopAt)
+        return reached(stopAt);
+      position += speed;
+      passSigns(position);
+      return false;
+    }
+
+    /** One tick toward stopping the front at stopAt (Drive.step); true once it got there and stands. */
+    function step(stopAt, ahead) {
+      const remaining = stopAt + OVERSHOOT - position;
+      const brakingDistance = speed * speed / (2 * acceleration);
+
+      if (remaining - Math.abs(speed) < ARRIVAL_SNAP)
+        return reached(stopAt);
+
+      const top = cap(ahead);
+
+      if (remaining < APPROACH_BLOCKS) {
+        const maxApproachSpeed = top * (remaining / APPROACH_BLOCKS);
+        if (speed > maxApproachSpeed) {
+          speed += (maxApproachSpeed - Math.abs(speed)) * 0.5;
+          return move(stopAt);
+        }
+      }
+
+      const cruise = top * throttle;
+      let target = remaining > brakingDistance ? cruise : 0;
+
+      let inside = Infinity;
+      for (const zone of zones) {
+        const zoneCap = Math.min(zone.cap / 20, cruise);
+        if (position >= zone.start && position <= zone.end)
+          inside = Math.min(inside, zoneCap);
+        const before = zone.start - position;
+        if (before > 0 && zoneCap < speed) {
+          const slowingDistance = (speed * speed - zoneCap * zoneCap) / (2 * acceleration);
+          if (before <= slowingDistance)
+            target = Math.min(target, zoneCap);
+        }
+      }
+      target = Math.min(target, inside);
+
+      if (Math.abs(target - speed) >= SPEED_EPSILON) {
+        if (speed < target)
+          speed = Math.min(speed + acceleration, target);
+        else
+          speed = Math.max(speed - acceleration, target);
+      }
+      return move(stopAt);
+    }
+
+    passSigns(0);
+    return {
+      step,
+      position: () => position,
+      speed: () => speed,
+      brakingDistance: () => speed * speed / (2 * acceleration),
+      signalLimit: () => signalLimit * KMH_PER_BLOCK_PER_TICK,
+      setSignalLimit: kmh => { signalLimit = kmh / KMH_PER_BLOCK_PER_TICK; },
+    };
   }
+
+  /** No signals ahead. */
+  const NO_SIGNALS = { count: () => 0, position: () => Infinity, kmh: () => NaN };
 
   /**
    * The ticks a train takes from a stop to one distance blocks on, from the first tick in which it
@@ -149,63 +252,12 @@
     if (distance === 0)
       return 0;
 
-    const topPerTick = spec.topSpeed / 20;
-    const acceleration = spec.acceleration / 400;
-    const limits = signLimits(ordered, start, topPerTick, acceleration);
-
-    let position = 0;
-    let speed = 0;
-    for (let tick = 1; tick <= GIVE_UP_TICKS; tick++) {
-      const remaining = distance + OVERSHOOT - position;
-      const brakingDistance = speed * speed / (2 * acceleration);
-
-      if (remaining - Math.abs(speed) < ARRIVAL_SNAP)
+    const run = drive(spec, throttle, zones, ordered, start);
+    for (let tick = 1; tick <= GIVE_UP_TICKS; tick++)
+      if (run.step(distance, NO_SIGNALS))
         return tick;
-
-      const top = limits.cap(topPerTick, position, speed);
-
-      if (remaining < APPROACH_BLOCKS) {
-        const maxApproachSpeed = top * (remaining / APPROACH_BLOCKS);
-        if (speed > maxApproachSpeed) {
-          speed += (maxApproachSpeed - Math.abs(speed)) * 0.5;
-          if (position + speed >= distance)
-            return tick;
-          position += speed;
-          limits.pass(position);
-          continue;
-        }
-      }
-
-      const cruise = top * throttle;
-      let target = remaining > brakingDistance ? cruise : 0;
-
-      let inside = Infinity;
-      for (const zone of zones) {
-        const cap = Math.min(zone.cap / 20, cruise);
-        if (position >= zone.start && position <= zone.end)
-          inside = Math.min(inside, cap);
-        const ahead = zone.start - position;
-        if (ahead > 0 && cap < speed) {
-          const slowingDistance = (speed * speed - cap * cap) / (2 * acceleration);
-          if (ahead <= slowingDistance)
-            target = Math.min(target, cap);
-        }
-      }
-      target = Math.min(target, inside);
-
-      if (Math.abs(target - speed) >= SPEED_EPSILON) {
-        if (speed < target)
-          speed = Math.min(speed + acceleration, target);
-        else
-          speed = Math.max(speed - acceleration, target);
-      }
-      if (position + speed >= distance)
-        return tick;
-      position += speed;
-      limits.pass(position);
-    }
     return null;
   }
 
-  return { ticks, limitAfter };
+  return { ticks, limitAfter, drive, sorted, KMH_PER_BLOCK_PER_TICK };
 });
