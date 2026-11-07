@@ -175,6 +175,8 @@ public final class RailNetwork {
     /** Where each node is, by its number; empty if not known. */
     private final List<Place> places;
     private final List<Marker> markers;
+    /** The signal blocks, and the signals between them. */
+    private final SignalBlocks blocks;
     /** For every edge, the indexes of its stations by offset. */
     private final List<List<Integer>> stationsOn = new ArrayList<>();
     /** For every edge, the points on it that the search looks at, in order. */
@@ -200,10 +202,18 @@ public final class RailNetwork {
 
     /** A network with track tag blocks on it. */
     public RailNetwork(List<Edge> edges, List<Station> stations, List<Place> places, List<Marker> markers) {
+        this(edges, stations, places, markers, SignalBlocks.NONE);
+    }
+
+    /** A network with track tag blocks on it, whose signal blocks are known. */
+    public RailNetwork(List<Edge> edges, List<Station> stations, List<Place> places, List<Marker> markers, SignalBlocks blocks) {
         this.edges = List.copyOf(edges);
         this.stations = List.copyOf(stations);
         this.places = List.copyOf(places);
         this.markers = List.copyOf(markers);
+        this.blocks = blocks;
+        if (!blocks.edges().isEmpty() && blocks.edges().size() != this.edges.size())
+            throw new IllegalArgumentException("the blocks are of " + blocks.edges().size() + " edges, and the network has " + this.edges.size());
         for (int i = 0; i < this.edges.size(); i++) {
             Edge edge = this.edges.get(i);
             if (!(edge.length() >= 0))
@@ -256,6 +266,11 @@ public final class RailNetwork {
     /** The track tag blocks on the network. */
     public List<Marker> markers() {
         return markers;
+    }
+
+    /** The signal blocks of the network, and the signals between them; {@link SignalBlocks#NONE} if not known. */
+    public SignalBlocks blocks() {
+        return blocks;
     }
 
     /** The sections of the track tag blocks on the network. */
@@ -403,7 +418,10 @@ public final class RailNetwork {
             weights, tag);
     }
 
-    /** The leg of {@code route}, from station {@code source}: its curves, the stations it passes and the signs it meets. */
+    /**
+     * The leg of {@code route}, from station {@code source}: its curves, the stations it passes, the signs
+     * and the signals it meets, and the block it starts in.
+     */
     private Leg leg(int source, RouteSearch.Route route) {
         Station start = stations.get(source);
         Station end = stations.get(route.station());
@@ -413,6 +431,7 @@ public final class RailNetwork {
         List<Leg.Curve> curves = new ArrayList<>();
         Set<String> via = new LinkedHashSet<>();
         List<SpeedSign> signs = new ArrayList<>();
+        List<Leg.PassedSignal> signals = new ArrayList<>();
         double position = 0;
         for (int step = 0; step < chain.size(); step++) {
             int edgeIndex = chain.get(step);
@@ -425,6 +444,11 @@ public final class RailNetwork {
             for (SpeedSign sign : edge.signs())
                 if ((first ? sign.position() > from : sign.position() >= from) && sign.position() <= to)
                     signs.add(moved(sign, position - from));
+            // As for a sign: a signal at the start marker is behind the train, and one at the end marker is passed.
+            for (Point point : edge.points())
+                if (point.kind() == Point.Kind.SIGNAL && (first ? point.position() > from : point.position() >= from)
+                    && point.position() <= to)
+                    signals.add(new Leg.PassedSignal(position + point.position() - from, point.ref()));
             if (edge.curved() && to - from > EPSILON) {
                 double a = position;
                 double b = position + (to - from);
@@ -446,7 +470,8 @@ public final class RailNetwork {
             }
         }
         signs.addAll(signsPastTheEnd(chain.getLast(), end.offset(), distance));
-        return new Leg(start.name(), end.name(), distance, curves, new ArrayList<>(via), signs, chain);
+        return new Leg(start.name(), end.name(), distance, curves, new ArrayList<>(via), signs, chain, signals,
+            blocks.blockAt(start.edge(), start.offset()));
     }
 
     /**

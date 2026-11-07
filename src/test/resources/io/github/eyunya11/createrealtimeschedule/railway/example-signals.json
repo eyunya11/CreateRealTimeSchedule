@@ -1,0 +1,74 @@
+{
+  "format": "createrealtimeschedule.network",
+  "version": 5,
+  "train": {"topSpeed": 28, "turnSpeed": 14, "acceleration": 3, "throttle": 1},
+  "stations": ["Alpha", "Beta", "Gamma"],
+  "tags": [],
+  "tagProblems": [],
+  "platforms": [{"station": "Alpha"}, {"station": "Beta"}, {"station": "Gamma"}],
+  "blocks": 3,
+  "crossings": [],
+  "signals": [{"block": 1, "next": [1], "lights": [5]}, {"block": 2, "cross": true}],
+  "lightSpeeds": {"restricted": 25, "approach": 45, "reduced": 75, "sixProceed": 130},
+  "legs": [
+    {
+      "from": "Alpha",
+      "to": "Beta",
+      "distance": 30,
+      "ticks": 116,
+      "block": 0,
+      "signals": [{"at": 15, "signal": 0}]
+    },
+    {
+      "from": "Alpha",
+      "to": "Gamma",
+      "distance": 70,
+      "via": ["Beta"],
+      "ticks": 183,
+      "block": 0,
+      "signals": [{"at": 15, "signal": 0}, {"at": 50, "signal": 1}]
+    },
+    {
+      "from": "Beta",
+      "to": "Gamma",
+      "distance": 40,
+      "ticks": 133,
+      "block": 1,
+      "signals": [{"at": 20, "signal": 1}]
+    },
+    {
+      "from": "Alpha",
+      "to": "Beta",
+      "otherTag": true,
+      "distance": 30,
+      "ticks": 116,
+      "block": 0,
+      "signals": [{"at": 15, "signal": 0}]
+    },
+    {
+      "from": "Alpha",
+      "to": "Gamma",
+      "otherTag": true,
+      "distance": 70,
+      "via": ["Beta"],
+      "ticks": 183,
+      "block": 0,
+      "signals": [{"at": 15, "signal": 0}, {"at": 50, "signal": 1}]
+    },
+    {
+      "from": "Beta",
+      "to": "Gamma",
+      "otherTag": true,
+      "distance": 40,
+      "ticks": 133,
+      "block": 1,
+      "signals": [{"at": 20, "signal": 1}]
+    }
+  ],
+  "ways": [
+    {"from": 0, "to": {"Beta": 1, "Gamma": 2}},
+    {"from": 1, "to": {"Gamma": 2}},
+    {"from": 0, "otherTag": true, "to": {"Beta": 1, "Gamma": 2}},
+    {"from": 1, "otherTag": true, "to": {"Gamma": 2}}
+  ]
+}
