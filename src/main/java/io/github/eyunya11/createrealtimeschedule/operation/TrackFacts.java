@@ -162,14 +162,18 @@ public final class TrackFacts {
      * The trains of the timetable run on time together with the signals on the ways between its
      * stations ({@link TimetableTraffic}), for a train without fuel at full throttle, as long as the
      * server's config makes one, and of the length the config gives where the timetable gives none.
-     * Worked out the first time it is needed after the ways are, and kept with them: for a day of a
-     * train a minute, it takes about a second. A timetable that holds too many trains up for too long to
+     * Worked out the first time it is needed after the ways are, and kept with them, and while the
+     * config's minimum stop and train length stay as they are: for a day of a train a minute, it takes
+     * about a second. A timetable that holds too many trains up for too long to
      * be worked out ({@link Traffic#MAX_STEPS}) is taken to have the signals hold no train up, and the log
      * says so.
      */
     public static TimetableTraffic traffic(OperationData data, Timetable timetable) {
         workOut(data, timetable);
-        TimetableTraffic known = data.traffic();
+        List<Object> key = trafficKey();
+        long minimumStop = (long) key.get(0);
+        int length = (int) key.get(1);
+        TimetableTraffic known = data.traffic(key);
         if (known != null)
             return known;
         TrainSpec spec = null;
@@ -184,8 +188,7 @@ public final class TrackFacts {
         TimetableTraffic traffic = TimetableTraffic.NONE;
         if (spec != null && data.blocks().count() > 0) {
             long started = System.nanoTime();
-            traffic = TimetableTraffic.of(timetable, data.legs(), data.blocks(), spec,
-                ModSettings.defaultMinimumStopSeconds() * (long) RealClock.TICKS_PER_SECOND, ModSettings.trainLengthBlocks());
+            traffic = TimetableTraffic.of(timetable, data.legs(), data.blocks(), spec, minimumStop, length);
             long ms = (System.nanoTime() - started) / 1_000_000;
             if (traffic.finished())
                 LOGGER.info("Ran the trains of the timetable with the signals in {} ms", ms);
@@ -193,8 +196,16 @@ public final class TrackFacts {
                 LOGGER.warn("The trains of the timetable hold one another up at the signals too much to work out in time ({} ms); "
                     + "the forecasts leave the signals out", ms);
         }
-        data.traffic(traffic);
+        data.traffic(traffic, key);
         return traffic;
+    }
+
+    /**
+     * What of the server's config {@link #traffic} is worked out with: the minimum stop in ticks where the
+     * timetable gives none, and the length of a train where it gives none.
+     */
+    public static List<Object> trafficKey() {
+        return List.of(ModSettings.defaultMinimumStopSeconds() * (long) RealClock.TICKS_PER_SECOND, ModSettings.trainLengthBlocks());
     }
 
     /** {@code times}, with what the signals add to the ways of the trains of the timetable, running on time ({@link #traffic}). */

@@ -245,6 +245,8 @@ public class SignalTrafficTests {
             helper.assertValueEqual(Forecast.runTicks(calls, 0, track) + signals,
                 Forecast.runTicks(calls, 0, TrackFacts.withSignals(data, timetable, track)), "the forecast of the way of the train behind");
             helper.assertTrue(TrackFacts.traffic(data, timetable) == traffic, "the simulation is worked out again while the track is the same");
+            helper.assertTrue(data.traffic(TrackFacts.trafficKey()) == traffic, "the simulation is not kept for the config it was worked out with");
+            helper.assertTrue(data.traffic(List.of(0L, 1)) == null, "the simulation is kept for another minimum stop and train length");
             data.forgetAxes();
             helper.assertTrue(data.traffic() == null, "the simulation is kept after the track facts are dropped");
             helper.succeed();

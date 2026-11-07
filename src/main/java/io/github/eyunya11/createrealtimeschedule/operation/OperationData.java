@@ -135,6 +135,8 @@ public final class OperationData extends SavedData {
     private SignalBlocks blocks = SignalBlocks.NONE;
     /** The trains of the timetable run with the signals, once worked out for the legs; null until then. */
     private @Nullable TimetableTraffic traffic;
+    /** What the server's config said that {@link #traffic} was worked out with. */
+    private @Nullable Object trafficKey;
     /** Not saved: the ways between stops the trains cannot run on their track tags, worked out with the axes. */
     private List<TagWays.NoWay> noWays = List.of();
     /** Not saved: the track tags the timetable holds trains to that the world has none of, worked out with the axes. */
@@ -459,9 +461,21 @@ public final class OperationData extends SavedData {
         return traffic;
     }
 
-    /** Keeps the trains of the timetable run with the signals, until the ways between stations or the timetable change. */
-    public void traffic(TimetableTraffic traffic) {
+    /**
+     * {@link #traffic()} if it was worked out with what {@code key} says of the server's config, such as
+     * the length of a train; null if not, or not worked out since the ways were.
+     */
+    public @Nullable TimetableTraffic traffic(Object key) {
+        return traffic != null && key.equals(trafficKey) ? traffic : null;
+    }
+
+    /**
+     * Keeps the trains of the timetable run with the signals, worked out with {@code key} of the server's
+     * config, until the ways between stations, the timetable or the config change.
+     */
+    public void traffic(TimetableTraffic traffic, Object key) {
         this.traffic = traffic;
+        this.trafficKey = key;
     }
 
     /**
