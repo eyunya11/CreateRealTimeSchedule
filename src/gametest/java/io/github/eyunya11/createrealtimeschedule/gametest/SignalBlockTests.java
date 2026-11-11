@@ -1,5 +1,6 @@
 package io.github.eyunya11.createrealtimeschedule.gametest;
 
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -8,10 +9,15 @@ import org.slf4j.Logger;
 
 import com.mojang.logging.LogUtils;
 import com.simibubi.create.Create;
+import com.simibubi.create.content.trains.graph.TrackGraph;
+import com.simibubi.create.content.trains.signal.SignalBoundary;
 import com.simibubi.create.content.trains.track.TrackTargetingBehaviour;
 import com.simibubi.create.foundation.blockEntity.behaviour.BlockEntityBehaviour;
 
 import io.github.eyunya11.createrealtimeschedule.Createrealtimeschedule;
+import io.github.eyunya11.createrealtimeschedule.map.TrackMap;
+import io.github.eyunya11.createrealtimeschedule.map.TrackMap.Spot;
+import io.github.eyunya11.createrealtimeschedule.railway.CreateMap;
 import io.github.eyunya11.createrealtimeschedule.railway.CreateNetwork;
 import io.github.eyunya11.createrealtimeschedule.railway.Leg;
 import io.github.eyunya11.createrealtimeschedule.railway.RailNetwork;
@@ -61,10 +67,104 @@ public class SignalBlockTests {
         List<TestFunction> tests = new ArrayList<>();
         tests.add(new TestFunction("realtimesignalblocks_create", "signalblocktests.theblocksofalinearereadascreatehasthem", TRACK_LINE,
             TIMEOUT_TICKS, 0, true, helper -> check(helper, false)));
-        if (ModList.get().isLoaded("createtrainnext"))
+        if (ModList.get().isLoaded("createtrainnext")) {
             tests.add(new TestFunction("realtimesignalblocks_light", "signalblocktests.alightsignalisreadwithitsaspects", TRACK_LINE,
                 TIMEOUT_TICKS, 0, true, helper -> check(helper, true)));
+            tests.add(new TestFunction("realtimesignalblocks_unloaded", "signalblocktests.alightsignalwhosechunkisnotloadedisread",
+                TRACK_LINE, TIMEOUT_TICKS, 0, true, SignalBlockTests::aLightSignalWhoseChunkIsNotLoadedIsRead));
+        }
         return tests;
+    }
+
+    /** Outside the world border, so never loaded. */
+    private static final BlockPos FAR = new BlockPos(30000000, 2, 29999984);
+
+    /**
+     * A colour light signal of Create Train Next whose chunk is not loaded still holds trains to its
+     * aspects, as Create Train Next keeps a table of which head stands where ({@code SignalHeads}); the
+     * network reads it from there, and the map shows it, with the aspect Create Train Next works out.
+     *
+     * <p>A chunk cannot be unloaded from inside a test, so, as Create Train Next's own tests do, the head is
+     * a position far outside the world put into the first signal's records, with its type written into the
+     * table the way a head once loaded there writes it. Until it is written in, the head is not known, and
+     * the signal is read as Create's own. Writing it in, and taking it out, changes the fingerprint.
+     */
+    private static void aLightSignalWhoseChunkIsNotLoadedIsRead(GameTestHelper helper) {
+        TrackLine line = new TrackLine(helper, 50, STATION_X, NAMES, List.of(new Signal(FIRST_X, true), new Signal(SECOND_X, true)));
+        line.cleanUpWhenTheTestEnds();
+        ServerLevel level = helper.getLevel();
+        SignalBoundary[] signal = {null};
+        boolean[] side = {false};
+        helper.onEachTick(() -> {
+            if (signal[0] != null || !line.setUp())
+                return;
+            BlockEntity entity = level.getBlockEntity(helper.absolutePos(line.track(FIRST_X).north()));
+            TrackTargetingBehaviour<?> target = entity == null ? null : BlockEntityBehaviour.get(entity, TrackTargetingBehaviour.TYPE);
+            helper.assertTrue(target != null && target.getEdgePoint() instanceof SignalBoundary, "the first signal has no place in the graph");
+            signal[0] = (SignalBoundary) target.getEdgePoint();
+            side[0] = !signal[0].blockEntities.get(true).isEmpty();
+            helper.assertFalse(level.isLoaded(FAR), "setup: the far head should not be loaded");
+            try {
+                Collection<TrackGraph> graphs = Create.RAILWAYS.trackNetworks.values();
+                long before = CreateNetwork.fingerprint(graphs);
+                helper.assertTrue(firstSignal(helper).lights().isEmpty(), "Create's own signal is read as " + firstSignal(helper));
+
+                signal[0].blockEntities.get(side[0]).put(FAR, false);
+                helper.assertTrue(firstSignal(helper).lights().isEmpty(), "a head never seen loaded is read as " + firstSignal(helper));
+                helper.assertValueEqual(before, CreateNetwork.fingerprint(graphs), "the fingerprint with a head never seen loaded");
+
+                heads("record", level, FAR, signalType("FIVE"));
+                helper.assertValueEqual(List.of(5), firstSignal(helper).lights().stream().toList(), "the aspects of the head that is not loaded");
+                helper.assertTrue(CreateNetwork.fingerprint(graphs) != before, "a head written into the table is a change of the track");
+                Spot at = new Spot(helper.absolutePos(line.track(FIRST_X)).getX() + 0.5, helper.absolutePos(line.track(FIRST_X)).getZ() + 0.5);
+                List<TrackMap.SignalSide> sides = CreateMap.read(graphs, List.of(), level.getServer()::getLevel).map().signals().stream()
+                    .filter(mark -> Math.hypot(mark.at().x() - at.x(), mark.at().z() - at.z()) <= 0.6)
+                    .flatMap(mark -> mark.sides().stream()).toList();
+                LOGGER.info("[{}] the first signal on the map: {}", helper.testInfo.getTestName(), sides);
+                helper.assertTrue(sides.stream().anyMatch(each -> each.kind().equals("light5") && !each.lamps().isEmpty()),
+                    "the map does not show the head that is not loaded: " + sides);
+
+                heads("forget", level, FAR);
+                helper.assertTrue(firstSignal(helper).lights().isEmpty(), "a head taken out of the table is read as " + firstSignal(helper));
+                helper.assertValueEqual(before, CreateNetwork.fingerprint(graphs), "the fingerprint once the head is taken out");
+            } finally {
+                signal[0].blockEntities.get(side[0]).remove(FAR);
+                heads("forget", level, FAR);
+            }
+            helper.succeed();
+        });
+    }
+
+    /** The first signal of the leg from Alpha to Gamma, as the network reads it now. */
+    private static SignalBlocks.Signal firstSignal(GameTestHelper helper) {
+        RailNetwork network = CreateNetwork.read(Create.RAILWAYS.trackNetworks.values());
+        Leg alphaGamma = legOf(helper, network, "Alpha", "Gamma");
+        return network.blocks().signals().get(alphaGamma.signals().get(0).signal());
+    }
+
+    /** Calls a static method of Create Train Next's {@code SignalHeads}, which this does not compile against. */
+    private static void heads(String method, Object... arguments) {
+        try {
+            for (Method each : Class.forName("com.eyunya.createtrainnext.signal.SignalHeads").getMethods())
+                if (each.getName().equals(method) && each.getParameterCount() == arguments.length) {
+                    each.invoke(null, arguments);
+                    return;
+                }
+            throw new AssertionError("Create Train Next's SignalHeads has no " + method);
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError("could not call SignalHeads." + method, e);
+        }
+    }
+
+    private static Object signalType(String name) {
+        try {
+            for (Object constant : Class.forName("com.eyunya.createtrainnext.signal.SignalType").getEnumConstants())
+                if (((Enum<?>) constant).name().equals(name))
+                    return constant;
+            throw new AssertionError("Create Train Next has no signal type " + name);
+        } catch (ClassNotFoundException e) {
+            throw new AssertionError("Create Train Next has no SignalType", e);
+        }
     }
 
     private static void check(GameTestHelper helper, boolean light) {

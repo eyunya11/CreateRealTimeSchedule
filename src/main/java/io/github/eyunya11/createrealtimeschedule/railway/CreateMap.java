@@ -57,8 +57,10 @@ import net.minecraft.world.phys.Vec3;
  * nodes, in the order of {@link TrackKeys}. A curve is read as points about two blocks apart along
  * it, from Create's own table of where its segments are. A signal shows each way it has a head for:
  * the state Create gives that side, or, for a head that is a colour light signal of Create Train Next,
- * the aspect that signal shows ({@link TrainNextSignals}). An aspect that cannot be read now, in a
- * chunk that is not loaded, is the one last read, as long as the signal is there.
+ * the aspect that signal shows ({@link TrainNextSignals}). In a chunk that is not loaded, read on the
+ * server, that is the aspect Create Train Next works out from the graph, where its table says which head
+ * stands there. An aspect that cannot be had now, as with a Create Train Next from before that table, is
+ * the one last read, as long as the signal is there.
  *
  * <p>Places are where Create's graph has them, without the smoothing of track that rises a pixel at
  * a time: from above, it makes no difference.
@@ -339,7 +341,7 @@ public final class CreateMap {
         TrainNextSignals.Look look = null;
         if (level != null)
             for (BlockPos head : signal.blockEntities.get(first).keySet()) {
-                look = TrainNextSignals.look(level, head);
+                look = TrainNextSignals.look(level, signal, first, head);
                 if (look != null)
                     break;
             }
