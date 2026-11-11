@@ -237,8 +237,8 @@ public final class CreateNetwork {
 
     /**
      * A number that changes when the track changes in a way {@link #read} sees: a node, an edge or a
-     * point on one (a station and its name, a signal, a sign and its limit, a tag block and its tag) put
-     * in, taken out or moved;
+     * point on one (a station and its name, a signal and the kinds of the colour light signals of Create
+     * Train Next among its heads, a sign and its limit, a tag block and its tag) put in, taken out or moved;
      * an edge laid again or of another kind of track; or a point that lets trains through one way
      * where it did not (a station being assembled, a signal given another side).
      * The same track gives the same number whatever order the game holds it in, and working it out
@@ -248,6 +248,7 @@ public final class CreateNetwork {
     public static long fingerprint(Collection<TrackGraph> graphs) {
         EdgePointType<?> signType = EdgePointType.TYPES.get(SPEED_LIMIT);
         Unreadable unreadable = new Unreadable();
+        MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
         long print = 0;
         for (TrackGraph graph : graphs) {
             for (TrackNodeLocation location : graph.getNodes()) {
@@ -274,6 +275,8 @@ public final class CreateNetwork {
                                 hash = 31 * hash + tag.tags().hashCode() + Boolean.hashCode(tag.oneWay());
                             else if (signType != null && point.getType() == signType)
                                 hash = 31 * hash + Objects.hashCode(sign(point, 0, unreadable));
+                            else if (point instanceof SignalBoundary signal)
+                                hash = 31 * hash + TrainNextSignals.kindsHash(server, signal);
                         }
                     // Summed, so that the order of the nodes and the edges does not count; spread first, so that no two cancel out.
                     print += spread(hash);
@@ -284,7 +287,7 @@ public final class CreateNetwork {
     }
 
     /** The bits of {@code hash} spread over the whole number, as SplitMix64 finishes one. */
-    private static long spread(long hash) {
+    static long spread(long hash) {
         hash = (hash ^ (hash >>> 30)) * 0xbf58476d1ce4e5b9L;
         hash = (hash ^ (hash >>> 27)) * 0x94d049bb133111ebL;
         return hash ^ (hash >>> 31);
@@ -435,8 +438,10 @@ public final class CreateNetwork {
 
     /**
      * For each light signal of Create Train Next on the {@code primary} side of {@code signal}, how many
-     * aspects it shows. A head in a chunk that is not loaded cannot be read, and is left out, as a
-     * signal of Create's own is.
+     * aspects it shows: loaded or not, as Create Train Next holds trains to it either way
+     * ({@link TrainNextSignals#kind}). A head whose kind is not known, which Create Train Next has never
+     * seen loaded or which one from before its table of heads cannot say, is left out, as a signal of
+     * Create's own is.
      */
     private static List<Integer> lights(@Nullable MinecraftServer server, SignalBoundary signal, boolean primary) {
         if (server == null || signal.edgeLocation == null)
@@ -446,9 +451,9 @@ public final class CreateNetwork {
             return List.of();
         List<Integer> lights = new ArrayList<>();
         for (BlockPos head : signal.blockEntities.get(primary).keySet()) {
-            TrainNextSignals.Look look = TrainNextSignals.look(level, head);
-            if (look != null && look.kind().startsWith("light"))
-                lights.add(Integer.parseInt(look.kind().substring("light".length())));
+            String kind = TrainNextSignals.kind(level, head);
+            if (kind != null && kind.startsWith("light"))
+                lights.add(Integer.parseInt(kind.substring("light".length())));
         }
         lights.sort(Comparator.naturalOrder());
         return lights;
