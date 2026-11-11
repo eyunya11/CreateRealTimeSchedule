@@ -287,7 +287,7 @@ public final class CreateNetwork {
     }
 
     /** The bits of {@code hash} spread over the whole number, as SplitMix64 finishes one. */
-    private static long spread(long hash) {
+    static long spread(long hash) {
         hash = (hash ^ (hash >>> 30)) * 0xbf58476d1ce4e5b9L;
         hash = (hash ^ (hash >>> 27)) * 0x94d049bb133111ebL;
         return hash ^ (hash >>> 31);

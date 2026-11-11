@@ -7,6 +7,7 @@ import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 
 import com.mojang.logging.LogUtils;
+import com.simibubi.create.content.trains.graph.TrackGraph;
 import com.simibubi.create.content.trains.signal.SignalBoundary;
 
 import io.github.eyunya11.createrealtimeschedule.map.SignalLooks;
@@ -26,10 +27,12 @@ import net.minecraft.world.level.block.entity.BlockEntity;
  *
  * <p>A head in a chunk that is not loaded cannot be read, but it still holds trains to its aspect: Create
  * Train Next keeps a table of which head stands where ({@code SignalHeads}), on the server, and works the
- * aspect out from the track graph, as the head itself does. This asks that table, by reflection too
- * ({@code typeAt}, {@code graphOf} and {@code resolve}). A Create Train Next from before the table has no
- * answer for such a head, and neither has the table for a head it has never seen loaded.
- * Everything here that asks the table is to be called on the server thread.
+ * aspect out from the track graph, as the head itself does. This asks that table, by reflection too:
+ * {@code typeAt} for which head stands at a position, and {@code resolve} for what it shows. Each is
+ * looked up on its own, so that a Create Train Next without {@code resolve} still says which heads there
+ * are. A Create Train Next from before the table has no answer for such a head, and neither has the table
+ * for a head it has never seen loaded. Once {@code typeAt} has failed, this works as with a Create Train
+ * Next from before the table. Everything here that asks the table is to be called on the server thread.
  */
 public final class TrainNextSignals {
 
@@ -43,6 +46,12 @@ public final class TrainNextSignals {
 
     /** What one side of a signal shows: its kind ({@link SignalLooks}) and its lamps. */
     public record Look(String kind, List<Lamp> lamps) {}
+
+    /**
+     * What one head shows, with the place of its aspect in Create Train Next's {@code SignalAspect}, from 0
+     * for stop, the strictest, so that the strictest of several heads can be told.
+     */
+    private record Read(Look look, int strictness) {}
 
     /** {@code getAspect} and {@code signalType} of the class, or null for a class that is not the signal. */
     private record Methods(Method aspect, Method type) {}
@@ -64,37 +73,43 @@ public final class TrainNextSignals {
     private static boolean failed;
 
     /**
-     * {@code SignalHeads.typeAt(MinecraftServer, ResourceKey, BlockPos)}, {@code graphOf(SignalBoundary)} and
-     * {@code resolve(TrackGraph, SignalBoundary, boolean, SignalType)}.
+     * The table's methods, looked up the first time they are needed, each null where Create Train Next has
+     * no such method: {@code SignalHeads.typeAt(MinecraftServer, ResourceKey, BlockPos)}, and
+     * {@code resolve(TrackGraph, SignalBoundary, boolean, SignalType)}. Nothing that goes wrong in looking
+     * them up escapes, so that reading this class never fails.
      */
-    private record Heads(Method typeAt, Method graphOf, Method resolve) {}
+    private static final class Table {
+        static final @Nullable Class<?> HEADS_CLASS = headsClass();
+        static final @Nullable Method TYPE_AT = method("typeAt",
+            "heads whose chunk is not loaded are taken for Create's signals", MinecraftServer.class, ResourceKey.class, BlockPos.class);
+        static final @Nullable Method RESOLVE = TYPE_AT == null ? null : method("resolve",
+            "the map shows the aspect last read for a head whose chunk is not loaded", TrackGraph.class, SignalBoundary.class,
+            boolean.class, TYPE_AT.getReturnType());
 
-    /** The table's methods, looked up the first time they are needed: null where Create Train Next has no table. */
-    private static final class HeadsHolder {
-        static final @Nullable Heads HEADS_METHODS = find();
-
-        private static @Nullable Heads find() {
-            Class<?> heads;
+        private static @Nullable Class<?> headsClass() {
             try {
-                heads = Class.forName(HEADS);
+                return Class.forName(HEADS);
             } catch (ClassNotFoundException | LinkageError e) {
                 return null;
             }
+        }
+
+        private static @Nullable Method method(String name, String otherwise, Class<?>... parameters) {
+            if (HEADS_CLASS == null)
+                return null;
             try {
-                Method typeAt = heads.getMethod("typeAt", MinecraftServer.class, ResourceKey.class, BlockPos.class);
-                Method graphOf = heads.getMethod("graphOf", SignalBoundary.class);
-                Method resolve = heads.getMethod("resolve", graphOf.getReturnType(), SignalBoundary.class, boolean.class,
-                    typeAt.getReturnType());
-                return new Heads(typeAt, graphOf, resolve);
-            } catch (NoSuchMethodException | RuntimeException e) {
-                LOGGER.warn("Create Train Next's table of signal heads cannot be read; heads whose chunk is not loaded are "
-                    + "taken for Create's signals", e);
+                return HEADS_CLASS.getMethod(name, parameters);
+            } catch (NoSuchMethodException | RuntimeException | LinkageError e) {
+                LOGGER.warn("Create Train Next's SignalHeads.{} cannot be found; {}", name, otherwise, e);
                 return null;
             }
         }
     }
 
-    private static boolean headsFailed;
+    /** Set once {@code typeAt} has failed; from then on, the table is not asked. */
+    private static boolean typeAtFailed;
+
+    private static boolean resolveFailed;
 
     /** Create Train Next's config, whose {@code SERVER} has the speeds of its light signals. */
     private static final String CONFIG = "com.eyunya.createtrainnext.CTNConfig";
@@ -138,7 +153,7 @@ public final class TrainNextSignals {
      * What the head at {@code pos} shows, if it is a colour light signal of Create Train Next that can
      * be read: in a loaded chunk, and of an aspect and a type this knows.
      */
-    public static @Nullable Look look(Level level, BlockPos pos) {
+    private static @Nullable Read read(Level level, BlockPos pos) {
         if (!level.isLoaded(pos))
             return null;
         BlockEntity entity = level.getBlockEntity(pos);
@@ -148,9 +163,7 @@ public final class TrainNextSignals {
         if (methods == null)
             return null;
         try {
-            List<Lamp> lamps = SignalLooks.aspect(((Enum<?>) methods.aspect().invoke(entity)).name());
-            String kind = SignalLooks.light(((Enum<?>) methods.type().invoke(entity)).name());
-            return lamps == null || kind == null ? null : new Look(kind, lamps);
+            return read((Enum<?>) methods.aspect().invoke(entity), (Enum<?>) methods.type().invoke(entity));
         } catch (ReflectiveOperationException | RuntimeException e) {
             if (!failed) {
                 failed = true;
@@ -160,62 +173,95 @@ public final class TrainNextSignals {
         }
     }
 
+    private static @Nullable Read read(Enum<?> aspect, Enum<?> type) {
+        List<Lamp> lamps = SignalLooks.aspect(aspect.name());
+        String kind = SignalLooks.light(type.name());
+        return lamps == null || kind == null ? null : new Read(new Look(kind, lamps), aspect.ordinal());
+    }
+
     /**
-     * What the head at {@code pos}, on side {@code side} of {@code signal} (as {@code blockEntities} has its
-     * sides), shows: read from it in a loaded chunk, and in one that is not, worked out by Create Train
-     * Next from the graph, if its table says which head stands there and {@code level} is the server's.
+     * What side {@code side} of {@code signal} (as {@code blockEntities} has its sides), in {@code graph},
+     * shows: the strictest of its heads, as Create Train Next holds a train to the strictest. A head is read
+     * from itself in a loaded chunk, and in one that is not, worked out by Create Train Next from the graph,
+     * if its table says which head stands there and {@code level} is the server's. Null if no head can be
+     * read.
      */
-    public static @Nullable Look look(Level level, SignalBoundary signal, boolean side, BlockPos pos) {
-        if (level.isLoaded(pos))
-            return look(level, pos);
-        Heads heads = HeadsHolder.HEADS_METHODS;
-        if (heads == null || !(level instanceof ServerLevel server))
+    public static @Nullable Look look(Level level, TrackGraph graph, SignalBoundary signal, boolean side) {
+        Read strictest = null;
+        for (BlockPos pos : signal.blockEntities.get(side).keySet()) {
+            Read read = level.isLoaded(pos) ? read(level, pos) : resolved(level, graph, signal, side, pos);
+            // Of two as strict, the one first by kind, so that the order of the heads in their hash map does not count.
+            if (read != null && (strictest == null || read.strictness() < strictest.strictness()
+                || read.strictness() == strictest.strictness() && read.look().kind().compareTo(strictest.look().kind()) < 0))
+                strictest = read;
+        }
+        return strictest == null ? null : strictest.look();
+    }
+
+    /** What the head at {@code pos}, in a chunk that is not loaded, shows, as Create Train Next works it out. */
+    private static @Nullable Read resolved(Level level, TrackGraph graph, SignalBoundary signal, boolean side, BlockPos pos) {
+        Method resolve = Table.RESOLVE;
+        if (resolve == null || resolveFailed || !(level instanceof ServerLevel server))
+            return null;
+        Object type = typeAt(server, pos);
+        if (type == null)
             return null;
         try {
-            Object type = heads.typeAt().invoke(null, server.getServer(), server.dimension(), pos);
-            if (type == null)
-                return null;
-            Object graph = heads.graphOf().invoke(null, signal);
-            Object aspect = heads.resolve().invoke(null, graph, signal, side, type);
-            List<Lamp> lamps = SignalLooks.aspect(((Enum<?>) aspect).name());
-            String kind = SignalLooks.light(((Enum<?>) type).name());
-            return lamps == null || kind == null ? null : new Look(kind, lamps);
+            return read((Enum<?>) resolve.invoke(null, graph, signal, side, type), (Enum<?>) type);
         } catch (ReflectiveOperationException | RuntimeException e) {
-            warnHeads(e);
+            resolveFailed = true;
+            LOGGER.warn("Could not ask Create Train Next what a head whose chunk is not loaded shows; the map shows the aspect "
+                + "last read", e);
             return null;
         }
     }
 
     /**
+     * Create Train Next's {@code SignalType} of the head at {@code pos}, loaded or not, or null if there is
+     * none there, it is not known, or the table cannot be asked.
+     */
+    private static @Nullable Object typeAt(ServerLevel level, BlockPos pos) {
+        Method typeAt = Table.TYPE_AT;
+        if (typeAt == null || typeAtFailed)
+            return null;
+        try {
+            return typeAt.invoke(null, level.getServer(), level.dimension(), pos);
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            typeAtFailed = true;
+            LOGGER.warn("Could not ask Create Train Next's table of signal heads; a head whose chunk is not loaded is "
+                + "taken for Create's signal from now on", e);
+            return null;
+        }
+    }
+
+    /** Whether the table can be asked which head stands where: false without it, and once asking has failed. */
+    private static boolean hasTable() {
+        return Table.TYPE_AT != null && !typeAtFailed;
+    }
+
+    /**
      * The kind ({@link SignalLooks}) of the colour light signal of Create Train Next at {@code pos}, loaded
-     * or not, or null if there is none there or it is not known: from its block where the chunk is loaded,
-     * and from Create Train Next's table where it is not.
+     * or not, or null if there is none there or it is not known: from Create Train Next's table, which reads
+     * the block where the chunk is loaded. Without the table, only a head in a loaded chunk is known.
      */
     public static @Nullable String kind(ServerLevel level, BlockPos pos) {
-        Heads heads = HeadsHolder.HEADS_METHODS;
-        if (heads == null) {
-            Look look = look(level, pos);
-            return look == null ? null : look.kind();
+        if (!hasTable()) {
+            Read read = read(level, pos);
+            return read == null ? null : read.look().kind();
         }
-        try {
-            Object type = heads.typeAt().invoke(null, level.getServer(), level.dimension(), pos);
-            return type == null ? null : SignalLooks.light(((Enum<?>) type).name());
-        } catch (ReflectiveOperationException | RuntimeException e) {
-            warnHeads(e);
-            Look look = look(level, pos);
-            return look == null ? null : look.kind();
-        }
+        Object type = typeAt(level, pos);
+        return type == null ? null : SignalLooks.light(((Enum<?>) type).name());
     }
 
     /**
      * A number that changes when a colour light signal of Create Train Next is put up at one of the
      * positions of {@code signal}'s heads, taken down, or swapped for one of another kind, whether its chunk
-     * is loaded or not. It is 0 where Create Train Next keeps no table of its heads: then only a loaded head
-     * could be seen, and the number would change each time a player came near one. A part of
+     * is loaded or not. It is 0 where the table of heads cannot be asked: then only a loaded head could be
+     * seen, and the number would change each time a player came near one. A part of
      * {@link CreateNetwork#fingerprint}, made of hash codes, as it is.
      */
     static long kindsHash(@Nullable MinecraftServer server, SignalBoundary signal) {
-        if (server == null || signal.edgeLocation == null || HeadsHolder.HEADS_METHODS == null)
+        if (server == null || signal.edgeLocation == null || !hasTable())
             return 0;
         ServerLevel level = server.getLevel(signal.edgeLocation.getFirst().dimension);
         if (level == null)
@@ -224,18 +270,11 @@ public final class TrainNextSignals {
         for (boolean side : new boolean[] {true, false})
             for (BlockPos head : signal.blockEntities.get(side).keySet()) {
                 String kind = kind(level, head);
-                // Summed, as the heads are held in a hash map.
+                // Spread, so that kinds swapped between two heads do not give the same sum, and summed, as the heads are held in a hash map.
                 if (kind != null)
-                    hash += 31L * (31L * head.hashCode() + Boolean.hashCode(side)) + kind.hashCode();
+                    hash += CreateNetwork.spread(31L * (31L * head.hashCode() + Boolean.hashCode(side)) + kind.hashCode());
             }
-        return hash;
-    }
-
-    private static void warnHeads(Exception e) {
-        if (!headsFailed) {
-            headsFailed = true;
-            LOGGER.warn("Could not ask Create Train Next's table of signal heads; a head whose chunk is not loaded is "
-                + "taken for Create's signal", e);
-        }
+        // Asking may have failed on the way; the number is then 0, as from then on.
+        return hasTable() ? hash : 0;
     }
 }

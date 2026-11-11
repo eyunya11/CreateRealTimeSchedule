@@ -57,7 +57,8 @@ import net.minecraft.world.phys.Vec3;
  * nodes, in the order of {@link TrackKeys}. A curve is read as points about two blocks apart along
  * it, from Create's own table of where its segments are. A signal shows each way it has a head for:
  * the state Create gives that side, or, for a head that is a colour light signal of Create Train Next,
- * the aspect that signal shows ({@link TrainNextSignals}). In a chunk that is not loaded, read on the
+ * the aspect that signal shows ({@link TrainNextSignals}), the strictest of its heads on that side, as
+ * trains are held to the strictest. In a chunk that is not loaded, read on the
  * server, that is the aspect Create Train Next works out from the graph, where its table says which head
  * stands there. An aspect that cannot be had now, as with a Create Train Next from before that table, is
  * the one last read, as long as the signal is there.
@@ -250,7 +251,7 @@ public final class CreateMap {
                         continue;
                     // The first side is for the trains running from the first node of its place to the second.
                     Spot direction = first ? at.direction() : new Spot(-at.direction().x(), -at.direction().z());
-                    sides.add(side(signal, first, at.spot(), direction, level));
+                    sides.add(side(graph, signal, first, at.spot(), direction, level));
                 }
                 if (!sides.isEmpty())
                     signals.add(new Keyed<>(signal.getId().toString(), new LiveMap.Signal(key(at.edge()), at.spot(), sides)));
@@ -336,15 +337,10 @@ public final class CreateMap {
     }
 
     /** What one side of a signal shows. */
-    private static SignalSide side(SignalBoundary signal, boolean first, Spot at, Spot direction, @Nullable Level level) {
+    private static SignalSide side(TrackGraph graph, SignalBoundary signal, boolean first, Spot at, Spot direction,
+        @Nullable Level level) {
         boolean left = signal.blockEntities.get(first).keySet().stream().findFirst().map(block -> left(at, direction, block)).orElse(false);
-        TrainNextSignals.Look look = null;
-        if (level != null)
-            for (BlockPos head : signal.blockEntities.get(first).keySet()) {
-                look = TrainNextSignals.look(level, signal, first, head);
-                if (look != null)
-                    break;
-            }
+        TrainNextSignals.Look look = level == null ? null : TrainNextSignals.look(level, graph, signal, first);
         int side = first ? 0 : 1;
         synchronized (REMEMBERED) {
             TrainNextSignals.Look[] remembered = REMEMBERED.get(signal);

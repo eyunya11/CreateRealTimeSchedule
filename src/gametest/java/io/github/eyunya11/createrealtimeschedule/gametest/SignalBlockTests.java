@@ -15,6 +15,7 @@ import com.simibubi.create.content.trains.track.TrackTargetingBehaviour;
 import com.simibubi.create.foundation.blockEntity.behaviour.BlockEntityBehaviour;
 
 import io.github.eyunya11.createrealtimeschedule.Createrealtimeschedule;
+import io.github.eyunya11.createrealtimeschedule.map.SignalLooks;
 import io.github.eyunya11.createrealtimeschedule.map.TrackMap;
 import io.github.eyunya11.createrealtimeschedule.map.TrackMap.Spot;
 import io.github.eyunya11.createrealtimeschedule.railway.CreateMap;
@@ -79,6 +80,9 @@ public class SignalBlockTests {
     /** Outside the world border, so never loaded. */
     private static final BlockPos FAR = new BlockPos(30000000, 2, 29999984);
 
+    /** Another, as {@link #FAR}. */
+    private static final BlockPos FARTHER = new BlockPos(30000000, 2, 29999968);
+
     /**
      * A colour light signal of Create Train Next whose chunk is not loaded still holds trains to its
      * aspects, as Create Train Next keeps a table of which head stands where ({@code SignalHeads}); the
@@ -113,23 +117,57 @@ public class SignalBlockTests {
                 helper.assertTrue(firstSignal(helper).lights().isEmpty(), "a head never seen loaded is read as " + firstSignal(helper));
                 helper.assertValueEqual(before, CreateNetwork.fingerprint(graphs), "the fingerprint with a head never seen loaded");
 
+                Spot at = new Spot(helper.absolutePos(line.track(FIRST_X)).getX() + 0.5, helper.absolutePos(line.track(FIRST_X)).getZ() + 0.5);
+                TrackMap.SignalSide create = onTheMap(helper, graphs, at);
+                helper.assertValueEqual(SignalLooks.CREATE, create.kind(), "the kind on the map of a head never seen loaded");
+
                 heads("record", level, FAR, signalType("FIVE"));
                 helper.assertValueEqual(List.of(5), firstSignal(helper).lights().stream().toList(), "the aspects of the head that is not loaded");
                 helper.assertTrue(CreateNetwork.fingerprint(graphs) != before, "a head written into the table is a change of the track");
-                Spot at = new Spot(helper.absolutePos(line.track(FIRST_X)).getX() + 0.5, helper.absolutePos(line.track(FIRST_X)).getZ() + 0.5);
-                List<TrackMap.SignalSide> sides = CreateMap.read(graphs, List.of(), level.getServer()::getLevel).map().signals().stream()
-                    .filter(mark -> Math.hypot(mark.at().x() - at.x(), mark.at().z() - at.z()) <= 0.6)
-                    .flatMap(mark -> mark.sides().stream()).toList();
-                LOGGER.info("[{}] the first signal on the map: {}", helper.testInfo.getTestName(), sides);
-                helper.assertTrue(sides.stream().anyMatch(each -> each.kind().equals("light5") && !each.lamps().isEmpty()),
-                    "the map does not show the head that is not loaded: " + sides);
+                TrackMap.SignalSide five = onTheMap(helper, graphs, at);
+                helper.assertTrue(five.kind().equals("light5") && !five.lamps().isEmpty(), "the map does not show the head that is not loaded: " + five);
+
+                // A second head on the same side, of six aspects, which on the clear line shows a less strict aspect than the
+                // first: the map shows the stricter, whichever of the two positions it is at.
+                Object graph = heads("graphOf", signal[0]);
+                Enum<?> fiveShows = (Enum<?>) heads("resolve", graph, signal[0], side[0], signalType("FIVE"));
+                Enum<?> sixShows = (Enum<?>) heads("resolve", graph, signal[0], side[0], signalType("SIX"));
+                LOGGER.info("[{}] the head of five aspects shows {}, the one of six {}", helper.testInfo.getTestName(), fiveShows, sixShows);
+                helper.assertTrue(fiveShows.ordinal() < sixShows.ordinal(), "setup: the head of five aspects should show a stricter aspect");
+                signal[0].blockEntities.get(side[0]).put(FARTHER, false);
+                TrackMap.SignalSide both = null;
+                for (boolean fiveFar : new boolean[] {true, false}) {
+                    heads("record", level, FAR, signalType(fiveFar ? "FIVE" : "SIX"));
+                    heads("record", level, FARTHER, signalType(fiveFar ? "SIX" : "FIVE"));
+                    helper.assertValueEqual(List.of(5, 6), firstSignal(helper).lights().stream().toList(), "the aspects of the two heads");
+                    both = onTheMap(helper, graphs, at);
+                    helper.assertValueEqual("light5", both.kind(), "the kind on the map of two heads");
+                    helper.assertValueEqual(SignalLooks.aspect(fiveShows.name()), both.lamps(), "the lamps on the map of two heads");
+                }
+
+                // Heads on the two sides that swap their kinds are a change of the track.
+                signal[0].blockEntities.get(side[0]).remove(FARTHER);
+                signal[0].blockEntities.get(!side[0]).put(FARTHER, false);
+                long swapped = CreateNetwork.fingerprint(graphs);
+                heads("record", level, FAR, signalType("FIVE"));
+                heads("record", level, FARTHER, signalType("SIX"));
+                helper.assertValueEqual(List.of(5), firstSignal(helper).lights().stream().toList(), "the aspects of the head swapped");
+                helper.assertTrue(CreateNetwork.fingerprint(graphs) != swapped, "heads that swap their kinds are a change of the track");
 
                 heads("forget", level, FAR);
+                heads("forget", level, FARTHER);
+                signal[0].blockEntities.get(!side[0]).remove(FARTHER);
                 helper.assertTrue(firstSignal(helper).lights().isEmpty(), "a head taken out of the table is read as " + firstSignal(helper));
                 helper.assertValueEqual(before, CreateNetwork.fingerprint(graphs), "the fingerprint once the head is taken out");
+                // What cannot be had now is what was last read.
+                helper.assertValueEqual(both, onTheMap(helper, graphs, at), "the map once the head is taken out");
             } finally {
-                signal[0].blockEntities.get(side[0]).remove(FAR);
+                for (boolean each : new boolean[] {true, false}) {
+                    signal[0].blockEntities.get(each).remove(FAR);
+                    signal[0].blockEntities.get(each).remove(FARTHER);
+                }
                 heads("forget", level, FAR);
+                heads("forget", level, FARTHER);
             }
             helper.succeed();
         });
@@ -142,14 +180,22 @@ public class SignalBlockTests {
         return network.blocks().signals().get(alphaGamma.signals().get(0).signal());
     }
 
+    /** The one side the map shows of the signal at {@code at}. */
+    private static TrackMap.SignalSide onTheMap(GameTestHelper helper, Collection<TrackGraph> graphs, Spot at) {
+        List<TrackMap.SignalSide> sides = CreateMap.read(graphs, List.of(), helper.getLevel().getServer()::getLevel).map().signals().stream()
+            .filter(mark -> Math.hypot(mark.at().x() - at.x(), mark.at().z() - at.z()) <= 0.6)
+            .flatMap(mark -> mark.sides().stream()).toList();
+        LOGGER.info("[{}] the first signal on the map: {}", helper.testInfo.getTestName(), sides);
+        helper.assertValueEqual(1, sides.size(), "the sides of the first signal on the map: " + sides);
+        return sides.get(0);
+    }
+
     /** Calls a static method of Create Train Next's {@code SignalHeads}, which this does not compile against. */
-    private static void heads(String method, Object... arguments) {
+    private static Object heads(String method, Object... arguments) {
         try {
             for (Method each : Class.forName("com.eyunya.createtrainnext.signal.SignalHeads").getMethods())
-                if (each.getName().equals(method) && each.getParameterCount() == arguments.length) {
-                    each.invoke(null, arguments);
-                    return;
-                }
+                if (each.getName().equals(method) && each.getParameterCount() == arguments.length)
+                    return each.invoke(null, arguments);
             throw new AssertionError("Create Train Next's SignalHeads has no " + method);
         } catch (ReflectiveOperationException e) {
             throw new AssertionError("could not call SignalHeads." + method, e);
