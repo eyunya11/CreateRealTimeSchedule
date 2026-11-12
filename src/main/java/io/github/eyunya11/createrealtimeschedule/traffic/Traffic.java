@@ -41,7 +41,8 @@ import io.github.eyunya11.createrealtimeschedule.travel.TrainSpec;
  * signal are worked out here every tick, where the game does so every half second.
  *
  * <p>A train that falls ten minutes behind ({@link #TOO_LATE_TICKS}) is taken off the line, and the leg
- * it was on is one it never arrives at the end of.
+ * it was on is one it never arrives at the end of; one that starts late ({@link Run#lateBy}) is taken off
+ * once it falls ten minutes behind that.
  *
  * <p>The trains are taken in the order Create takes its own in: first those waiting for a signal, the
  * one that has waited longest first, and then those on the move, in the order they came onto the line
@@ -100,12 +101,20 @@ public final class Traffic {
      * @param stints   its legs, in order, each from where the one before ends
      * @param stays    whether it stands where its last leg ends for the rest of the day, taking up its
      *                 blocks, as a set in its depot does; or is taken off the line there
+     * @param lateBy   how many ticks after the time of its first leg it leaves the start of that leg, as
+     *                 a set that is late already does; it is taken off for being too late only once it
+     *                 falls {@link #TOO_LATE_TICKS} behind that
      */
-    public record Run(String name, TrainSpec spec, double throttle, List<Stint> stints, boolean stays) {
+    public record Run(String name, TrainSpec spec, double throttle, List<Stint> stints, boolean stays, long lateBy) {
 
         /** A train taken off the line where its last leg ends. */
         public Run(String name, TrainSpec spec, double throttle, List<Stint> stints) {
             this(name, spec, throttle, stints, false);
+        }
+
+        /** A train that leaves the start of its first leg on time. */
+        public Run(String name, TrainSpec spec, double throttle, List<Stint> stints, boolean stays) {
+            this(name, spec, throttle, stints, stays, 0);
         }
 
         public Run {
@@ -184,7 +193,8 @@ public final class Traffic {
     /**
      * How the trains went: for each {@link Run}, in order, a trip for each of its legs it set out on, or
      * was to set out on and was taken off before it did. A train that never arrived somewhere has a trip
-     * that says so, and none for the legs after.
+     * that says so, and none for the legs after. A leg a train was still on when the simulation stopped
+     * at its end ({@link #run(SignalBlocks, List, long)}) has no trip: how it would have gone is not known.
      *
      * @param finished whether the simulation ran to the end, and did not give up after {@link #MAX_STEPS};
      *                 the trips of one that gave up are not to be gone by
@@ -197,12 +207,20 @@ public final class Traffic {
 
     /** Runs the trains of {@code runs} on the signal blocks of their network; those that come onto the line together, in that order. */
     public static Result run(SignalBlocks blocks, List<Run> runs) {
-        return run(blocks, runs, MAX_STEPS);
+        return run(blocks, runs, Long.MAX_VALUE);
+    }
+
+    /**
+     * {@link #run(SignalBlocks, List)}, up to the tick {@code until} and no further: a train still on its
+     * way then has no trip for that leg, nor any for the legs after.
+     */
+    public static Result run(SignalBlocks blocks, List<Run> runs, long until) {
+        return run(blocks, runs, until, MAX_STEPS);
     }
 
     /** {@link #run(SignalBlocks, List)}, giving up after {@code maxSteps} moves of a train. */
-    static Result run(SignalBlocks blocks, List<Run> runs, long maxSteps) {
-        return new Traffic(blocks, runs).simulate(maxSteps);
+    static Result run(SignalBlocks blocks, List<Run> runs, long until, long maxSteps) {
+        return new Traffic(blocks, runs).simulate(until, maxSteps);
     }
 
     private final SignalBlocks blocks;
@@ -263,13 +281,14 @@ public final class Traffic {
         return crossing;
     }
 
-    private Result simulate(long maxSteps) {
+    private Result simulate(long until, long maxSteps) {
         if (trains.isEmpty())
             return new Result(List.of(), true);
         now = coming.getFirst().appears();
-        long giveUp = trains.stream().flatMap(train -> train.run.stints().stream()).mapToLong(Stint::departs).max().orElseThrow()
-            + GIVE_UP_TICKS;
-        while (now <= giveUp && (nextToCome < coming.size() || !waiting.isEmpty() || !moving.isEmpty())) {
+        long giveUp = trains.stream()
+            .mapToLong(train -> train.run.stints().stream().mapToLong(Stint::departs).max().orElseThrow() + Math.max(0, train.run.lateBy()))
+            .max().orElseThrow() + GIVE_UP_TICKS;
+        while (now <= giveUp && now <= until && (nextToCome < coming.size() || !waiting.isEmpty() || !moving.isEmpty())) {
             if (steps > maxSteps)
                 break;
             if (tick()) {
@@ -289,9 +308,10 @@ public final class Traffic {
                 break;
             now = next;
         }
+        boolean cut = now > until;
         List<List<Trip>> trips = new ArrayList<>();
         for (Train train : trains) {
-            if (train.drive != null)
+            if (train.drive != null && !cut)
                 train.trips.add(new Trip(train.departed, Trip.NOT_ARRIVED, train.free, train.waits));
             trips.add(train.trips);
         }
@@ -330,7 +350,7 @@ public final class Traffic {
             if (train.drive == null) {
                 if (now <= train.leaves)
                     continue;
-                if (train.leaves - train.run.stints().get(train.stint).departs() > TOO_LATE_TICKS) {
+                if (train.leaves - train.run.stints().get(train.stint).departs() > TOO_LATE_TICKS + Math.max(0, train.run.lateBy())) {
                     train.dropBeforeLeaving();
                     changed = true;
                     continue;
@@ -710,12 +730,12 @@ public final class Traffic {
         }
 
         long appears() {
-            return run.stints().getFirst().departs();
+            return run.stints().getFirst().departs() + run.lateBy();
         }
 
         void appear() {
             moving.add(this);
-            leaves = run.stints().getFirst().departs();
+            leaves = appears();
             atStation = true;
         }
 
