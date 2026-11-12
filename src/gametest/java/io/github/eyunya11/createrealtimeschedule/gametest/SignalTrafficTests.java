@@ -20,7 +20,9 @@ import com.simibubi.create.foundation.blockEntity.behaviour.BlockEntityBehaviour
 import io.github.eyunya11.createrealtimeschedule.Createrealtimeschedule;
 import io.github.eyunya11.createrealtimeschedule.operation.Call;
 import io.github.eyunya11.createrealtimeschedule.operation.DutyPlan;
+import io.github.eyunya11.createrealtimeschedule.operation.DutyRun;
 import io.github.eyunya11.createrealtimeschedule.operation.Forecast;
+import io.github.eyunya11.createrealtimeschedule.operation.LiveTraffic;
 import io.github.eyunya11.createrealtimeschedule.operation.OperationData;
 import io.github.eyunya11.createrealtimeschedule.operation.RunTimes;
 import io.github.eyunya11.createrealtimeschedule.operation.TimetableTraffic;
@@ -69,6 +71,11 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
  * signal blocks from the track, the simulation of the timetable holds the train behind up, and the
  * forecast of its way adds that to the track's running time.
  *
+ * <p>The operation also runs the sets of its duties on from where they are, late as they are
+ * ({@code thesetsarerunonfromwheretheyare}): with the train behind a minute after the one ahead in the
+ * timetable, the signals hold neither up on time, but with the set ahead a minute late both leave
+ * together, and the run of the sets from there holds the one behind up, and its forecast with it.
+ *
  * <p>Each test has a batch of its own (see {@link TrackLine}).
  */
 @GameTestHolder(Createrealtimeschedule.MODID)
@@ -94,13 +101,20 @@ public class SignalTrafficTests {
         if (!ModList.get().isLoaded("createtrainnext"))
             return List.of();
         return List.of(new TestFunction("realtimesignaltraffic_behind", "signaltraffictests.atrainbehindanotherasthesimulationhasit",
-                LONG_TRACK_LINE, TIMEOUT_TICKS, 0, true, helper -> new Run(helper, false).begin()),
+                LONG_TRACK_LINE, TIMEOUT_TICKS, 0, true, helper -> new Run(helper, Mode.TRAINS).begin()),
             new TestFunction("realtimesignaltraffic_forecast", "signaltraffictests.theoperationforecastswiththesignals",
-                LONG_TRACK_LINE, TIMEOUT_TICKS, 0, true, helper -> new Run(helper, true).begin()));
+                LONG_TRACK_LINE, TIMEOUT_TICKS, 0, true, helper -> new Run(helper, Mode.FORECAST).begin()),
+            new TestFunction("realtimesignaltraffic_live", "signaltraffictests.thesetsarerunonfromwheretheyare",
+                LONG_TRACK_LINE, TIMEOUT_TICKS, 0, true, helper -> new Run(helper, Mode.LIVE).begin()));
+    }
+
+    /** What a test does: send the two trains, or work out the forecast for a timetable on time, or for sets that are late. */
+    private enum Mode {
+        TRAINS, FORECAST, LIVE
     }
 
     private enum Phase {
-        SET_UP, WAIT_FOR_LIGHTS, RUN, FORECAST
+        SET_UP, WAIT_FOR_LIGHTS, RUN, FORECAST, LIVE
     }
 
     /** What is known of a train once it moves: when it started and where its front was then. */
@@ -128,15 +142,18 @@ public class SignalTrafficTests {
         private Started ahead;
         private SignalBlocks blocks;
         private final List<Started> order = new ArrayList<>();
-        /** Whether this is the test of the forecast, which sends no train. */
-        private final boolean forecast;
+        /** Which test this is: those of the forecasts send no train. */
+        private final Mode mode;
         /** For the test of the forecast: the timetable, and the operation's data the simulation is run for. */
         private Timetable timetable;
         private OperationData data;
 
-        Run(GameTestHelper helper, boolean forecast) {
+        /** For the test of the sets run on from where they are: the clock value they are run from. */
+        private long now;
+
+        Run(GameTestHelper helper, Mode mode) {
             this.helper = helper;
-            this.forecast = forecast;
+            this.mode = mode;
             this.level = helper.getLevel();
             this.line = new TrackLine(helper, 310, STATION_X, NAMES).parkATrainAt(1);
         }
@@ -159,6 +176,7 @@ public class SignalTrafficTests {
                 case WAIT_FOR_LIGHTS -> waitForLights();
                 case RUN -> run();
                 case FORECAST -> forecast();
+                case LIVE -> live();
             }
         }
 
@@ -201,8 +219,12 @@ public class SignalTrafficTests {
                 return;
             }
 
-            if (forecast) {
+            if (mode == Mode.FORECAST) {
                 startForecast();
+                return;
+            }
+            if (mode == Mode.LIVE) {
+                startLive(parked);
                 return;
             }
             RailNetwork network = CreateNetwork.read(Create.RAILWAYS.trackNetworks.values());
@@ -267,6 +289,63 @@ public class SignalTrafficTests {
             helper.assertTrue(data.traffic(List.of(0L, 1)) == null, "the simulation is kept for another minimum stop and train length");
             data.forgetAxes();
             helper.assertTrue(data.traffic() == null, "the simulation is kept after the track facts are dropped");
+            helper.succeed();
+        }
+
+        /**
+         * Duty 1 from Beta for Delta at 0:00:00 and duty 2 from Alpha for Gamma at 0:01:00: on time, a
+         * minute apart. Duty 1 goes on from Delta to Epsilon, which is not on the track, so its set is taken
+         * off at Delta and does not stand there in the way. At 0:01:00 the set of duty 1 is still at Beta,
+         * a minute late, and that of duty 2 is at Alpha on time: both leave now, and the sets are run on
+         * from there.
+         */
+        private void startLive(Train parked) {
+            timetable = new Timetable("late", List.of(new Timetable.Line("L", "L", List.of(NAMES), false)),
+                List.of(new Timetable.Train("1", "L", "", List.of(Timetable.Stop.leaving("Beta", 0), Timetable.Stop.calling("Delta", 60, 70),
+                        Timetable.Stop.arriving("Epsilon", 120))),
+                    new Timetable.Train("2", "L", "", List.of(Timetable.Stop.leaving("Alpha", 60), Timetable.Stop.arriving("Gamma", 120)))),
+                List.of(new Timetable.Duty("1", "Beta", List.of("1")), new Timetable.Duty("2", "Alpha", List.of("2"))));
+            data = new OperationData();
+            now = DutyPlan.at(0, 60);
+            data.runs().put(parked.id, DutyRun.start("1", 0, calls("1"), now));
+            data.runs().put(line.train().id, DutyRun.start("2", 0, calls("2"), now));
+            TrackFacts.traffic(data, timetable);
+            TrackFacts.runLive(data, timetable, now);
+            helper.assertTrue(data.pendingLive(TrackFacts.trafficKey()) != null, "the sets are not being run on");
+            helper.assertTrue(TrackFacts.live(data, timetable, now) == LiveTraffic.NONE, "the sets are run on in the tick that asks for it");
+            enter(Phase.LIVE);
+        }
+
+        private List<Call> calls(String duty) {
+            return DutyPlan.calls(timetable, timetable.duties().stream().filter(d -> d.id().equals(duty)).findFirst().orElseThrow());
+        }
+
+        /** Once both runs are done: the set behind is held up from where the sets are, and not on time. */
+        private void live() {
+            TimetableTraffic traffic = TrackFacts.traffic(data, timetable);
+            LiveTraffic live = TrackFacts.live(data, timetable, now);
+            if (data.traffic(TrackFacts.trafficKey()) == null || live == LiveTraffic.NONE) {
+                if (phaseTicks > 400)
+                    helper.fail("the runs of the trains are not done after " + phaseTicks + " ticks");
+                return;
+            }
+            helper.assertTrue(traffic.finished() && live.finished(), "a run of the trains did not finish");
+            helper.assertValueEqual(now, live.from(), "the clock value the sets are run on from");
+            helper.assertValueEqual(0L, traffic.signalTicks("2", 0), "ticks the signals hold train 2 up on time");
+            LiveTraffic.Key behindKey = new LiveTraffic.Key("2", 0, 0);
+            long signals = live.signalTicks(behindKey).orElse(-1);
+            LOGGER.info("[{}] from where the sets are, the signals hold train 2 up {} ticks, train 1 {}", helper.testInfo.getTestName(),
+                signals, live.signalTicks(new LiveTraffic.Key("1", 0, 0)));
+            helper.assertTrue(signals >= SLOWED_AT_LEAST, "the signals hold the set behind up only " + signals + " ticks");
+            helper.assertValueEqual(now, live.trip(new LiveTraffic.Key("1", 0, 0)).orElseThrow().departed(), "when the late set leaves Beta");
+            List<Call> calls = calls("2");
+            RunTimes track = TrackFacts.fastestTimes(TrackFacts.legs(data, timetable));
+            RunTimes onTime = TrackFacts.withSignals(data, timetable, track);
+            helper.assertValueEqual(Forecast.runTicks(calls, 0, track), Forecast.runTicks(calls, 0, onTime), "the forecast on time");
+            helper.assertValueEqual(Forecast.runTicks(calls, 0, track) + signals,
+                Forecast.runTicks(calls, 0, live.on(onTime, "2", 0, calls)), "the forecast of the way of the set behind");
+            data.forgetAxes();
+            helper.assertTrue(TrackFacts.live(data, timetable, now) == LiveTraffic.NONE, "the sets run on are kept after the track facts are dropped");
             helper.succeed();
         }
 
