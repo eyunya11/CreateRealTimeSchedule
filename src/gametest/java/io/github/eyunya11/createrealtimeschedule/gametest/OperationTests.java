@@ -228,7 +228,8 @@ public class OperationTests {
      * A 15 minutes late: more than the threshold of 10 minutes, and it would make up only about a
      * minute a lap. It is held at A until the first later call there that it can leave within the
      * threshold, and the laps in between are cancelled; it stands at A until then, and leaves at that
-     * time.
+     * time. Whether to hold it is put off until the sets have been run on from when it came in
+     * ({@link OperationData#heldBack}), which the track's one signal block is enough for.
      */
     @GameTest(template = TURN, batch = "realtimeoperation_held", timeoutTicks = 6000)
     public static void aLateSetIsHeldAtAStationUntilItCanLeaveWithinTheThreshold(GameTestHelper helper) {
@@ -240,6 +241,7 @@ public class OperationTests {
             boolean jumped;
             int heldTo = -1;
             long leaves;
+            boolean putOff;
 
             @Override
             boolean watch(OperationData data, long now) {
@@ -257,6 +259,11 @@ public class OperationTests {
                 if (heldTo < 0) {
                     if (run.call() < 1 || run.phase() == DutyRun.Phase.RUNNING)
                         return false;
+                    if (data.heldBack().containsKey(outer.train().id)) {
+                        putOff = true;
+                        return false;
+                    }
+                    helper.assertTrue(putOff, "whether to hold the set was not put off until the sets were run on");
                     log(run);
                     // The first later call at A that the set can leave within 10 minutes of its time, standing 20 seconds at the least.
                     long arrived = run.arrivals().get(1);
@@ -297,7 +304,8 @@ public class OperationTests {
     /**
      * The timetable is loaded at 12:00, after 1A was to start at 11:47. It still starts, late, with the
      * set that is free at the depot, and since it comes into A 13 minutes late, it is held there until
-     * its first later call it can leave within 10 minutes; the laps in between are cancelled.
+     * its first later call it can leave within 10 minutes; the laps in between are cancelled. Whether
+     * to hold it is put off until the sets have been run on from when it came in.
      */
     @GameTest(template = TURN, batch = "realtimeoperation_loaded_late", timeoutTicks = 6000)
     public static void aDutyThatWasToStartBeforeTheTimetableWasLoadedStartsLate(GameTestHelper helper) {
@@ -320,7 +328,7 @@ public class OperationTests {
                     return false;
                 }
                 if (leaves == 0) {
-                    if (run.call() < 1 || run.phase() == DutyRun.Phase.RUNNING)
+                    if (run.call() < 1 || run.phase() == DutyRun.Phase.RUNNING || data.heldBack().containsKey(outer.train().id))
                         return false;
                     log(run);
                     helper.assertTrue(run.call() == 5 && run.skipped().equals(List.of(2, 3, 4)),

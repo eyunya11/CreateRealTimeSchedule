@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.OptionalInt;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -19,6 +20,7 @@ import com.simibubi.create.content.trains.graph.EdgePointType;
 import com.simibubi.create.content.trains.graph.TrackGraph;
 import com.simibubi.create.content.trains.station.GlobalStation;
 
+import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 
 import com.mojang.logging.LogUtils;
@@ -33,6 +35,7 @@ import io.github.eyunya11.createrealtimeschedule.railway.SignalBlocks;
 import io.github.eyunya11.createrealtimeschedule.tag.TrackTagData;
 import io.github.eyunya11.createrealtimeschedule.tag.TrackTags;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable;
+import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Duty;
 import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Line;
 import io.github.eyunya11.createrealtimeschedule.traffic.Traffic;
 import io.github.eyunya11.createrealtimeschedule.travel.TrainSpec;
@@ -199,15 +202,7 @@ public final class TrackFacts {
             data.traffic(done, key);
             return done;
         }
-        TrainSpec spec = null;
-        for (Supplier<TrainSpec> each : List.<Supplier<TrainSpec>>of(TrainSpecs::unpowered, TrainSpecs::powered)) {
-            try {
-                spec = each.get();
-                break;
-            } catch (IllegalArgumentException e) {
-                // no train of that kind moves
-            }
-        }
+        TrainSpec spec = onTimeSpec();
         if (spec == null || data.blocks().count() == 0) {
             data.traffic(TimetableTraffic.NONE, key);
             return TimetableTraffic.NONE;
@@ -218,6 +213,107 @@ public final class TrackFacts {
         TrainSpec runSpec = spec;
         data.pendingTraffic(CompletableFuture.supplyAsync(() -> run(timetable, legs, blocks, runSpec, minimumStop, length), TRAFFIC), key);
         return TimetableTraffic.NONE;
+    }
+
+    /** How fast the trains on time are run with the signals: a train without fuel, or with if none without moves; null if none moves. */
+    private static @Nullable TrainSpec onTimeSpec() {
+        for (Supplier<TrainSpec> each : List.<Supplier<TrainSpec>>of(TrainSpecs::unpowered, TrainSpecs::powered)) {
+            try {
+                return each.get();
+            } catch (IllegalArgumentException e) {
+                // no train of that kind moves
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The sets of the duties as last run on from where they were with the signals ({@link #runLive}): a
+     * run done since is taken, and the next started if a set has come in while it was going.
+     * {@link LiveTraffic#NONE} until one is done, or once the ways between stations, the timetable or the
+     * server's config has changed since. Once no set is late ({@link LiveTraffic#anyLate}), the sets run
+     * as the trains of the timetable do: what was run on from where they were, and any such run going,
+     * is let go, and this is {@link LiveTraffic#NONE}.
+     */
+    public static LiveTraffic live(OperationData data, Timetable timetable, long now) {
+        if (!LiveTraffic.anyLate(data.runs().values(), now)) {
+            data.forgetLive();
+            return LiveTraffic.NONE;
+        }
+        List<Object> key = trafficKey();
+        CompletableFuture<LiveTraffic> pending = data.pendingLive(key);
+        if (pending != null && pending.isDone()) {
+            data.live(pending.join(), key);
+            if (data.liveWanted())
+                runLive(data, timetable, now);
+        }
+        return data.live(key);
+    }
+
+    /**
+     * Starts running the sets of the duties on from where they are at {@code now} with the signals
+     * ({@link LiveTraffic}), with the duties that are to start on time within the hour, on the thread the
+     * trains of the timetable are run on: unless such a run is going, when the next is started once it is
+     * done ({@link #live}). A set at its own speed and throttle; one that cannot move is left out, as are
+     * the trains of no duty. Nothing is run on a network without signals, nor if no train of Create's
+     * config moves.
+     *
+     * @return whether a run of the sets is going now: if not, none could be started
+     */
+    public static boolean runLive(OperationData data, Timetable timetable, long now) {
+        List<Object> key = trafficKey();
+        CompletableFuture<LiveTraffic> pending = data.pendingLive(key);
+        if (pending != null && !pending.isDone()) {
+            data.liveWanted(true);
+            return true;
+        }
+        TrainSpec spec = onTimeSpec();
+        Map<List<String>, Leg> legs = legs(data, timetable);
+        if (legs == null || data.blocks().count() == 0 || spec == null)
+            return false;
+        // All that the run reads is taken here, on the server's thread.
+        List<LiveTraffic.Running> running = new ArrayList<>();
+        for (Map.Entry<UUID, DutyRun> entry : data.runs().entrySet()) {
+            DutyRun run = entry.getValue();
+            Train train = Create.RAILWAYS.trains.get(entry.getKey());
+            if (train == null || run.finished())
+                continue;
+            try {
+                running.add(LiveTraffic.Running.of(run, now, TrainSpecs.of(train), train.throttle));
+            } catch (IllegalArgumentException e) {
+                // Create's config leaves it no speed
+            }
+        }
+        List<LiveTraffic.Coming> coming = new ArrayList<>();
+        for (Duty duty : timetable.duties()) {
+            List<Call> calls = data.calls(duty.id());
+            if (calls == null)
+                continue;
+            for (DutyCalendar.Start start : DutyCalendar.due(duty.id(), DutyPlan.firstDeparture(calls), data.lastDay(duty.id()), now,
+                LiveTraffic.HORIZON_TICKS))
+                if (!start.missedBy(now))
+                    coming.add(new LiveTraffic.Coming(duty.id(), start.day(), calls));
+        }
+        SignalBlocks blocks = data.blocks();
+        long minimumStop = (long) key.get(0);
+        int length = (int) key.get(1);
+        // Cancelled when it is let go (OperationData#pendingLive), the run gives up.
+        CompletableFuture<LiveTraffic> job = new CompletableFuture<>();
+        TRAFFIC.execute(() -> {
+            try {
+                LiveTraffic live = LiveTraffic.of(timetable, running, coming, legs, blocks, spec, minimumStop, length, now, job::isCancelled);
+                if (!live.finished() && !job.isCancelled())
+                    LOGGER.warn("The sets of the duties hold one another up at the signals too much to work out in time; "
+                        + "the forecasts take the signals as for the trains on time");
+                job.complete(live);
+            } catch (RuntimeException e) {
+                LOGGER.error("Could not run the sets of the duties on with the signals; the forecasts take the signals as for the trains on time", e);
+            } finally {
+                job.complete(LiveTraffic.unknown(now));
+            }
+        });
+        data.pendingLive(job, key);
+        return true;
     }
 
     /** {@link TimetableTraffic#of}, timed for the log; {@link TimetableTraffic#NONE} if it fails. */

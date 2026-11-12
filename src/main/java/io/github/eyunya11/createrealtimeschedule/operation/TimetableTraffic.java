@@ -76,9 +76,7 @@ public final class TimetableTraffic {
         long defaultMinimumStop, int defaultLength) {
         List<Run> runs = new ArrayList<>();
         List<List<Key>> keys = new ArrayList<>();
-        Map<String, Train> byNumber = new HashMap<>();
-        for (Train train : timetable.trains())
-            byNumber.putIfAbsent(train.number(), train);
+        Map<String, Train> byNumber = byNumber(timetable);
         Set<String> inDuties = new HashSet<>();
         List<Duty> sets = new ArrayList<>();
         Set<Duty> duties = new HashSet<>(timetable.duties());
@@ -97,20 +95,12 @@ public final class TimetableTraffic {
                 // A duty of a train that is not there: the timetable has a problem, and the set is left out.
                 continue;
             }
-            List<Stint> stints = new ArrayList<>();
+            List<Stint> stints = stints(calls, 0, 0, legs, byNumber, defaultMinimumStop, defaultLength);
             List<Key> legKeys = new ArrayList<>();
             int stop = 0;
-            for (int i = 0; i + 1 < calls.size(); i++) {
+            for (int i = 0; i < stints.size(); i++) {
                 Call call = calls.get(i);
-                boolean newTrain = i == 0 || !call.leavingTrain().equals(call.arrivingTrain());
-                stop = newTrain ? 0 : stop + 1;
-                Leg leg = legs.get(List.of(call.station(), calls.get(i + 1).station(), call.tag()));
-                if (leg == null || !call.hasDepart())
-                    break;
-                Train train = byNumber.get(call.leavingTrain());
-                int length = train == null ? defaultLength : train.lengthOr(defaultLength);
-                stints.add(new Stint(leg, DutyPlan.at(0, call.depart()), i == 0 ? 0 : DutyPlan.minimumStop(call, defaultMinimumStop),
-                    newTrain, length));
+                stop = newTrain(calls, i) ? 0 : stop + 1;
                 legKeys.add(new Key(call.leavingTrain(), stop));
             }
             if (stints.isEmpty())
@@ -126,6 +116,43 @@ public final class TimetableTraffic {
                 trips.put(keys.get(run).get(i), ran.get(i));
         }
         return new TimetableTraffic(result.finished() ? trips : Map.of(), result.finished());
+    }
+
+    /** The trains of {@code timetable} by their numbers: the first of each number. */
+    static Map<String, Train> byNumber(Timetable timetable) {
+        Map<String, Train> byNumber = new HashMap<>();
+        for (Train train : timetable.trains())
+            byNumber.putIfAbsent(train.number(), train);
+        return byNumber;
+    }
+
+    /** Whether a train of the timetable starts at call {@code call} of {@code calls}: the set leaves it as another than it came in as. */
+    static boolean newTrain(List<Call> calls, int call) {
+        return call == 0 || !calls.get(call).leavingTrain().equals(calls.get(call).arrivingTrain());
+    }
+
+    /**
+     * The legs a set runs from call {@code from} of {@code calls} on, on service {@code day}, one for each
+     * call it leaves, in order: up to the first call that has no departure or no way on the track to the
+     * next. It stands at call {@code from} from the start, so has no minimum stop there.
+     *
+     * @param legs     the ways between stations, by their two ends and the track tag
+     * @param byNumber the trains of the timetable, by number ({@link #byNumber}), for their lengths
+     */
+    static List<Stint> stints(List<Call> calls, int from, long day, Map<List<String>, Leg> legs, Map<String, Train> byNumber,
+        long defaultMinimumStop, int defaultLength) {
+        List<Stint> stints = new ArrayList<>();
+        for (int i = from; i + 1 < calls.size(); i++) {
+            Call call = calls.get(i);
+            Leg leg = legs.get(List.of(call.station(), calls.get(i + 1).station(), call.tag()));
+            if (leg == null || !call.hasDepart())
+                break;
+            Train train = byNumber.get(call.leavingTrain());
+            int length = train == null ? defaultLength : train.lengthOr(defaultLength);
+            stints.add(new Stint(leg, DutyPlan.at(day, call.depart()), i == from ? 0 : DutyPlan.minimumStop(call, defaultMinimumStop),
+                newTrain(calls, i), length));
+        }
+        return stints;
     }
 
     /** How the leg from stop {@code stop} of {@code train} to the next went, if the train set out on it or was taken off before it could. */

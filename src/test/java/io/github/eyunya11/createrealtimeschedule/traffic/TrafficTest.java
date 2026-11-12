@@ -168,6 +168,58 @@ class TrafficTest {
     }
 
     /**
+     * A train that starts late leaves its first station that long after its time, and is taken off for
+     * being too late only once it falls ten minutes behind that: it is on time again, by that delay, at
+     * the next station.
+     */
+    @Test
+    void aTrainThatStartsLateIsTakenOffOnlyTenMinutesBehindThat() {
+        RailNetwork network = TestLines.line(0, null, 10, 450, 950);
+        Leg ab = leg(network, "A", "B");
+        int free = ab.ticks(SPEC, 1, OptionalInt.empty()).getAsInt();
+        long late = Traffic.TOO_LATE_TICKS + 2000;
+        Run run = new Run("late", SPEC, 1, List.of(first(ab, 100), new Stint(leg(network, "B", "C"), 100 + free + 60, 60, false, LENGTH)),
+            false, late);
+        List<Trip> trips = Traffic.run(network.blocks(), List.of(run)).trips().getFirst();
+        assertEquals(100 + late, trips.getFirst().departed(), "it leaves A that late");
+        assertEquals(2, trips.size());
+        assertEquals(trips.getFirst().arrived() + 60, trips.get(1).departed(), "it stands at B only for its minimum stop");
+        assertTrue(trips.get(1).hasArrived(), "it is not taken off at B");
+    }
+
+    /**
+     * A run up to a tick stops there: the leg a train is still on has no trip, where the whole run says
+     * it arrives.
+     */
+    @Test
+    void aRunUpToATickLeavesOutTheLegTrainsAreStillOn() {
+        RailNetwork network = TestLines.line(0, null, 10, 450, 950);
+        Leg ab = leg(network, "A", "B");
+        int free = ab.ticks(SPEC, 1, OptionalInt.empty()).getAsInt();
+        Run run = run("cut", SPEC, first(ab, 0), then(leg(network, "B", "C"), free + 100));
+        List<Trip> trips = Traffic.run(network.blocks(), List.of(run), free + 200).trips().getFirst();
+        assertEquals(1, trips.size(), "the leg from B is not done by then");
+        assertTrue(trips.getFirst().hasArrived());
+        List<Trip> whole = Traffic.run(network.blocks(), List.of(run)).trips().getFirst();
+        assertEquals(2, whole.size());
+        assertTrue(whole.get(1).hasArrived());
+    }
+
+    /** A run told to stop gives up there, as one that has gone on too long does: it has not finished. */
+    @Test
+    void aRunToldToStopHasNotFinished() {
+        RailNetwork network = TestLines.line(0, null, 10, 450, 950);
+        Leg ab = leg(network, "A", "B");
+        int free = ab.ticks(SPEC, 1, OptionalInt.empty()).getAsInt();
+        Run run = run("stopped", SPEC, first(ab, 0), then(leg(network, "B", "C"), free + 100));
+        int[] asked = {0};
+        Traffic.Result stopped = Traffic.run(network.blocks(), List.of(run), Long.MAX_VALUE, () -> ++asked[0] > 10);
+        assertFalse(stopped.finished());
+        assertEquals(11, asked[0], "it stops the first time it is told to");
+        assertTrue(Traffic.run(network.blocks(), List.of(run), Long.MAX_VALUE, () -> false).finished());
+    }
+
+    /**
      * A signal at the stop marker a train stops at is passed, as the leg has it: with a train standing two
      * blocks on, the signal at B shows 警戒 where the one before showed 注意, and the train leaves B still
      * held to 25 km/h.
@@ -214,7 +266,7 @@ class TrafficTest {
         RailNetwork network = TestLines.line(5, SignalBlocks.LightSpeeds.DEFAULT, 10, 900);
         Leg way = leg(network, "A", "B");
         List<Run> runs = List.of(run("first", SPEC, first(way, 0)), run("second", SPEC, first(way, 200)));
-        assertFalse(Traffic.run(network.blocks(), runs, 100).finished());
+        assertFalse(Traffic.run(network.blocks(), runs, Long.MAX_VALUE, 100).finished());
         assertTrue(Traffic.run(network.blocks(), runs).finished());
     }
 

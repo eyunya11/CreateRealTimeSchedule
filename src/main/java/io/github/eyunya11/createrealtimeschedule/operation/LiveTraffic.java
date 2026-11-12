@@ -1,0 +1,237 @@
+package io.github.eyunya11.createrealtimeschedule.operation;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.OptionalInt;
+import java.util.OptionalLong;
+import java.util.function.BooleanSupplier;
+
+import io.github.eyunya11.createrealtimeschedule.railway.Leg;
+import io.github.eyunya11.createrealtimeschedule.railway.SignalBlocks;
+import io.github.eyunya11.createrealtimeschedule.timetable.Timetable;
+import io.github.eyunya11.createrealtimeschedule.timetable.Timetable.Train;
+import io.github.eyunya11.createrealtimeschedule.traffic.Traffic;
+import io.github.eyunya11.createrealtimeschedule.traffic.Traffic.Run;
+import io.github.eyunya11.createrealtimeschedule.traffic.Traffic.Stint;
+import io.github.eyunya11.createrealtimeschedule.traffic.Traffic.Trip;
+import io.github.eyunya11.createrealtimeschedule.travel.TrainSpec;
+
+/**
+ * The sets of the duties running now, run on from where they are with the signals between them
+ * ({@link Traffic}), for an hour ({@link #HORIZON_TICKS}): what the signals add to each of their ways,
+ * late as they are, where {@link TimetableTraffic} has the trains on time. It has no Minecraft types in
+ * it so that it can be tested without a game.
+ *
+ * <p>A set that stands at a call leaves it when it is to, or now if that has gone by; one on its way
+ * left the call before when it did, and is put on the line from there as if nothing had held it up
+ * since. From there each runs the calls of its duty that are left, at its own speed and throttle, and
+ * leaves each at the timetable's time, or after its minimum stop if it comes in late, as a set does.
+ * It starts under no limit of a sign or a signal, as a train of the timetable does. A duty that is to
+ * start within the hour starts on time, at the speed the trains on time run at. A set that falls ten
+ * minutes behind the delay it starts with is taken off the line. The trains that run no duty, and the
+ * sets that stand at their depots, are not on the line: what they do is not known. Nor are the waits
+ * for other trains: a set leaves without them.
+ */
+public final class LiveTraffic {
+
+    /** How far ahead the sets are run, in ticks: an hour. */
+    public static final long HORIZON_TICKS = 20L * 60 * 60;
+
+    /**
+     * How far behind the timetable a set is to be, in ticks, for the sets to be run on from where they
+     * are: a second ({@link #anyLate}).
+     */
+    public static final long LATE_TICKS = 20;
+
+    /** A way of a set: from call {@code call} of duty {@code duty} on service {@code day} to the next call. */
+    public record Key(String duty, long day, int call) {}
+
+    /**
+     * A set running a duty now.
+     *
+     * @param duty     its duty
+     * @param day      the service day it runs it on
+     * @param calls    the calls of its duty
+     * @param from     the call it stands at, or last left on its way ({@link DutyRun#wayFrom}); -1 if none
+     * @param lateBy   how many ticks after the timetable's time it leaves there ({@link DutyRun#delay})
+     * @param spec     how fast it goes
+     * @param throttle the share of its top speed it runs at
+     */
+    public record Running(String duty, long day, List<Call> calls, int from, long lateBy, TrainSpec spec, double throttle) {
+        public Running {
+            calls = List.copyOf(calls);
+        }
+
+        /** The set of {@code run} as it is at {@code now}; one with no way left, or not known to have left the call before, has none. */
+        public static Running of(DutyRun run, long now, TrainSpec spec, double throttle) {
+            int from = run.wayFrom();
+            if (from >= 0 && run.phase() == DutyRun.Phase.RUNNING && run.departures().get(from) == DutyRun.NOT_YET)
+                from = -1;
+            return new Running(run.duty(), run.day(), run.calls(), from, from < 0 ? 0 : run.delay(now), spec, throttle);
+        }
+    }
+
+    /** A duty that is to start on service {@code day} within the hour and has no set yet, with its calls. */
+    public record Coming(String duty, long day, List<Call> calls) {
+        public Coming {
+            calls = List.copyOf(calls);
+        }
+    }
+
+    /** Nothing known: the signals are taken as {@link TimetableTraffic} has them on every way. */
+    public static final LiveTraffic NONE = new LiveTraffic(Map.of(), Long.MIN_VALUE, true);
+
+    /**
+     * Nothing known of the sets as they were at {@code now}, as when they could not be run on: the
+     * signals are taken as {@link TimetableTraffic} has them on every way.
+     */
+    public static LiveTraffic unknown(long now) {
+        return new LiveTraffic(Map.of(), now, false);
+    }
+
+    private final Map<Key, Trip> trips;
+    private final long from;
+    private final boolean finished;
+
+    private LiveTraffic(Map<Key, Trip> trips, long from, boolean finished) {
+        this.trips = trips;
+        this.from = from;
+        this.finished = finished;
+    }
+
+    /**
+     * Runs the sets of {@code running} on from where they are at {@code now}, with the duties of
+     * {@code coming}, up to {@link #HORIZON_TICKS} after it. Nothing is known if they hold one another
+     * up too long to be worked out, or {@code stop} says to give up, as when what they are run for has
+     * gone ({@link #finished}).
+     *
+     * @param legs               the ways between stations, by their two ends and the track tag, as
+     *                           {@link TrackFacts#legs} has them
+     * @param blocks             the signal blocks of the network the legs are of
+     * @param spec               how fast the sets of the duties to come go
+     * @param defaultMinimumStop the minimum stop, in ticks, where the timetable gives none
+     * @param defaultLength      the length of a train, in blocks, where the timetable gives none
+     */
+    public static LiveTraffic of(Timetable timetable, List<Running> running, List<Coming> coming, Map<List<String>, Leg> legs,
+        SignalBlocks blocks, TrainSpec spec, long defaultMinimumStop, int defaultLength, long now, BooleanSupplier stop) {
+        Map<String, Train> byNumber = TimetableTraffic.byNumber(timetable);
+        List<Run> runs = new ArrayList<>();
+        List<List<Key>> keys = new ArrayList<>();
+        for (Running set : running)
+            if (set.from() >= 0 && set.throttle() > 0 && set.throttle() <= 1)
+                add(runs, keys, set.duty(), set.day(), set.calls(), set.from(), set.lateBy(), set.spec(), set.throttle(), legs, byNumber,
+                    defaultMinimumStop, defaultLength);
+        for (Coming duty : coming)
+            add(runs, keys, duty.duty(), duty.day(), duty.calls(), 0, 0, spec, 1, legs, byNumber, defaultMinimumStop, defaultLength);
+        Traffic.Result result = Traffic.run(blocks, runs, now + HORIZON_TICKS, stop);
+        if (!result.finished())
+            return unknown(now);
+        Map<Key, Trip> trips = new HashMap<>();
+        for (int run = 0; run < runs.size(); run++) {
+            List<Trip> ran = result.trips().get(run);
+            for (int i = 0; i < ran.size(); i++)
+                trips.put(keys.get(run).get(i), ran.get(i));
+        }
+        return new LiveTraffic(trips, now, true);
+    }
+
+    private static void add(List<Run> runs, List<List<Key>> keys, String duty, long day, List<Call> calls, int from, long lateBy,
+        TrainSpec spec, double throttle, Map<List<String>, Leg> legs, Map<String, Train> byNumber, long defaultMinimumStop,
+        int defaultLength) {
+        List<Stint> stints = TimetableTraffic.stints(calls, from, day, legs, byNumber, defaultMinimumStop, defaultLength);
+        if (stints.isEmpty())
+            return;
+        List<Key> legKeys = new ArrayList<>();
+        for (int i = 0; i < stints.size(); i++)
+            legKeys.add(new Key(duty, day, from + i));
+        runs.add(new Run(duty + " of day " + day, spec, throttle, stints, from + stints.size() == calls.size() - 1, lateBy));
+        keys.add(legKeys);
+    }
+
+    /**
+     * Whether a set of {@code runs} that has not finished is more than {@link #LATE_TICKS} behind the
+     * timetable at {@code now} ({@link DutyRun#delay}): if none is, the sets run as the trains of the
+     * timetable do ({@link TimetableTraffic}), and need not be run on from where they are.
+     */
+    public static boolean anyLate(Collection<DutyRun> runs, long now) {
+        for (DutyRun run : runs)
+            if (!run.finished() && run.delay(now) > LATE_TICKS)
+                return true;
+        return false;
+    }
+
+    /** The clock value the sets were run on from; {@link Long#MIN_VALUE} for {@link #NONE}. */
+    public long from() {
+        return from;
+    }
+
+    /**
+     * Whether the simulation ran to its end ({@link Traffic.Result#finished}); if not, it says nothing of
+     * any way.
+     */
+    public boolean finished() {
+        return finished;
+    }
+
+    /** How the way {@code key} went, if the set set out on it within the hour. */
+    public Optional<Trip> trip(Key key) {
+        return Optional.ofNullable(trips.get(key));
+    }
+
+    /**
+     * The ticks the signals add to the way {@code key}, waits at red and all ({@link Trip#signalTicks});
+     * empty where the set did not get to the end of it within the hour, as one taken off the line, or on
+     * its way at the end of the hour, does not, or for a way it cannot finish on an empty line.
+     */
+    public OptionalLong signalTicks(Key key) {
+        Trip trip = trips.get(key);
+        if (trip == null || !trip.hasArrived() || trip.free() < 0)
+            return OptionalLong.empty();
+        return OptionalLong.of(Math.max(0, trip.signalTicks()));
+    }
+
+    /**
+     * {@code times} for the set of duty {@code duty} on service {@code day}, whose calls are
+     * {@code calls}: with what the signals add to its ways as this has them, and as {@code times} has
+     * them where this says nothing.
+     */
+    public RunTimes on(RunTimes times, String duty, long day, List<Call> calls) {
+        return new RunTimes() {
+            @Override
+            public OptionalLong ticks(String from, String to, String tag) {
+                return times.ticks(from, to, tag);
+            }
+
+            @Override
+            public OptionalLong ticks(String from, String to, String tag, OptionalInt limitAtStart) {
+                return times.ticks(from, to, tag, limitAtStart);
+            }
+
+            @Override
+            public OptionalInt limitAtEnd(String from, String to, String tag, OptionalInt limitAtStart) {
+                return times.limitAtEnd(from, to, tag, limitAtStart);
+            }
+
+            @Override
+            public long signalTicks(String train, int stop) {
+                for (int call = 0; call + 1 < calls.size(); call++) {
+                    if (!calls.get(call).leavingTrain().equals(train))
+                        continue;
+                    // The first call the set leaves as the train, and its stop from there.
+                    int way = call + stop;
+                    if (way + 1 < calls.size()) {
+                        OptionalLong live = LiveTraffic.this.signalTicks(new Key(duty, day, way));
+                        if (live.isPresent())
+                            return live.getAsLong();
+                    }
+                    break;
+                }
+                return times.signalTicks(train, stop);
+            }
+        };
+    }
+}

@@ -109,6 +109,7 @@ public final class OperationData extends SavedData {
     private static final String TAG_WAY = "Way";
     private static final String TAG_STATION = "Station";
     private static final String TAG_AT = "At";
+    private static final String TAG_CAME_IN = "CameIn";
 
     private String json = "";
     private @Nullable Timetable timetable;
@@ -141,6 +142,20 @@ public final class OperationData extends SavedData {
     /** The trains of the timetable being run with the signals on another thread, for the config of {@link #pendingKey}; null if none. */
     private @Nullable CompletableFuture<TimetableTraffic> pendingTraffic;
     private @Nullable Object pendingKey;
+    /** Not saved: the sets of the duties run on from where they were with the signals, as last done ({@link LiveTraffic}). */
+    private LiveTraffic live = LiveTraffic.NONE;
+    /** What the server's config said that {@link #live} was worked out with. */
+    private @Nullable Object liveKey;
+    /** Not saved: the sets being run on from where they are on another thread, for the config of {@link #pendingLiveKey}; null if none. */
+    private @Nullable CompletableFuture<LiveTraffic> pendingLive;
+    private @Nullable Object pendingLiveKey;
+    /** Not saved: whether the sets are to be run on again once {@link #pendingLive} is done, as one has come in since it started. */
+    private boolean liveWanted;
+    /**
+     * The sets that came in too late, whether to hold them waiting for the sets to be run on from when
+     * they came in ({@link HoldBack}), by the clock value they came in at; saved with their runs.
+     */
+    private final Map<UUID, Long> heldBack = new HashMap<>();
     /** Not saved: the ways between stops the trains cannot run on their track tags, worked out with the axes. */
     private List<TagWays.NoWay> noWays = List.of();
     /** Not saved: the track tags the timetable holds trains to that the world has none of, worked out with the axes. */
@@ -296,6 +311,7 @@ public final class OperationData extends SavedData {
         lastDays.clear();
         loadedAt.clear();
         runs.clear();
+        heldBack.clear();
         history.clear();
         timesChanged();
         freeSince.clear();
@@ -439,6 +455,7 @@ public final class OperationData extends SavedData {
         this.blocks = blocks;
         this.traffic = null;
         this.pendingTraffic = null;
+        forgetLive();
         this.noWays = List.copyOf(noWays);
         this.unknownTags = List.copyOf(unknownTags);
         List<Object> tags = List.of(this.noWays, this.unknownTags);
@@ -500,6 +517,70 @@ public final class OperationData extends SavedData {
     }
 
     /**
+     * The sets of the duties as last run on from where they were with the signals, if worked out with
+     * what {@code key} says of the server's config since the ways between stations and the timetable
+     * were; {@link LiveTraffic#NONE} if not.
+     */
+    public LiveTraffic live(Object key) {
+        return key.equals(liveKey) ? live : LiveTraffic.NONE;
+    }
+
+    /** Keeps the sets of the duties run on from where they were, worked out with {@code key} of the server's config. */
+    public void live(LiveTraffic live, Object key) {
+        this.live = live;
+        this.liveKey = key;
+        this.pendingLive = null;
+    }
+
+    /** The sets being run on from where they are on another thread for {@code key} of the server's config, done or not; null if none is. */
+    public @Nullable CompletableFuture<LiveTraffic> pendingLive(Object key) {
+        return pendingLive != null && key.equals(pendingLiveKey) ? pendingLive : null;
+    }
+
+    /**
+     * Keeps the run of the sets from where they are going on another thread, for {@code key} of the
+     * server's config; one kept before is let go, and cancelled so that it gives up.
+     */
+    public void pendingLive(CompletableFuture<LiveTraffic> pending, Object key) {
+        if (pendingLive != null && pendingLive != pending)
+            pendingLive.cancel(false);
+        this.pendingLive = pending;
+        this.pendingLiveKey = key;
+        this.liveWanted = false;
+    }
+
+    /** Whether the sets are to be run on again from where they are once the run going on now is done. */
+    public boolean liveWanted() {
+        return liveWanted;
+    }
+
+    public void liveWanted(boolean wanted) {
+        this.liveWanted = wanted;
+    }
+
+    /**
+     * Lets the sets run on from where they were go, and any such run going on, cancelled so that it
+     * gives up: as the ways or the timetable have changed, or no set is late any more.
+     */
+    public void forgetLive() {
+        live = LiveTraffic.NONE;
+        liveKey = null;
+        if (pendingLive != null)
+            pendingLive.cancel(false);
+        pendingLive = null;
+        liveWanted = false;
+    }
+
+    /**
+     * The sets that came in too late, whether to hold them waiting for the sets to be run on from then
+     * ({@link HoldBack}), by train, with the clock value each came in at. Saved with the runs: a change
+     * is to be marked with {@link #setDirty}.
+     */
+    public Map<UUID, Long> heldBack() {
+        return heldBack;
+    }
+
+    /**
      * How long the track takes for the train {@code train}, as worked out by {@code make} for it as
      * {@code key} says it is; worked out again when that changes, or the track does.
      */
@@ -533,6 +614,7 @@ public final class OperationData extends SavedData {
         legs = null;
         traffic = null;
         pendingTraffic = null;
+        forgetLive();
         waits = null;
         revision++;
     }
@@ -583,6 +665,9 @@ public final class OperationData extends SavedData {
         runs.forEach((train, run) -> {
             CompoundTag entry = saveRun(run);
             entry.putUUID(TAG_TRAIN, train);
+            Long cameIn = heldBack.get(train);
+            if (cameIn != null)
+                entry.putLong(TAG_CAME_IN, cameIn);
             runList.add(entry);
         });
         tag.put(TAG_RUNS, runList);
@@ -689,8 +774,12 @@ public final class OperationData extends SavedData {
         for (Tag element : tag.getList(TAG_RUNS, Tag.TAG_COMPOUND)) {
             CompoundTag entry = (CompoundTag) element;
             DutyRun run = entry.hasUUID(TAG_TRAIN) ? data.loadRun(entry) : null;
-            if (run != null)
-                data.runs.put(entry.getUUID(TAG_TRAIN), run);
+            if (run == null)
+                continue;
+            data.runs.put(entry.getUUID(TAG_TRAIN), run);
+            // Whether to hold it was still put off: it is decided once the sets have been run on again.
+            if (entry.contains(TAG_CAME_IN, Tag.TAG_LONG))
+                data.heldBack.put(entry.getUUID(TAG_TRAIN), entry.getLong(TAG_CAME_IN));
         }
         for (Tag element : tag.getList(TAG_HISTORY, Tag.TAG_COMPOUND)) {
             CompoundTag entry = (CompoundTag) element;

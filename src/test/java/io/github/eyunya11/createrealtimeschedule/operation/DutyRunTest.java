@@ -187,6 +187,25 @@ class DutyRunTest {
         assertEquals(List.of(at("07:50"), DutyRun.NOT_YET, DutyRun.NOT_YET, DutyRun.NOT_YET, at("08:30"), DutyRun.NOT_YET), run.departures());
     }
 
+    /** The way a set is on starts at the call it stands at, or at the one it last left; it has none at the end. */
+    @Test
+    void theWayASetIsOnStartsWhereItStandsOrLastLeft() {
+        DutyRun run = started();
+        assertEquals(0, run.wayFrom());
+        run.sent();
+        assertEquals(0, run.wayFrom());
+        run.left(at("07:50"));
+        assertEquals(0, run.wayFrom(), "on the way to call 1");
+        run.arrived(at("08:15"), MINIMUM);
+        assertEquals(1, run.wayFrom());
+        run.hold(4, at("08:30"));
+        assertEquals(4, run.wayFrom(), "held to call 4");
+        run.left(at("08:30"));
+        assertEquals(4, run.wayFrom(), "on the way from the call it was held to");
+        run.arrived(at("08:35"), MINIMUM);
+        assertEquals(-1, run.wayFrom());
+    }
+
     @Test
     void aSetIsHeldOnlyToALaterCallAtTheSameStationThatItCanLeave() {
         DutyRun run = started();

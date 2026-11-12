@@ -7,6 +7,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -114,6 +115,8 @@ public class TimetableCommandTests {
         UUID train = new UUID(1, 2);
         data.runs().put(train, run);
         data.freeSince().put(new UUID(3, 4), now - 100);
+        // Whether to hold it is put off: it came in 5 ticks ago.
+        data.heldBack().put(train, now - 5);
         data.note(now, "1A", 2, "did not run: no free set at the depot by its time");
         DutyRun done = DutyRun.start("1A", RealClock.day(now), data.calls("1A"), now);
         done.left(done.departure());
@@ -125,6 +128,7 @@ public class TimetableCommandTests {
         helper.assertTrue(again.runs().size() == 1 && again.runs().get(train).state().equals(run.state()),
             "the run did not come back the same: " + again.runs());
         helper.assertTrue(again.freeSince().equals(data.freeSince()), "the free sets did not come back");
+        helper.assertTrue(again.heldBack().equals(Map.of(train, now - 5)), "the set held back did not come back: " + again.heldBack());
         helper.assertTrue(again.notes().equals(data.notes()), "the notes did not come back");
         helper.assertTrue(again.lastDay("1A") == data.lastDay("1A"), "the last day of the duty did not come back");
         List<OperationData.Record> history = again.history();
