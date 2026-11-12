@@ -141,6 +141,20 @@ public final class OperationData extends SavedData {
     /** The trains of the timetable being run with the signals on another thread, for the config of {@link #pendingKey}; null if none. */
     private @Nullable CompletableFuture<TimetableTraffic> pendingTraffic;
     private @Nullable Object pendingKey;
+    /** Not saved: the sets of the duties run on from where they were with the signals, as last done ({@link LiveTraffic}). */
+    private LiveTraffic live = LiveTraffic.NONE;
+    /** What the server's config said that {@link #live} was worked out with. */
+    private @Nullable Object liveKey;
+    /** Not saved: the sets being run on from where they are on another thread, for the config of {@link #pendingLiveKey}; null if none. */
+    private @Nullable CompletableFuture<LiveTraffic> pendingLive;
+    private @Nullable Object pendingLiveKey;
+    /** Not saved: whether the sets are to be run on again once {@link #pendingLive} is done, as one has come in since it started. */
+    private boolean liveWanted;
+    /**
+     * Not saved: the sets that came in too late, whether to hold them waiting for the sets to be run on
+     * from when they came in, by the clock value they came in at.
+     */
+    private final Map<UUID, Long> heldBack = new HashMap<>();
     /** Not saved: the ways between stops the trains cannot run on their track tags, worked out with the axes. */
     private List<TagWays.NoWay> noWays = List.of();
     /** Not saved: the track tags the timetable holds trains to that the world has none of, worked out with the axes. */
@@ -439,6 +453,7 @@ public final class OperationData extends SavedData {
         this.blocks = blocks;
         this.traffic = null;
         this.pendingTraffic = null;
+        forgetLive();
         this.noWays = List.copyOf(noWays);
         this.unknownTags = List.copyOf(unknownTags);
         List<Object> tags = List.of(this.noWays, this.unknownTags);
@@ -500,6 +515,59 @@ public final class OperationData extends SavedData {
     }
 
     /**
+     * The sets of the duties as last run on from where they were with the signals, if worked out with
+     * what {@code key} says of the server's config since the ways between stations and the timetable
+     * were; {@link LiveTraffic#NONE} if not.
+     */
+    public LiveTraffic live(Object key) {
+        return key.equals(liveKey) ? live : LiveTraffic.NONE;
+    }
+
+    /** Keeps the sets of the duties run on from where they were, worked out with {@code key} of the server's config. */
+    public void live(LiveTraffic live, Object key) {
+        this.live = live;
+        this.liveKey = key;
+        this.pendingLive = null;
+    }
+
+    /** The sets being run on from where they are on another thread for {@code key} of the server's config, done or not; null if none is. */
+    public @Nullable CompletableFuture<LiveTraffic> pendingLive(Object key) {
+        return pendingLive != null && key.equals(pendingLiveKey) ? pendingLive : null;
+    }
+
+    /** Keeps the run of the sets from where they are going on another thread, for {@code key} of the server's config. */
+    public void pendingLive(CompletableFuture<LiveTraffic> pending, Object key) {
+        this.pendingLive = pending;
+        this.pendingLiveKey = key;
+        this.liveWanted = false;
+    }
+
+    /** Whether the sets are to be run on again from where they are once the run going on now is done. */
+    public boolean liveWanted() {
+        return liveWanted;
+    }
+
+    public void liveWanted(boolean wanted) {
+        this.liveWanted = wanted;
+    }
+
+    /** Lets the sets run on from where they were go, and any such run going on, as the ways or the timetable have changed. */
+    private void forgetLive() {
+        live = LiveTraffic.NONE;
+        liveKey = null;
+        pendingLive = null;
+        liveWanted = false;
+    }
+
+    /**
+     * The sets that came in too late, whether to hold them waiting for the sets to be run on from then,
+     * by train, with the clock value each came in at.
+     */
+    public Map<UUID, Long> heldBack() {
+        return heldBack;
+    }
+
+    /**
      * How long the track takes for the train {@code train}, as worked out by {@code make} for it as
      * {@code key} says it is; worked out again when that changes, or the track does.
      */
@@ -533,6 +601,7 @@ public final class OperationData extends SavedData {
         legs = null;
         traffic = null;
         pendingTraffic = null;
+        forgetLive();
         waits = null;
         revision++;
     }

@@ -68,6 +68,14 @@ public final class LiveTraffic {
     /** Nothing known: the signals are taken as {@link TimetableTraffic} has them on every way. */
     public static final LiveTraffic NONE = new LiveTraffic(Map.of(), Long.MIN_VALUE, true);
 
+    /**
+     * Nothing known of the sets as they were at {@code now}, as when they could not be run on: the
+     * signals are taken as {@link TimetableTraffic} has them on every way.
+     */
+    public static LiveTraffic unknown(long now) {
+        return new LiveTraffic(Map.of(), now, false);
+    }
+
     private final Map<Key, Trip> trips;
     private final long from;
     private final boolean finished;
@@ -121,7 +129,7 @@ public final class LiveTraffic {
             add(runs, keys, duty.duty(), duty.day(), duty.calls(), 0, 0, spec, 1, legs, byNumber, defaultMinimumStop, defaultLength);
         Traffic.Result result = Traffic.run(blocks, runs, now + HORIZON_TICKS);
         if (!result.finished())
-            return new LiveTraffic(Map.of(), now, false);
+            return unknown(now);
         Map<Key, Trip> trips = new HashMap<>();
         for (int run = 0; run < runs.size(); run++) {
             List<Trip> ran = result.trips().get(run);

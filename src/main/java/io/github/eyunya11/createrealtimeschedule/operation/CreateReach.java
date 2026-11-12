@@ -9,6 +9,8 @@ import java.util.OptionalInt;
 import java.util.OptionalLong;
 import java.util.Set;
 
+import org.jetbrains.annotations.Nullable;
+
 import com.simibubi.create.Create;
 import com.simibubi.create.content.trains.entity.Train;
 import com.simibubi.create.content.trains.graph.DiscoveredPath;
@@ -45,13 +47,24 @@ public final class CreateReach implements Reach {
      * ({@code traffic}); empty if Create's config leaves the train no speed.
      */
     public static Optional<CreateReach> of(Train train, Map<List<String>, Leg> legs, TimetableTraffic traffic) {
+        return of(train, legs, traffic, LiveTraffic.NONE, null);
+    }
+
+    /**
+     * {@link #of(Train, Map, TimetableTraffic)}, for {@code train} running {@code run}: what the signals
+     * add to its ways as {@code live} has them, the sets of the duties run on from where they were, and
+     * as {@code traffic} has them where that says nothing.
+     */
+    public static Optional<CreateReach> of(Train train, Map<List<String>, Leg> legs, TimetableTraffic traffic, LiveTraffic live,
+                                           @Nullable DutyRun run) {
         TrainSpec spec;
         try {
             spec = TrainSpecs.of(train);
         } catch (IllegalArgumentException e) {
             return Optional.empty();
         }
-        return Optional.of(new CreateReach(train, spec, RunTimes.withSignals(TrackFacts.runTimes(legs, spec, train.throttle), traffic)));
+        RunTimes times = RunTimes.withSignals(TrackFacts.runTimes(legs, spec, train.throttle), traffic);
+        return Optional.of(new CreateReach(train, spec, run == null ? times : live.on(times, run.duty(), run.day(), run.calls())));
     }
 
     @Override
