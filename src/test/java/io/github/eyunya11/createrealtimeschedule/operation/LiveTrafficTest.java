@@ -70,12 +70,12 @@ class LiveTrafficTest {
         return DutyRun.start(duty, DAY, calls(duty), now);
     }
 
-    private static Running running(DutyRun run, double throttle) {
-        return new Running(run.state(), run.calls(), SPEC, throttle);
+    private static Running running(DutyRun run, double throttle, long now) {
+        return Running.of(run, now, SPEC, throttle);
     }
 
     private static LiveTraffic live(List<Running> running, List<Coming> coming, long now) {
-        return LiveTraffic.of(TIMETABLE, running, coming, legs(), NETWORK.blocks(), SPEC, MINIMUM_STOP, LENGTH, now);
+        return LiveTraffic.of(TIMETABLE, running, coming, legs(), NETWORK.blocks(), SPEC, MINIMUM_STOP, LENGTH, now, () -> false);
     }
 
     /**
@@ -85,7 +85,7 @@ class LiveTrafficTest {
     @Test
     void aSetOnTimeIsHeldUpBehindALateOne() {
         long now = at(100);
-        LiveTraffic live = live(List.of(running(standing("1", now), 1), running(standing("2", now), 1)), List.of(), now);
+        LiveTraffic live = live(List.of(running(standing("1", now), 1, now), running(standing("2", now), 1, now)), List.of(), now);
         assertTrue(live.finished());
         assertEquals(now, live.from());
         Trip late = live.trip(new Key("1", DAY, 0)).orElseThrow();
@@ -107,7 +107,7 @@ class LiveTrafficTest {
         first.sent();
         first.left(at(100));
         long now = at(102);
-        LiveTraffic live = live(List.of(running(first, 0.5), running(standing("2", now), 1)), List.of(), now);
+        LiveTraffic live = live(List.of(running(first, 0.5, now), running(standing("2", now), 1, now)), List.of(), now);
         Trip trip = live.trip(new Key("1", DAY, 0)).orElseThrow();
         assertEquals(at(100), trip.departed());
         Leg leg = legs().get(List.of("A", "B", ""));
@@ -119,7 +119,7 @@ class LiveTrafficTest {
     @Test
     void theDutiesToComeWithinTheHourStartOnTime() {
         long now = at(100);
-        LiveTraffic live = live(List.of(running(standing("1", now), 1)),
+        LiveTraffic live = live(List.of(running(standing("1", now), 1, now)),
             List.of(new Coming("2", DAY, calls("2")), new Coming("3", DAY, calls("3"))), now);
         assertEquals(at(105), live.trip(new Key("2", DAY, 0)).orElseThrow().departed());
         assertTrue(live.signalTicks(new Key("2", DAY, 0)).getAsLong() > 0);
@@ -127,11 +127,44 @@ class LiveTrafficTest {
         assertTrue(live.signalTicks(new Key("3", DAY, 0)).isEmpty());
     }
 
+    /**
+     * A set is run on from the call it stands at, as late as it is to leave there, or from the one it
+     * last left, as late as it left; a finished one has no way left.
+     */
+    @Test
+    void aSetIsRunOnFromWhereItStandsOrLastLeft() {
+        DutyRun first = standing("1", at(100));
+        Running standing = running(first, 1, at(102));
+        assertEquals(0, standing.from());
+        assertEquals(at(102) - at(0), standing.lateBy(), "it leaves now, held past its time");
+        first.sent();
+        first.left(at(103));
+        Running onItsWay = running(first, 1, at(110));
+        assertEquals(0, onItsWay.from());
+        assertEquals(at(103) - at(0), onItsWay.lateBy(), "as late as it left");
+        first.arrived(at(170), MINIMUM_STOP);
+        first.left(at(180));
+        first.arrived(at(230), MINIMUM_STOP);
+        assertTrue(first.finished());
+        assertEquals(-1, running(first, 1, at(240)).from());
+    }
+
+    /** A run told to give up is not known, as one that cannot be worked out. */
+    @Test
+    void aRunToldToGiveUpSaysNothing() {
+        long now = at(100);
+        List<Running> running = List.of(running(standing("1", now), 1, now), running(standing("2", now), 1, now));
+        LiveTraffic live = LiveTraffic.of(TIMETABLE, running, List.of(), legs(), NETWORK.blocks(), SPEC, MINIMUM_STOP, LENGTH, now, () -> true);
+        assertFalse(live.finished());
+        assertEquals(now, live.from());
+        assertTrue(live.signalTicks(new Key("2", DAY, 0)).isEmpty());
+    }
+
     /** A finished set, or one at no throttle, is not on the line. */
     @Test
     void aSetThatDoesNotMoveIsNotRun() {
         long now = at(100);
-        LiveTraffic live = live(List.of(running(standing("1", now), 0), running(standing("2", now), 1)), List.of(), now);
+        LiveTraffic live = live(List.of(running(standing("1", now), 0, now), running(standing("2", now), 1, now)), List.of(), now);
         assertTrue(live.trip(new Key("1", DAY, 0)).isEmpty());
         assertEquals(0, live.signalTicks(new Key("2", DAY, 0)).getAsLong());
     }
@@ -143,7 +176,7 @@ class LiveTrafficTest {
     @Test
     void theTimesOfASetTakeItsWaysAndElseTheTimesGiven() {
         long now = at(100);
-        LiveTraffic live = live(List.of(running(standing("1", now), 1), running(standing("2", now), 1)), List.of(), now);
+        LiveTraffic live = live(List.of(running(standing("1", now), 1, now), running(standing("2", now), 1, now)), List.of(), now);
         RunTimes given = new RunTimes() {
             @Override
             public OptionalLong ticks(String from, String to, String tag) {

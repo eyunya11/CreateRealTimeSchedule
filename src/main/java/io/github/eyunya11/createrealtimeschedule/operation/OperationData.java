@@ -535,8 +535,13 @@ public final class OperationData extends SavedData {
         return pendingLive != null && key.equals(pendingLiveKey) ? pendingLive : null;
     }
 
-    /** Keeps the run of the sets from where they are going on another thread, for {@code key} of the server's config. */
+    /**
+     * Keeps the run of the sets from where they are going on another thread, for {@code key} of the
+     * server's config; one kept before is let go, and cancelled so that it gives up.
+     */
     public void pendingLive(CompletableFuture<LiveTraffic> pending, Object key) {
+        if (pendingLive != null && pendingLive != pending)
+            pendingLive.cancel(false);
         this.pendingLive = pending;
         this.pendingLiveKey = key;
         this.liveWanted = false;
@@ -551,10 +556,15 @@ public final class OperationData extends SavedData {
         this.liveWanted = wanted;
     }
 
-    /** Lets the sets run on from where they were go, and any such run going on, as the ways or the timetable have changed. */
+    /**
+     * Lets the sets run on from where they were go, and any such run going on, cancelled so that it
+     * gives up, as the ways or the timetable have changed.
+     */
     private void forgetLive() {
         live = LiveTraffic.NONE;
         liveKey = null;
+        if (pendingLive != null)
+            pendingLive.cancel(false);
         pendingLive = null;
         liveWanted = false;
     }

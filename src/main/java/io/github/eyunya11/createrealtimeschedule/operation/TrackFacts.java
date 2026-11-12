@@ -270,7 +270,7 @@ public final class TrackFacts {
             if (train == null || run.finished())
                 continue;
             try {
-                running.add(new LiveTraffic.Running(run.state(), run.calls(), TrainSpecs.of(train), train.throttle));
+                running.add(LiveTraffic.Running.of(run, now, TrainSpecs.of(train), train.throttle));
             } catch (IllegalArgumentException e) {
                 // Create's config leaves it no speed
             }
@@ -289,18 +289,22 @@ public final class TrackFacts {
         SignalBlocks blocks = data.blocks();
         long minimumStop = (long) key.get(0);
         int length = (int) key.get(1);
-        data.pendingLive(CompletableFuture.supplyAsync(() -> {
+        // Cancelled when it is let go (OperationData#pendingLive), the run gives up.
+        CompletableFuture<LiveTraffic> job = new CompletableFuture<>();
+        TRAFFIC.execute(() -> {
             try {
-                LiveTraffic live = LiveTraffic.of(timetable, running, coming, legs, blocks, spec, minimumStop, length, now);
-                if (!live.finished())
+                LiveTraffic live = LiveTraffic.of(timetable, running, coming, legs, blocks, spec, minimumStop, length, now, job::isCancelled);
+                if (!live.finished() && !job.isCancelled())
                     LOGGER.warn("The sets of the duties hold one another up at the signals too much to work out in time; "
                         + "the forecasts take the signals as for the trains on time");
-                return live;
+                job.complete(live);
             } catch (RuntimeException e) {
                 LOGGER.error("Could not run the sets of the duties on with the signals; the forecasts take the signals as for the trains on time", e);
-                return LiveTraffic.unknown(now);
+            } finally {
+                job.complete(LiveTraffic.unknown(now));
             }
-        }, TRAFFIC), key);
+        });
+        data.pendingLive(job, key);
     }
 
     /** {@link TimetableTraffic#of}, timed for the log; {@link TimetableTraffic#NONE} if it fails. */

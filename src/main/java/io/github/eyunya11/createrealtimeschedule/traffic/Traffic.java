@@ -8,6 +8,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.OptionalInt;
 import java.util.Set;
+import java.util.function.BooleanSupplier;
 
 import org.jetbrains.annotations.Nullable;
 
@@ -196,8 +197,8 @@ public final class Traffic {
      * that says so, and none for the legs after. A leg a train was still on when the simulation stopped
      * at its end ({@link #run(SignalBlocks, List, long)}) has no trip: how it would have gone is not known.
      *
-     * @param finished whether the simulation ran to the end, and did not give up after {@link #MAX_STEPS};
-     *                 the trips of one that gave up are not to be gone by
+     * @param finished whether the simulation ran to the end, and did not give up after {@link #MAX_STEPS}
+     *                 or on being told to stop; the trips of one that gave up are not to be gone by
      */
     public record Result(List<List<Trip>> trips, boolean finished) {
         public Result {
@@ -215,12 +216,24 @@ public final class Traffic {
      * way then has no trip for that leg, nor any for the legs after.
      */
     public static Result run(SignalBlocks blocks, List<Run> runs, long until) {
-        return run(blocks, runs, until, MAX_STEPS);
+        return run(blocks, runs, until, () -> false);
+    }
+
+    /**
+     * {@link #run(SignalBlocks, List, long)}, given up as soon as {@code stop} says so, as when what it is
+     * run for has gone: one given up so has not finished.
+     */
+    public static Result run(SignalBlocks blocks, List<Run> runs, long until, BooleanSupplier stop) {
+        return run(blocks, runs, until, MAX_STEPS, stop);
     }
 
     /** {@link #run(SignalBlocks, List)}, giving up after {@code maxSteps} moves of a train. */
     static Result run(SignalBlocks blocks, List<Run> runs, long until, long maxSteps) {
-        return new Traffic(blocks, runs).simulate(until, maxSteps);
+        return run(blocks, runs, until, maxSteps, () -> false);
+    }
+
+    private static Result run(SignalBlocks blocks, List<Run> runs, long until, long maxSteps, BooleanSupplier stop) {
+        return new Traffic(blocks, runs).simulate(until, maxSteps, stop);
     }
 
     private final SignalBlocks blocks;
@@ -281,16 +294,21 @@ public final class Traffic {
         return crossing;
     }
 
-    private Result simulate(long until, long maxSteps) {
+    private Result simulate(long until, long maxSteps, BooleanSupplier stop) {
         if (trains.isEmpty())
             return new Result(List.of(), true);
         now = coming.getFirst().appears();
         long giveUp = trains.stream()
             .mapToLong(train -> train.run.stints().stream().mapToLong(Stint::departs).max().orElseThrow() + Math.max(0, train.run.lateBy()))
             .max().orElseThrow() + GIVE_UP_TICKS;
+        boolean stopped = false;
         while (now <= giveUp && now <= until && (nextToCome < coming.size() || !waiting.isEmpty() || !moving.isEmpty())) {
             if (steps > maxSteps)
                 break;
+            if (stop.getAsBoolean()) {
+                stopped = true;
+                break;
+            }
             if (tick()) {
                 now++;
                 continue;
@@ -315,7 +333,7 @@ public final class Traffic {
                 train.trips.add(new Trip(train.departed, Trip.NOT_ARRIVED, train.free, train.waits));
             trips.add(train.trips);
         }
-        return new Result(trips, steps <= maxSteps);
+        return new Result(trips, !stopped && steps <= maxSteps);
     }
 
     /** One tick of every train; whether anything moved or changed. */

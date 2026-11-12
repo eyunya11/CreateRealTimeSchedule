@@ -205,6 +205,20 @@ class TrafficTest {
         assertTrue(whole.get(1).hasArrived());
     }
 
+    /** A run told to stop gives up there, as one that has gone on too long does: it has not finished. */
+    @Test
+    void aRunToldToStopHasNotFinished() {
+        RailNetwork network = TestLines.line(0, null, 10, 450, 950);
+        Leg ab = leg(network, "A", "B");
+        int free = ab.ticks(SPEC, 1, OptionalInt.empty()).getAsInt();
+        Run run = run("stopped", SPEC, first(ab, 0), then(leg(network, "B", "C"), free + 100));
+        int[] asked = {0};
+        Traffic.Result stopped = Traffic.run(network.blocks(), List.of(run), Long.MAX_VALUE, () -> ++asked[0] > 10);
+        assertFalse(stopped.finished());
+        assertEquals(11, asked[0], "it stops the first time it is told to");
+        assertTrue(Traffic.run(network.blocks(), List.of(run), Long.MAX_VALUE, () -> false).finished());
+    }
+
     /**
      * A signal at the stop marker a train stops at is passed, as the leg has it: with a train standing two
      * blocks on, the signal at B shows 警戒 where the one before showed 注意, and the train leaves B still

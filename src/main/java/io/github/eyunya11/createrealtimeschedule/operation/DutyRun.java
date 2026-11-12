@@ -307,6 +307,18 @@ public final class DutyRun {
         return departure;
     }
 
+    /**
+     * The call the way the set is on starts at: the one it stands at, or the last it left for the call
+     * it is running to; -1 once it has finished. Its {@link #delay} is by its time to leave there.
+     */
+    public int wayFrom() {
+        return switch (phase) {
+            case STANDING, DEPARTING -> call;
+            case RUNNING -> previousMade(call);
+            case FINISHED -> -1;
+        };
+    }
+
     /** The station the set goes to next: the call it is running to, or the next it makes after the call it stands at. */
     public String nextStation() {
         return calls.get(phase == Phase.STANDING || phase == Phase.DEPARTING ? nextMade(call) : call).station();

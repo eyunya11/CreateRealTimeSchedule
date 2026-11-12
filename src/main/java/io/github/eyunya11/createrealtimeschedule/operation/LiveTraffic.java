@@ -2,13 +2,12 @@ package io.github.eyunya11.createrealtimeschedule.operation;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.OptionalLong;
-import java.util.Set;
+import java.util.function.BooleanSupplier;
 
 import io.github.eyunya11.createrealtimeschedule.railway.Leg;
 import io.github.eyunya11.createrealtimeschedule.railway.SignalBlocks;
@@ -47,14 +46,25 @@ public final class LiveTraffic {
     /**
      * A set running a duty now.
      *
-     * @param state    how far it has got
+     * @param duty     its duty
+     * @param day      the service day it runs it on
      * @param calls    the calls of its duty
+     * @param from     the call it stands at, or last left on its way ({@link DutyRun#wayFrom}); -1 if none
+     * @param lateBy   how many ticks after the timetable's time it leaves there ({@link DutyRun#delay})
      * @param spec     how fast it goes
      * @param throttle the share of its top speed it runs at
      */
-    public record Running(DutyRun.State state, List<Call> calls, TrainSpec spec, double throttle) {
+    public record Running(String duty, long day, List<Call> calls, int from, long lateBy, TrainSpec spec, double throttle) {
         public Running {
             calls = List.copyOf(calls);
+        }
+
+        /** The set of {@code run} as it is at {@code now}; one with no way left, or not known to have left the call before, has none. */
+        public static Running of(DutyRun run, long now, TrainSpec spec, double throttle) {
+            int from = run.wayFrom();
+            if (from >= 0 && run.phase() == DutyRun.Phase.RUNNING && run.departures().get(from) == DutyRun.NOT_YET)
+                from = -1;
+            return new Running(run.duty(), run.day(), run.calls(), from, from < 0 ? 0 : run.delay(now), spec, throttle);
         }
     }
 
@@ -88,7 +98,9 @@ public final class LiveTraffic {
 
     /**
      * Runs the sets of {@code running} on from where they are at {@code now}, with the duties of
-     * {@code coming}, up to {@link #HORIZON_TICKS} after it.
+     * {@code coming}, up to {@link #HORIZON_TICKS} after it. Nothing is known if they hold one another
+     * up too long to be worked out, or {@code stop} says to give up, as when what they are run for has
+     * gone ({@link #finished}).
      *
      * @param legs               the ways between stations, by their two ends and the track tag, as
      *                           {@link TrackFacts#legs} has them
@@ -98,36 +110,17 @@ public final class LiveTraffic {
      * @param defaultLength      the length of a train, in blocks, where the timetable gives none
      */
     public static LiveTraffic of(Timetable timetable, List<Running> running, List<Coming> coming, Map<List<String>, Leg> legs,
-        SignalBlocks blocks, TrainSpec spec, long defaultMinimumStop, int defaultLength, long now) {
+        SignalBlocks blocks, TrainSpec spec, long defaultMinimumStop, int defaultLength, long now, BooleanSupplier stop) {
         Map<String, Train> byNumber = TimetableTraffic.byNumber(timetable);
         List<Run> runs = new ArrayList<>();
         List<List<Key>> keys = new ArrayList<>();
-        for (Running set : running) {
-            DutyRun.State state = set.state();
-            List<Call> calls = set.calls();
-            int from;
-            long left;
-            switch (state.phase()) {
-                case STANDING, DEPARTING -> {
-                    from = state.call();
-                    left = Math.max(state.departure(), now);
-                }
-                case RUNNING -> {
-                    from = previousMade(state);
-                    left = from < 0 ? DutyRun.NOT_YET : state.departures().get(from);
-                }
-                default -> {
-                    continue;
-                }
-            }
-            if (from < 0 || left == DutyRun.NOT_YET || !(set.throttle() > 0) || set.throttle() > 1)
-                continue;
-            add(runs, keys, state.duty(), state.day(), calls, from, left - DutyPlan.at(state.day(), calls.get(from).depart()), set.spec(),
-                set.throttle(), legs, byNumber, defaultMinimumStop, defaultLength);
-        }
+        for (Running set : running)
+            if (set.from() >= 0 && set.throttle() > 0 && set.throttle() <= 1)
+                add(runs, keys, set.duty(), set.day(), set.calls(), set.from(), set.lateBy(), set.spec(), set.throttle(), legs, byNumber,
+                    defaultMinimumStop, defaultLength);
         for (Coming duty : coming)
             add(runs, keys, duty.duty(), duty.day(), duty.calls(), 0, 0, spec, 1, legs, byNumber, defaultMinimumStop, defaultLength);
-        Traffic.Result result = Traffic.run(blocks, runs, now + HORIZON_TICKS);
+        Traffic.Result result = Traffic.run(blocks, runs, now + HORIZON_TICKS, stop);
         if (!result.finished())
             return unknown(now);
         Map<Key, Trip> trips = new HashMap<>();
@@ -137,15 +130,6 @@ public final class LiveTraffic {
                 trips.put(keys.get(run).get(i), ran.get(i));
         }
         return new LiveTraffic(trips, now, true);
-    }
-
-    /** The last call before the one the set of {@code state} runs to that it makes; -1 if there is none. */
-    private static int previousMade(DutyRun.State state) {
-        Set<Integer> skipped = new HashSet<>(state.skipped());
-        int previous = state.call() - 1;
-        while (previous >= 0 && skipped.contains(previous))
-            previous--;
-        return previous;
     }
 
     private static void add(List<Run> runs, List<List<Key>> keys, String duty, long day, List<Call> calls, int from, long lateBy,
