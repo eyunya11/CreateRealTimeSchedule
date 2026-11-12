@@ -109,6 +109,7 @@ public final class OperationData extends SavedData {
     private static final String TAG_WAY = "Way";
     private static final String TAG_STATION = "Station";
     private static final String TAG_AT = "At";
+    private static final String TAG_CAME_IN = "CameIn";
 
     private String json = "";
     private @Nullable Timetable timetable;
@@ -151,8 +152,8 @@ public final class OperationData extends SavedData {
     /** Not saved: whether the sets are to be run on again once {@link #pendingLive} is done, as one has come in since it started. */
     private boolean liveWanted;
     /**
-     * Not saved: the sets that came in too late, whether to hold them waiting for the sets to be run on
-     * from when they came in, by the clock value they came in at.
+     * The sets that came in too late, whether to hold them waiting for the sets to be run on from when
+     * they came in ({@link HoldBack}), by the clock value they came in at; saved with their runs.
      */
     private final Map<UUID, Long> heldBack = new HashMap<>();
     /** Not saved: the ways between stops the trains cannot run on their track tags, worked out with the axes. */
@@ -310,6 +311,7 @@ public final class OperationData extends SavedData {
         lastDays.clear();
         loadedAt.clear();
         runs.clear();
+        heldBack.clear();
         history.clear();
         timesChanged();
         freeSince.clear();
@@ -558,9 +560,9 @@ public final class OperationData extends SavedData {
 
     /**
      * Lets the sets run on from where they were go, and any such run going on, cancelled so that it
-     * gives up, as the ways or the timetable have changed.
+     * gives up: as the ways or the timetable have changed, or no set is late any more.
      */
-    private void forgetLive() {
+    public void forgetLive() {
         live = LiveTraffic.NONE;
         liveKey = null;
         if (pendingLive != null)
@@ -570,8 +572,9 @@ public final class OperationData extends SavedData {
     }
 
     /**
-     * The sets that came in too late, whether to hold them waiting for the sets to be run on from then,
-     * by train, with the clock value each came in at.
+     * The sets that came in too late, whether to hold them waiting for the sets to be run on from then
+     * ({@link HoldBack}), by train, with the clock value each came in at. Saved with the runs: a change
+     * is to be marked with {@link #setDirty}.
      */
     public Map<UUID, Long> heldBack() {
         return heldBack;
@@ -662,6 +665,9 @@ public final class OperationData extends SavedData {
         runs.forEach((train, run) -> {
             CompoundTag entry = saveRun(run);
             entry.putUUID(TAG_TRAIN, train);
+            Long cameIn = heldBack.get(train);
+            if (cameIn != null)
+                entry.putLong(TAG_CAME_IN, cameIn);
             runList.add(entry);
         });
         tag.put(TAG_RUNS, runList);
@@ -768,8 +774,12 @@ public final class OperationData extends SavedData {
         for (Tag element : tag.getList(TAG_RUNS, Tag.TAG_COMPOUND)) {
             CompoundTag entry = (CompoundTag) element;
             DutyRun run = entry.hasUUID(TAG_TRAIN) ? data.loadRun(entry) : null;
-            if (run != null)
-                data.runs.put(entry.getUUID(TAG_TRAIN), run);
+            if (run == null)
+                continue;
+            data.runs.put(entry.getUUID(TAG_TRAIN), run);
+            // Whether to hold it was still put off: it is decided once the sets have been run on again.
+            if (entry.contains(TAG_CAME_IN, Tag.TAG_LONG))
+                data.heldBack.put(entry.getUUID(TAG_TRAIN), entry.getLong(TAG_CAME_IN));
         }
         for (Tag element : tag.getList(TAG_HISTORY, Tag.TAG_COMPOUND)) {
             CompoundTag entry = (CompoundTag) element;

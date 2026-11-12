@@ -149,6 +149,22 @@ class LiveTrafficTest {
         assertEquals(-1, running(first, 1, at(240)).from());
     }
 
+    /** The sets are run on from where they are only if one is more than a second late. */
+    @Test
+    void theSetsAreRunOnOnlyIfOneIsLate() {
+        DutyRun first = standing("1", at(0));
+        DutyRun second = standing("2", at(0));
+        assertFalse(LiveTraffic.anyLate(List.of(first, second), at(1)), "on time, held a second past its time");
+        assertTrue(LiveTraffic.anyLate(List.of(first, second), at(1) + 1));
+        first.left(at(0));
+        first.arrived(at(170), MINIMUM_STOP);
+        first.left(at(180));
+        first.arrived(at(230), MINIMUM_STOP);
+        assertTrue(first.finished());
+        assertFalse(LiveTraffic.anyLate(List.of(first), at(300)), "a finished set, late as it came in");
+        assertFalse(LiveTraffic.anyLate(List.of(), at(300)));
+    }
+
     /** A run told to give up is not known, as one that cannot be worked out. */
     @Test
     void aRunToldToGiveUpSaysNothing() {

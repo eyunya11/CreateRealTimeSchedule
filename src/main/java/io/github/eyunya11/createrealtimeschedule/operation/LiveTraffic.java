@@ -1,6 +1,7 @@
 package io.github.eyunya11.createrealtimeschedule.operation;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -39,6 +40,12 @@ public final class LiveTraffic {
 
     /** How far ahead the sets are run, in ticks: an hour. */
     public static final long HORIZON_TICKS = 20L * 60 * 60;
+
+    /**
+     * How far behind the timetable a set is to be, in ticks, for the sets to be run on from where they
+     * are: a second ({@link #anyLate}).
+     */
+    public static final long LATE_TICKS = 20;
 
     /** A way of a set: from call {@code call} of duty {@code duty} on service {@code day} to the next call. */
     public record Key(String duty, long day, int call) {}
@@ -143,6 +150,18 @@ public final class LiveTraffic {
             legKeys.add(new Key(duty, day, from + i));
         runs.add(new Run(duty + " of day " + day, spec, throttle, stints, from + stints.size() == calls.size() - 1, lateBy));
         keys.add(legKeys);
+    }
+
+    /**
+     * Whether a set of {@code runs} that has not finished is more than {@link #LATE_TICKS} behind the
+     * timetable at {@code now} ({@link DutyRun#delay}): if none is, the sets run as the trains of the
+     * timetable do ({@link TimetableTraffic}), and need not be run on from where they are.
+     */
+    public static boolean anyLate(Collection<DutyRun> runs, long now) {
+        for (DutyRun run : runs)
+            if (!run.finished() && run.delay(now) > LATE_TICKS)
+                return true;
+        return false;
     }
 
     /** The clock value the sets were run on from; {@link Long#MIN_VALUE} for {@link #NONE}. */

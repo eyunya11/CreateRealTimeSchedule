@@ -231,9 +231,15 @@ public final class TrackFacts {
      * The sets of the duties as last run on from where they were with the signals ({@link #runLive}): a
      * run done since is taken, and the next started if a set has come in while it was going.
      * {@link LiveTraffic#NONE} until one is done, or once the ways between stations, the timetable or the
-     * server's config has changed since.
+     * server's config has changed since. Once no set is late ({@link LiveTraffic#anyLate}), the sets run
+     * as the trains of the timetable do: what was run on from where they were, and any such run going,
+     * is let go, and this is {@link LiveTraffic#NONE}.
      */
     public static LiveTraffic live(OperationData data, Timetable timetable, long now) {
+        if (!LiveTraffic.anyLate(data.runs().values(), now)) {
+            data.forgetLive();
+            return LiveTraffic.NONE;
+        }
         List<Object> key = trafficKey();
         CompletableFuture<LiveTraffic> pending = data.pendingLive(key);
         if (pending != null && pending.isDone()) {
@@ -249,19 +255,22 @@ public final class TrackFacts {
      * ({@link LiveTraffic}), with the duties that are to start on time within the hour, on the thread the
      * trains of the timetable are run on: unless such a run is going, when the next is started once it is
      * done ({@link #live}). A set at its own speed and throttle; one that cannot move is left out, as are
-     * the trains of no duty. Nothing is run before the ways between stations are worked out, nor on a
-     * network without signals.
+     * the trains of no duty. Nothing is run on a network without signals, nor if no train of Create's
+     * config moves.
+     *
+     * @return whether a run of the sets is going now: if not, none could be started
      */
-    public static void runLive(OperationData data, Timetable timetable, long now) {
+    public static boolean runLive(OperationData data, Timetable timetable, long now) {
         List<Object> key = trafficKey();
         CompletableFuture<LiveTraffic> pending = data.pendingLive(key);
         if (pending != null && !pending.isDone()) {
             data.liveWanted(true);
-            return;
+            return true;
         }
         TrainSpec spec = onTimeSpec();
-        if (data.legs() == null || data.blocks().count() == 0 || spec == null)
-            return;
+        Map<List<String>, Leg> legs = legs(data, timetable);
+        if (legs == null || data.blocks().count() == 0 || spec == null)
+            return false;
         // All that the run reads is taken here, on the server's thread.
         List<LiveTraffic.Running> running = new ArrayList<>();
         for (Map.Entry<UUID, DutyRun> entry : data.runs().entrySet()) {
@@ -285,7 +294,6 @@ public final class TrackFacts {
                 if (!start.missedBy(now))
                     coming.add(new LiveTraffic.Coming(duty.id(), start.day(), calls));
         }
-        Map<List<String>, Leg> legs = data.legs();
         SignalBlocks blocks = data.blocks();
         long minimumStop = (long) key.get(0);
         int length = (int) key.get(1);
@@ -305,6 +313,7 @@ public final class TrackFacts {
             }
         });
         data.pendingLive(job, key);
+        return true;
     }
 
     /** {@link TimetableTraffic#of}, timed for the log; {@link TimetableTraffic#NONE} if it fails. */

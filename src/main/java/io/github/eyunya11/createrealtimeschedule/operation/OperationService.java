@@ -10,7 +10,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
@@ -135,9 +134,10 @@ public final class OperationService {
      * one that ended without the train being seen to run through the station.
      *
      * @param maxWait the longest wait, in ticks, of a wait that does not say
+     * @param live    the sets run on from where they were, as this tick has them ({@link TrackFacts#live})
      */
     private static boolean waitsForATrain(OperationData data, Timetable timetable, DutyRun run, long now, long defaultMinimumStop,
-                                          long maxWait) {
+                                          long maxWait, LiveTraffic live) {
         Call call = run.calls().get(run.call());
         if (call.waits().isEmpty())
             return false;
@@ -157,8 +157,7 @@ public final class OperationService {
                 continue;
             long longest = run.departure() + (wait.hasMaxWait() ? wait.maxWait() * (long) RealClock.TICKS_PER_SECOND : maxWait);
             DutyRun their = theirs.getValue();
-            RunTimes times = TrackFacts.live(data, timetable, now).on(timesOf(data, timetable, theirs.getKey()), their.duty(), their.day(),
-                their.calls());
+            RunTimes times = live.on(timesOf(data, timetable, theirs.getKey()), their.duty(), their.day(), their.calls());
             long forecast = Waits.forecast(target, their, now, times, defaultMinimumStop);
             if (now > longest || forecast > longest) {
                 data.giveUpWait(about);
@@ -234,16 +233,12 @@ public final class OperationService {
             int call = run.call();
             DutyRun.Phase phase = run.phase();
             Long cameIn = data.heldBack().get(id);
-            if (cameIn != null && (phase != DutyRun.Phase.STANDING || live.from() >= cameIn || run.dueToLeave(now))) {
-                // The sets have been run on from when it came in, or it is to leave now: whether to hold it is not put off any longer.
-                data.heldBack().remove(id);
-                if (phase == DutyRun.Phase.STANDING)
-                    recover(data, timetable, run, train, now, defaultMinimumStop, threshold, lead, live);
-            }
-            boolean waiting = run.dueToLeave(now) && waitsForATrain(data, timetable, run, now, defaultMinimumStop, maxWait);
+            if (cameIn != null)
+                settle(data, timetable, id, run, train, cameIn, now, live, defaultMinimumStop, threshold, lead);
+            boolean waiting = run.dueToLeave(now) && waitsForATrain(data, timetable, run, now, defaultMinimumStop, maxWait, live);
             Outcome outcome = waiting ? Outcome.GOING : TrainDriver.step(run, train, now, defaultMinimumStop);
             if (phase == DutyRun.Phase.RUNNING && run.phase() == DutyRun.Phase.STANDING)
-                arrived(data, timetable, id, run, train, now, defaultMinimumStop, threshold, lead);
+                arrived(data, timetable, id, run, train, now, live, defaultMinimumStop, threshold, lead);
             if (run.call() != call || run.phase() != phase) {
                 data.timesChanged();
                 data.setDirty();
@@ -271,41 +266,46 @@ public final class OperationService {
     /**
      * The set of {@code run} has just come in at its call. If a set is late, the sets are run on from
      * where they are now with the signals ({@link TrackFacts#runLive}), so that what the signals hold
-     * them up by, late as they are, goes into the forecasts. A set that has come in later than the
-     * threshold may be held ({@link #recover}): that is put off until the sets have been run on from now,
-     * or it is to leave.
+     * them up by, late as they are, goes into the forecasts. Whether to hold the set is then decided
+     * ({@link #settle}).
+     *
+     * @param live the sets run on from where they were, as this tick has them ({@link TrackFacts#live})
      */
-    private static void arrived(OperationData data, Timetable timetable, UUID id, DutyRun run, Train train, long now,
+    private static void arrived(OperationData data, Timetable timetable, UUID id, DutyRun run, Train train, long now, LiveTraffic live,
                                 long defaultMinimumStop, long threshold, long lead) {
-        if (anyLate(data, now))
+        if (LiveTraffic.anyLate(data.runs().values(), now))
             TrackFacts.runLive(data, timetable, now);
-        if (!Recovery.tooLate(run, threshold))
-            return; // as most sets are: the track need not be looked at
-        CompletableFuture<LiveTraffic> pending = data.pendingLive(TrackFacts.trafficKey());
-        if (pending != null && !pending.isDone() && !run.dueToLeave(now)) {
-            data.heldBack().put(id, now);
-            return;
-        }
-        recover(data, timetable, run, train, now, defaultMinimumStop, threshold, lead, TrackFacts.live(data, timetable, now));
-    }
-
-    /** Whether a set running a duty is more than a second behind the timetable at {@code now}. */
-    private static boolean anyLate(OperationData data, long now) {
-        for (DutyRun run : data.runs().values())
-            if (!run.finished() && run.delay(now) > RealClock.TICKS_PER_SECOND)
-                return true;
-        return false;
+        data.heldBack().put(id, now);
+        settle(data, timetable, id, run, train, now, now, live, defaultMinimumStop, threshold, lead);
     }
 
     /**
-     * Holds a set that has come in later than the threshold at a station its duty comes back to, until
-     * a later call there, if it can be ({@link Recovery}); the trains in between are cancelled. The
-     * signals hold it up on its ways as {@code live} has it, where that says.
+     * Whether to hold the set of {@code run}, which came in at {@code cameIn}, as {@link HoldBack} says:
+     * decided now ({@link #recover}), or put off, with the set kept in {@link OperationData#heldBack},
+     * until the sets have been run on from then, or it is to leave. A run is started if none is going,
+     * and if none can be, as on a network without signals, it is decided now.
+     */
+    private static void settle(OperationData data, Timetable timetable, UUID id, DutyRun run, Train train, long cameIn, long now,
+                               LiveTraffic live, long defaultMinimumStop, long threshold, long lead) {
+        boolean running = data.pendingLive(TrackFacts.trafficKey()) != null;
+        HoldBack.Step step = HoldBack.step(run, threshold, cameIn, now, live.from(), running);
+        if (step == HoldBack.Step.RUN && !TrackFacts.runLive(data, timetable, now))
+            step = HoldBack.Step.DECIDE;
+        if (step == HoldBack.Step.WAIT || step == HoldBack.Step.RUN)
+            return;
+        data.heldBack().remove(id);
+        data.setDirty();
+        if (step == HoldBack.Step.DECIDE)
+            recover(data, timetable, run, train, now, defaultMinimumStop, threshold, lead, live);
+    }
+
+    /**
+     * Holds a set that has come in later than the threshold ({@link Recovery#tooLate}) at a station its
+     * duty comes back to, until a later call there, if it can be ({@link Recovery}); the trains in
+     * between are cancelled. The signals hold it up on its ways as {@code live} has it, where that says.
      */
     private static void recover(OperationData data, Timetable timetable, DutyRun run, Train train, long now, long defaultMinimumStop,
                                 long threshold, long lead, LiveTraffic live) {
-        if (!Recovery.tooLate(run, threshold))
-            return; // as most sets are: the track need not be looked at
         Optional<CreateReach> reach = CreateReach.of(train, TrackFacts.legs(data, timetable), TrackFacts.traffic(data, timetable), live, run);
         if (reach.isEmpty())
             return;
